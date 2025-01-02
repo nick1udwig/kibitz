@@ -1,18 +1,6 @@
 # llm-chat
 
-A modern web interface for the Anthropic Claude API built with Next.js and TypeScript.
-
-## Features
-
-- 💬 Multiple chat conversations
-- 🔧 Full Claude API configuration
-- 🛠️ Tool use support
-- 🎨 Dark/light mode
-- 📝 Markdown support
-- ⚙️ Per-conversation settings
-- 💾 Local storage persistence
-- 📤 Conversation export/import
-- 🔑 Secure API key handling
+A client for the Anthropic Claude API built with Next.js and TypeScript.
 
 ## Prerequisites
 
