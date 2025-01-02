@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ConversationSettings } from '../types';
 import { ToolConfiguration } from './ToolConfiguration';
+import { McpConfiguration } from './McpConfiguration';
 
 interface AdminViewProps {
   settings: ConversationSettings;
@@ -67,6 +68,11 @@ export const AdminView = ({
           </div>
         </CardContent>
       </Card>
+
+      <McpConfiguration
+        servers={settings.mcpServers || []}
+        onServersChange={(mcpServers) => onSettingsChange({ ...settings, mcpServers })}
+      />
 
       <ToolConfiguration
         tools={settings.tools}

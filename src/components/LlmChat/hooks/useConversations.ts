@@ -31,7 +31,8 @@ export const useConversations = () => {
           apiKey: '',
           model: 'claude-3-5-sonnet-20241022',
           systemPrompt: '',
-          tools: []
+          tools: [],
+          mcpServers: []
         }
       };
       setConversations([defaultConvo]);
