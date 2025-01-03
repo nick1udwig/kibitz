@@ -16,6 +16,7 @@ export type Message = {
   role: 'user' | 'assistant';
   content: string | MessageContent[];
   timestamp: Date;
+  toolInput?: any;
 };
 
 export type ConversationSettings = {

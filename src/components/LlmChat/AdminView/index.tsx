@@ -74,10 +74,6 @@ export const AdminView = ({
         onServersChange={(mcpServers) => onSettingsChange({ ...settings, mcpServers })}
       />
 
-      <ToolConfiguration
-        tools={settings.tools}
-        onToolsChange={(tools) => onSettingsChange({ ...settings, tools })}
-      />
     </div>
   );
 };

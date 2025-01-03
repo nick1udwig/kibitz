@@ -2,7 +2,7 @@ export interface McpServer {
   id: string;
   name: string;
   uri: string; // WebSocket URI e.g. ws://localhost:3000
-  status: 'connected' | 'disconnected' | 'error';
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
   error?: string;
   tools?: McpTool[];
 }

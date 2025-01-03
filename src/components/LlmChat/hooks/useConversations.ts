@@ -61,6 +61,35 @@ export const useConversations = () => {
     setActiveConvoId(newConvo.id);
   };
 
+  const deleteConversation = (id: string) => {
+    const newConversations = conversations.filter(c => c.id !== id);
+    setConversations(newConversations);
+
+    // If we're deleting the active conversation, switch to another one
+    if (id === activeConvoId) {
+      const nextConvo = newConversations[0];
+      if (nextConvo) {
+        setActiveConvoId(nextConvo.id);
+      } else {
+        // If no conversations left, create a new default one
+        const defaultConvo: Conversation = {
+          id: generateId(),
+          name: 'New Conversation',
+          messages: [],
+          settings: {
+            apiKey: '',
+            model: 'claude-3-5-sonnet-20241022',
+            systemPrompt: '',
+            tools: [],
+            mcpServers: []
+          }
+        };
+        setConversations([defaultConvo]);
+        setActiveConvoId(defaultConvo.id);
+      }
+    }
+  };
+
   const updateConversationSettings = (settings: ConversationSettings) => {
     setConversations(convos => convos.map(convo =>
       convo.id === activeConvoId
@@ -76,6 +105,7 @@ export const useConversations = () => {
     setActiveConvoId,
     setConversations,
     createNewConversation,
+    deleteConversation,
     updateConversationSettings
   };
 };

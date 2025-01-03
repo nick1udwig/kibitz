@@ -23,6 +23,7 @@ export const ChatApp = () => {
     setActiveConvoId,
     setConversations,
     createNewConversation,
+    deleteConversation,
     updateConversationSettings
   } = useConversations();
 
@@ -59,6 +60,7 @@ export const ChatApp = () => {
         activeConvoId={activeConvoId}
         onNewConversation={createNewConversation}
         onSelectConversation={setActiveConvoId}
+        onDeleteConversation={deleteConversation}
         onExportConversation={handleExportConversation}
       />
 

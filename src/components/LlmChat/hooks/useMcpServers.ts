@@ -5,20 +5,34 @@ export const useMcpServers = (servers: McpServer[]) => {
   const [connectedServers, setConnectedServers] = useState<McpServer[]>(servers);
   const connectionsRef = useRef<Map<string, WebSocket>>(new Map());
 
-  // Memoize the server connection logic
+  const cleanupServer = useCallback((serverId: string) => {
+    const ws = connectionsRef.current.get(serverId);
+    if (ws) {
+      ws.close();
+      connectionsRef.current.delete(serverId);
+      setConnectedServers(current =>
+        current.map(s => s.id === serverId
+          ? { ...s, status: 'disconnected' }
+          : s
+        )
+      );
+    }
+  }, []);
+
   const connectToServer = useCallback(async (server: McpServer) => {
     try {
-      // Don't recreate connection if it already exists
-      if (connectionsRef.current.has(server.id)) {
-        return server;
-      }
+      // Update status to connecting
+      setConnectedServers(current =>
+        current.map(s => s.id === server.id
+          ? { ...s, status: 'connecting' }
+          : s
+        )
+      );
 
       const ws = new WebSocket(server.uri);
       connectionsRef.current.set(server.id, ws);
 
       return new Promise<McpServer>((resolve, reject) => {
-        let resolved = false;
-
         ws.onopen = () => {
           // Send handshake request with all required fields
           ws.send(JSON.stringify({
@@ -40,17 +54,13 @@ export const useMcpServers = (servers: McpServer[]) => {
 
         ws.onmessage = (event) => {
           try {
-            clearTimeout(initializeTimeout);
             const response = JSON.parse(event.data);
 
             if (response.id === 1) { // Handshake response
-              const handshake = response.result;
-
-              // Send initialized notification with correct format
+              // Send initialized notification
               ws.send(JSON.stringify({
                 jsonrpc: '2.0',
                 method: 'notifications/initialized',
-                params: {}
               }));
 
               // List available tools
@@ -60,19 +70,15 @@ export const useMcpServers = (servers: McpServer[]) => {
                 id: 2
               }));
             } else if (response.id === 2) { // Tools list response
-              const updatedServer = {
-                ...server,
-                status: 'connected',
-                tools: response.result.tools
-              };
-
-              if (!resolved) {
-                resolved = true;
-                resolve(updatedServer);
-              }
+              const tools = response.result.tools;
+              // Update server with connected status and tools
               setConnectedServers(current =>
-                current.map(s => s.id === server.id ? updatedServer : s)
+                current.map(s => s.id === server.id
+                  ? { ...s, status: 'connected', tools }
+                  : s
+                )
               );
+              resolve({ ...server, status: 'connected', tools });
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);
@@ -81,65 +87,19 @@ export const useMcpServers = (servers: McpServer[]) => {
 
 
         ws.onerror = (error) => {
-          const updatedServer = {
-            ...server,
-            status: 'error',
-            error: 'WebSocket connection error: ' + (error.message || 'Unknown error')
-          };
-
-          if (!resolved) {
-            resolved = true;
-            reject(updatedServer);
-          }
-
+          console.error('WebSocket error:', error);
           setConnectedServers(current =>
-            current.map(s => s.id === server.id ? updatedServer : s)
+            current.map(s => s.id === server.id
+              ? { ...s, status: 'error', error: 'Connection error' }
+              : s
+            )
           );
+          reject(error);
         };
-
-        let initializeTimeout = setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            const timeoutServer = {
-              ...server,
-              status: 'error',
-              error: 'Connection timeout: Server did not respond to initialization'
-            };
-            reject(timeoutServer);
-
-            setConnectedServers(current =>
-              current.map(s => s.id === server.id ? timeoutServer : s)
-            );
-          }
-        }, 5000);
 
         ws.onclose = () => {
-          const updatedServer = {
-            ...server,
-            status: 'disconnected'
-          };
-
-          if (!resolved) {
-            resolved = true;
-            reject(updatedServer);
-          }
-
-          setConnectedServers(current =>
-            current.map(s => s.id === server.id ? updatedServer : s)
-          );
+          cleanupServer(server.id);
         };
-
-        // Timeout after 5 seconds
-        setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            reject({
-              ...server,
-              status: 'error',
-              error: 'Connection timeout'
-            });
-          }
-        }, 5000);
       });
     } catch (error) {
       console.error(`Failed to connect to server ${server.name}:`, error);
@@ -224,6 +184,7 @@ export const useMcpServers = (servers: McpServer[]) => {
 
   return {
     servers: connectedServers,
-    executeTool
+    executeTool,
+    cleanupServer
   };
 };

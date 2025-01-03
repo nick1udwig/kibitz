@@ -4,6 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { McpServer } from '../types/mcp';
+import { Loader2 } from 'lucide-react';
+import { useMcpServers } from '@/components/LlmChat/hooks/useMcpServers';
 
 interface McpConfigurationProps {
   servers: McpServer[];
@@ -14,6 +16,7 @@ export const McpConfiguration = ({
   servers = [],
   onServersChange
 }: McpConfigurationProps) => {
+  const { servers: connectedServers, cleanupServer } = useMcpServers(servers);
   const [newServer, setNewServer] = useState({
     name: '',
     uri: ''
@@ -31,6 +34,7 @@ export const McpConfiguration = ({
   };
 
   const removeServer = (id: string) => {
+    cleanupServer(id);
     onServersChange(servers.filter(s => s.id !== id));
   };
 
@@ -45,13 +49,17 @@ export const McpConfiguration = ({
               <div className="flex justify-between items-center mb-2">
                 <span className="font-medium">{server.name}</span>
                 <div className="flex items-center gap-2">
-                  <span className={`px-2 py-1 rounded text-sm ${
-                    server.status === 'connected' ? 'bg-green-500/20 text-green-500' :
-                    server.status === 'error' ? 'bg-red-500/20 text-red-500' :
-                    'bg-yellow-500/20 text-yellow-500'
-                  }`}>
-                    {server.status}
-                  </span>
+                  {server.status === 'connecting' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <span className={`px-2 py-1 rounded text-sm ${
+                      server.status === 'connected' ? 'bg-green-500/20 text-green-500' :
+                      server.status === 'error' ? 'bg-red-500/20 text-red-500' :
+                      'bg-yellow-500/20 text-yellow-500'
+                    }`}>
+                      {server.status}
+                    </span>
+                  )}
                   <Button
                     variant="destructive"
                     size="sm"
@@ -71,7 +79,9 @@ export const McpConfiguration = ({
               <div className="mt-2 text-sm text-muted-foreground">
                 <div>URI: {server.uri}</div>
                 {server.tools && (
-                  <div>Tools: {server.tools.map(t => t.name).join(', ')}</div>
+                  <div className="truncate">
+                    Tools: {server.tools.map(t => t.name).join(', ')}
+                  </div>
                 )}
               </div>
             </div>
