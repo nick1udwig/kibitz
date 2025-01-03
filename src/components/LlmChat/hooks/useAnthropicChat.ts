@@ -1,19 +1,15 @@
-"use client";
-
 import { useState } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Message, Conversation } from '../types';
-import { useMcpServers } from './useMcpServers';
 import { useMcp } from '../context/McpContext';
 
 export const useAnthropicChat = (
   activeConvo: Conversation | undefined,
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>
 ) => {
-  const { executeTool, getServerTools } = useMcp();
+  const { executeTool, getServerTools, isServerConnected, connectToServer } = useMcp();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  //const { servers, executeTool } = useMcpServers(activeConvo?.settings.mcpServers || []);
 
   const sendMessage = async (inputMessage: string) => {
     if (!inputMessage.trim() || !activeConvo?.settings.apiKey) {
@@ -23,6 +19,11 @@ export const useAnthropicChat = (
 
     setIsLoading(true);
     setError(null);
+
+    // Debug log active conversation
+    console.log('Active conversation:', activeConvo);
+    console.log('Active conversation settings:', activeConvo?.settings);
+    console.log('MCP Servers:', activeConvo?.settings.mcpServers);
 
     const newMessage: Message = {
       role: 'user',
@@ -44,17 +45,34 @@ export const useAnthropicChat = (
         dangerouslyAllowBrowser: true,
       });
 
-      const serverTools = activeConvo.settings.mcpServers
-        .flatMap(server => getServerTools(server.id)
-          .map(tool => ({
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.inputSchema
-          }))
-        );
+      // Check if all servers are connected
+      const disconnectedServers = activeConvo?.settings.mcpServers.filter(
+        server => !isServerConnected(server.id)
+      );
 
+      if (disconnectedServers?.length) {
+        console.log('Reconnecting to disconnected servers:', disconnectedServers);
+        await Promise.all(
+          disconnectedServers.map(server => connectToServer(server))
+        );
+      }
+
+      // Get tools from connected servers
+      const serverTools = (activeConvo?.settings.mcpServers || [])
+        .filter(server => isServerConnected(server.id))
+        .flatMap(server => {
+          const tools = getServerTools(server.id);
+          console.log(`Tools for server ${server.id}:`, tools);
+          return tools.map(tool => ({
+            name: tool.name,
+            description: tool.description || '',
+            parameters: tool.inputSchema
+          }));
+        });
+
+      // Combine local and server tools
       const allTools = [
-        ...(activeConvo.settings.tools || []).map(tool => ({
+        ...(activeConvo?.settings.tools || []).map(tool => ({
           name: tool.name,
           description: tool.description,
           parameters: tool.schema
@@ -62,21 +80,36 @@ export const useAnthropicChat = (
         ...serverTools
       ];
 
-      // Initialize our message array with the conversation history
+      console.log('All tools being sent to Anthropic:', allTools);
+
+      // Initialize messages array
       let messages = updatedMessages.map(msg => ({
         role: msg.role,
-        content: msg.content
+        content: Array.isArray(msg.content)
+          ? msg.content.map(c => {
+              if (c.type === 'text') return c.text;
+              if (c.type === 'tool_use') return `Using tool: ${c.name}`;
+              if (c.type === 'tool_result') return `Tool result: ${c.content}`;
+              return '';
+            }).join('\n')
+          : msg.content
       }));
 
-      // Keep getting responses and handling tools until we get a final response
+      // Keep getting responses until we get a final response
       while (true) {
-        const response = await anthropic.messages.create({
+        // Log the request to Anthropic
+        const requestParams = {
           model: activeConvo.settings.model,
           max_tokens: 8192,
-          messages: messages,
+          messages,
           ...(activeConvo.settings.systemPrompt && { system: activeConvo.settings.systemPrompt }),
           ...(allTools.length > 0 && { tools: allTools })
-        });
+        };
+
+        console.log('Request to Anthropic:', requestParams);
+
+        const response = await anthropic.messages.create(requestParams);
+        console.log('Response from Anthropic:', response);
 
         // Add Claude's response to messages history AND to the chat display
         messages.push({
@@ -84,7 +117,7 @@ export const useAnthropicChat = (
           content: response.content
         });
 
-        // If response includes text content, show it in the chat
+        // Show any text content in the chat
         for (const content of response.content) {
           if (content.type === 'text') {
             setConversations(convos => convos.map(convo =>
@@ -102,17 +135,17 @@ export const useAnthropicChat = (
           }
         }
 
-        // If there's no tool use, we're done
+        // Break if there's no tool use
         if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
           break;
         }
 
-        // Handle tool use
+        // Handle tool usage
         for (const content of response.content) {
           if (content.type === 'tool_use') {
             try {
-              const serverWithTool = servers.find(s =>
-                s.tools?.some(t => t.name === content.name)
+              const serverWithTool = activeConvo.settings.mcpServers.find(s =>
+                getServerTools(s.id).some(t => t.name === content.name)
               );
 
               if (!serverWithTool) {
@@ -127,25 +160,25 @@ export const useAnthropicChat = (
                       messages: [...convo.messages, {
                         role: 'assistant',
                         content: [{
-                            type: 'tool_use',
-                            id: content.id,
-                            name: content.name,
-                            input: content.input,
+                          type: 'tool_use',
+                          id: content.id,
+                          name: content.name,
+                          input: content.input,
                         }],
-                        //content: `Calling tool: ${content.name}`,
                         timestamp: new Date()
                       }]
                     }
                   : convo
               ));
 
+              // Execute the tool
               const result = await executeTool(
                 serverWithTool.id,
                 content.name,
                 content.input
               );
 
-              // Add tool result to messages array with correct formatting
+              // Add tool result to messages
               const toolResultMessage = {
                 role: 'user',
                 content: [{
