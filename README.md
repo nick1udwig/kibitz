@@ -1,12 +1,6 @@
 # llm-chat
 
-A client for the Anthropic Claude API built with Next.js and TypeScript.
-
-## Prerequisites
-
-- Node.js 18.x or higher
-- npm 9.x or higher
-- An Anthropic API key ([Get one here](https://console.anthropic.com/))
+A chat client for the Anthropic LLM API that can use MCP tools over WebSockets.
 
 ## Installation
 
@@ -31,8 +25,9 @@ npm run dev
 ## Configuration
 
 1. Open the settings panel in the UI
-2. Enter your Anthropic API key
+2. Enter your Anthropic API key ([Get one here](https://console.anthropic.com/)).
 3. Configure the model (default: claude-3-5-sonnet-20241022)
-4. Optionally set a system prompt and configure tools
+4. Optionally set a system prompt
+5. Configure MCPs by running them using https://github.com/nick1udwig/ws-mcp and then connecting to them in the Settings page
 
 Note configuration is PER-CHAT, but when creating a new chat, it will use the current chat's configuration.
