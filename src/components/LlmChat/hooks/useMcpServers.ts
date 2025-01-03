@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { McpServer } from '../types/mcp';
 import { useMcp } from '../context/McpContext';
@@ -15,6 +14,5 @@ export const useMcpServers = (servers: McpServer[]) => {
   return {
     servers: connectedServers,
     executeTool,
-    cleanupServer
   };
 };

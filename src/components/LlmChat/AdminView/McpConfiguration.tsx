@@ -17,8 +17,8 @@ export const McpConfiguration = ({
   servers,
   onServersChange
 }: McpConfigurationProps) => {
-  const { connectToServer, isServerConnected } = useMcp();
-  const { servers: connectedServers, cleanupServer } = useMcpServers(servers);
+  const { connectToServer, isServerConnected, disconnectServer } = useMcp(); // Get disconnectServer from useMcp
+  const { servers: connectedServers } = useMcpServers(servers);
   const [newServer, setNewServer] = useState({
     name: '',
     uri: ''
@@ -36,7 +36,7 @@ export const McpConfiguration = ({
   };
 
   const removeServer = (id: string) => {
-    cleanupServer(id);
+    disconnectServer(id); // Use disconnectServer instead of cleanupServer
     onServersChange(servers.filter(s => s.id !== id));
   };
 
@@ -49,7 +49,7 @@ export const McpConfiguration = ({
         });
       }
     });
-  }, [servers]);
+  }, [servers, connectToServer, isServerConnected]);
 
   return (
     <Card>
