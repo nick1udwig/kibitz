@@ -13,7 +13,6 @@ export const useAnthropicChat = (
   const [isLoading, setIsLoading] = useState(false);
   const { servers, executeTool } = useMcpServers(activeConvo?.settings.mcpServers || []);
 
-
   const sendMessage = async (inputMessage: string) => {
     if (!inputMessage.trim() || !activeConvo?.settings.apiKey) {
       setError(activeConvo?.settings.apiKey ? null : 'Please enter an API key in settings');
@@ -30,6 +29,7 @@ export const useAnthropicChat = (
     };
 
     try {
+      // Update conversation with user's message
       const updatedMessages = [...activeConvo.messages, newMessage];
       setConversations(convos => convos.map(convo =>
         convo.id === activeConvo.id
@@ -37,10 +37,6 @@ export const useAnthropicChat = (
           : convo
       ));
 
-      // TODO
-      //const anthropic = new Anthropic({
-      //  apiKey: activeConvo.settings.apiKey,
-      //});
       const anthropic = new Anthropic({
         apiKey: activeConvo.settings.apiKey,
         dangerouslyAllowBrowser: true,
@@ -55,68 +51,31 @@ export const useAnthropicChat = (
         }))
       ];
 
-      const response = await anthropic.messages.create({
-        model: activeConvo.settings.model,
-        max_tokens: 8192,
-        messages: updatedMessages.map(msg => ({
-          role: msg.role,
-          content: msg.content
-        })),
-        ...(activeConvo.settings.systemPrompt && { system: activeConvo.settings.systemPrompt }),
-        ...(allTools.length > 0 && { tools: allTools })
-      });
+      // Initialize our message array with the conversation history
+      let messages = updatedMessages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
 
-      // Handle tool use in the response
-      if (response.content.some(c => c.type === 'tool_use')) {
+      // Keep getting responses and handling tools until we get a final response
+      while (true) {
+        const response = await anthropic.messages.create({
+          model: activeConvo.settings.model,
+          max_tokens: 8192,
+          messages: messages,
+          ...(activeConvo.settings.systemPrompt && { system: activeConvo.settings.systemPrompt }),
+          ...(allTools.length > 0 && { tools: allTools })
+        });
+
+        // Add Claude's response to messages history AND to the chat display
+        messages.push({
+          role: 'assistant',
+          content: response.content
+        });
+
+        // If response includes text content, show it in the chat
         for (const content of response.content) {
-          if (content.type === 'tool_use') {
-            try {
-              // Find the server that owns this tool
-              const serverWithTool = servers.find(s =>
-                s.tools?.some(t => t.name === content.name)
-              );
-
-              if (!serverWithTool) {
-                throw new Error(`No server found for tool ${content.name}`);
-              }
-
-              const result = await executeTool(
-                serverWithTool.id,
-                content.name,
-                content.input
-              );
-
-              // Add tool result to messages
-              setConversations(convos => convos.map(convo =>
-                convo.id === activeConvo.id
-                  ? {
-                      ...convo,
-                      messages: [...convo.messages, {
-                        role: 'assistant',
-                        content: `Using tool ${content.name}:\n${result}`,
-                        timestamp: new Date()
-                      }]
-                    }
-                  : convo
-              ));
-            } catch (error) {
-              console.error('Tool execution failed:', error);
-              // Add error message to chat
-              setConversations(convos => convos.map(convo =>
-                convo.id === activeConvo.id
-                  ? {
-                      ...convo,
-                      messages: [...convo.messages, {
-                        role: 'assistant',
-                        content: `Failed to execute tool ${content.name}: ${error.message}`,
-                        timestamp: new Date()
-                      }]
-                    }
-                  : convo
-              ));
-            }
-          } else if (content.type === 'text') {
-            // Add regular message content
+          if (content.type === 'text') {
             setConversations(convos => convos.map(convo =>
               convo.id === activeConvo.id
                 ? {
@@ -129,6 +88,70 @@ export const useAnthropicChat = (
                   }
                 : convo
             ));
+          }
+        }
+
+        // If there's no tool use, we're done
+        if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
+          break;
+        }
+
+        // Handle tool use
+        for (const content of response.content) {
+          if (content.type === 'tool_use') {
+            try {
+              const serverWithTool = servers.find(s =>
+                s.tools?.some(t => t.name === content.name)
+              );
+
+              if (!serverWithTool) {
+                throw new Error(`No server found for tool ${content.name}`);
+              }
+
+              // Show tool usage in chat
+              setConversations(convos => convos.map(convo =>
+                convo.id === activeConvo.id
+                  ? {
+                      ...convo,
+                      messages: [...convo.messages, {
+                        role: 'assistant',
+                        content: `Calling tool: ${content.name}`,
+                        timestamp: new Date()
+                      }]
+                    }
+                  : convo
+              ));
+
+              const result = await executeTool(
+                serverWithTool.id,
+                content.name,
+                content.input
+              );
+
+              // Add tool result to messages array with correct formatting
+              const toolResultMessage = {
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: content.id,
+                  content: result
+                }]
+              };
+              messages.push(toolResultMessage);
+
+            } catch (error) {
+              // Handle tool execution error
+              const errorMessage = {
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: content.id,
+                  content: `Error: ${error.message}`,
+                  is_error: true
+                }]
+              };
+              messages.push(errorMessage);
+            }
           }
         }
       }
