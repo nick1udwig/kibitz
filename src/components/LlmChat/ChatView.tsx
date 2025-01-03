@@ -50,6 +50,49 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [messages]);
 
   const renderMessage = (message: Message, index: number) => {
+    // Handle array of message content (from Anthropic API)
+    if (Array.isArray(message.content)) {
+      return message.content.map((content, contentIndex) => {
+        if (content.type === 'tool_use') {
+          // Find corresponding tool result in next message
+          const nextMessage = messages[index + 1];
+          let toolResult = '';
+          if (nextMessage && Array.isArray(nextMessage.content)) {
+            const resultContent = nextMessage.content.find(c =>
+              c.type === 'tool_result' && c.tool_use_id === content.id
+            );
+            if (resultContent) {
+              toolResult = resultContent.content;
+            }
+          }
+
+          return (
+            <button
+              key={`${index}-${contentIndex}`}
+              onClick={(e) => {
+                e.preventDefault();
+                setSelectedToolCall({
+                  name: content.name,
+                  input: content.input,
+                  result: toolResult
+                });
+              }}
+              className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+            >
+              Calling tool: {content.name}
+            </button>
+          );
+        } else if (content.type === 'text') {
+          return (
+            <ReactMarkdown key={`${index}-${contentIndex}`} className="prose dark:prose-invert max-w-none">
+              {content.text}
+            </ReactMarkdown>
+          );
+        }
+        return null;
+      });
+    }
+
     if (typeof message.content === 'string') {
       if (message.content.startsWith('Calling tool:')) {
         const toolName = message.content.replace('Calling tool:', '').trim();

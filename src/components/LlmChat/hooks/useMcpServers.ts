@@ -116,20 +116,27 @@ export const useMcpServers = (servers: McpServer[]) => {
     toolName: string,
     args: any
   ): Promise<string> => {
+    console.log(`Executing tool ${toolName} on server ${serverId} with args:`, args);
+
     const ws = connectionsRef.current.get(serverId);
     if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error(`Server ${serverId} not connected. WebSocket state:`, ws?.readyState);
       throw new Error('Server not connected');
     }
 
     return new Promise((resolve, reject) => {
       const requestId = Math.random().toString(36).substring(7);
+      console.log(`Creating tool request with id ${requestId}`);
 
       const messageHandler = (event: MessageEvent) => {
         try {
           const response = JSON.parse(event.data);
+          console.log(`Received response for request ${requestId}:`, response);
+
           if (response.id === requestId) {
             ws.removeEventListener('message', messageHandler);
             if (response.error) {
+              console.error(`Tool execution error:`, response.error);
               reject(new Error(response.error.message));
             } else {
               resolve(response.result.content[0].text);
@@ -141,7 +148,8 @@ export const useMcpServers = (servers: McpServer[]) => {
       };
 
       ws.addEventListener('message', messageHandler);
-      ws.send(JSON.stringify({
+
+      const request = {
         jsonrpc: '2.0',
         method: 'tools/call',
         params: {
@@ -149,7 +157,10 @@ export const useMcpServers = (servers: McpServer[]) => {
           arguments: args
         },
         id: requestId
-      }));
+      };
+
+      console.log(`Sending tool request:`, request);
+      ws.send(JSON.stringify(request));
     });
   }, []);
 
@@ -162,22 +173,50 @@ export const useMcpServers = (servers: McpServer[]) => {
   }, []);
 
   useEffect(() => {
-    const needsUpdate = servers.some((server, index) => {
-      const currentServer = connectedServers[index];
-      return !currentServer ||
-             currentServer.id !== server.id ||
-             currentServer.uri !== server.uri;
-    });
+    let cancelled = false;
 
-    if (needsUpdate) {
-      cleanupServers();
-      Promise.all(servers.map(connectToServer))
-        .then(updatedServers => {
-          setConnectedServers(updatedServers);
-        });
-    }
+    const updateConnections = async () => {
+      const needsUpdate = servers.some((server, index) => {
+        const currentServer = connectedServers[index];
+        return !currentServer ||
+               currentServer.id !== server.id ||
+               currentServer.uri !== server.uri;
+      });
+
+      if (needsUpdate) {
+        console.log('Updating MCP server connections...');
+        cleanupServers();
+
+        try {
+          const updatedServers = await Promise.all(
+            servers.map(async (server) => {
+              try {
+                return await connectToServer(server);
+              } catch (error) {
+                console.error(`Failed to connect to server ${server.name}:`, error);
+                return {
+                  ...server,
+                  status: 'error',
+                  error: error instanceof Error ? error.message : 'Connection failed'
+                };
+              }
+            })
+          );
+
+          if (!cancelled) {
+            console.log('Updated MCP server connections:', updatedServers);
+            setConnectedServers(updatedServers);
+          }
+        } catch (error) {
+          console.error('Error updating MCP servers:', error);
+        }
+      }
+    };
+
+    updateConnections();
 
     return () => {
+      cancelled = true;
       cleanupServers();
     };
   }, [servers, connectToServer, cleanupServers]);
