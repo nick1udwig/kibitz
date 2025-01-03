@@ -11,7 +11,7 @@ interface ConversationSidebarProps {
   activeConvoId: string;
   onNewConversation: () => void;
   onSelectConversation: (id: string) => void;
-  onDeleteConversation: (id: string) => void;
+  onDeleteConversation: (id: string | string[]) => void;
   onExportConversation: (id?: string) => void;
 }
 
@@ -27,10 +27,8 @@ export const ConversationSidebar = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleDeleteSelected = () => {
-    // Convert Set to Array before iterating
-    Array.from(selectedConvos).forEach(id => {
-      onDeleteConversation(id);
-    });
+    // Convert Set to Array and delete all at once
+    onDeleteConversation(Array.from(selectedConvos));
     setSelectedConvos(new Set());
     setShowDeleteConfirm(false);
   };

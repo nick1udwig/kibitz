@@ -61,12 +61,13 @@ export const useConversations = () => {
     setActiveConvoId(newConvo.id);
   };
 
-  const deleteConversation = (id: string) => {
-    const newConversations = conversations.filter(c => c.id !== id);
+  const deleteConversation = (ids: string | string[]) => {
+    const idsToDelete = Array.isArray(ids) ? ids : [ids];
+    const newConversations = conversations.filter(c => !idsToDelete.includes(c.id));
     setConversations(newConversations);
 
     // If we're deleting the active conversation, switch to another one
-    if (id === activeConvoId) {
+    if (idsToDelete.includes(activeConvoId)) {
       const nextConvo = newConversations[0];
       if (nextConvo) {
         setActiveConvoId(nextConvo.id);
