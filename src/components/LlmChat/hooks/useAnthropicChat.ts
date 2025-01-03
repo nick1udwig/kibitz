@@ -115,7 +115,13 @@ export const useAnthropicChat = (
                       ...convo,
                       messages: [...convo.messages, {
                         role: 'assistant',
-                        content: `Calling tool: ${content.name}`,
+                        content: [{
+                            type: 'tool_use',
+                            id: content.id,
+                            name: content.name,
+                            input: content.input,
+                        }],
+                        //content: `Calling tool: ${content.name}`,
                         timestamp: new Date()
                       }]
                     }
@@ -138,6 +144,14 @@ export const useAnthropicChat = (
                 }]
               };
               messages.push(toolResultMessage);
+              setConversations(convos => convos.map(convo =>
+                convo.id === activeConvo.id
+                  ? {
+                      ...convo,
+                      messages: [...convo.messages, toolResultMessage]
+                    }
+                  : convo
+              ));
 
             } catch (error) {
               // Handle tool execution error

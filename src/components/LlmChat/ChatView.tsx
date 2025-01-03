@@ -52,12 +52,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const renderMessage = (message: Message, index: number) => {
     if (Array.isArray(message.content)) {
+      // doesn't work because when we filter in 139 we then dont have the tool_results in messages on line 68
+      //// don't show chat entries for `tool_result`s
+      //const resultContent = message.content.find(c =>
+      //  c.type === 'tool_result'
+      //);
+      //if (resultContent) {
+      //    return null;
+      //}
+
       return message.content.map((content, contentIndex) => {
+        console.log(`${content.type}`);
         if (content.type === 'tool_use') {
           // Find corresponding tool result in next message
           const nextMessage = messages[index + 1];
           let toolResult = '';
           if (nextMessage && Array.isArray(nextMessage.content)) {
+            console.log(`${message}    ${nextMessage}`);
             const resultContent = nextMessage.content.find(c =>
               c.type === 'tool_result' && c.tool_use_id === content.id
             );
@@ -88,9 +99,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
         }
         return null;
       });
-    }
-
-    if (typeof message.content === 'string') {
+    } else if (typeof message.content === 'string') {
+      console.log('!isArray');
       if (message.content.startsWith('Calling tool:')) {
         const toolName = message.content.replace('Calling tool:', '').trim();
         const nextMessage = messages[index + 1];
@@ -126,7 +136,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 min-h-0">
-        {messages.map((message, index) => (
+        {messages.filter((message, index) => renderMessage(message, index) !== null).map((message, index) => (
           <div
             key={index}
             className={`flex ${

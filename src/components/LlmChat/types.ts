@@ -14,7 +14,7 @@ export type MessageContent = {
 
 export type Message = {
   role: 'user' | 'assistant';
-  content: string | MessageContent[];
+  content: MessageContent[] | string;
   timestamp: Date;
   toolInput?: any;
 };
