@@ -20,11 +20,16 @@ export const useMcpServers = (servers: McpServer[]) => {
         let resolved = false;
 
         ws.onopen = () => {
-          // Send handshake request
+          // Send handshake request with all required fields
           ws.send(JSON.stringify({
             jsonrpc: '2.0',
             method: 'initialize',
             params: {
+              protocolVersion: '0.1.0',
+              clientInfo: {
+                name: 'llm-chat',
+                version: '1.0.0'
+              },
               capabilities: {
                 tools: {}
               }
@@ -35,15 +40,16 @@ export const useMcpServers = (servers: McpServer[]) => {
 
         ws.onmessage = (event) => {
           try {
+            clearTimeout(initializeTimeout);
             const response = JSON.parse(event.data);
 
             if (response.id === 1) { // Handshake response
-              const handshake = response.result as McpHandshakeResponse;
+              const handshake = response.result;
 
-              // Send initialized notification
+              // Send initialized notification with correct format
               ws.send(JSON.stringify({
                 jsonrpc: '2.0',
-                method: 'initialized',
+                method: 'notifications/initialized',
                 params: {}
               }));
 
@@ -64,7 +70,6 @@ export const useMcpServers = (servers: McpServer[]) => {
                 resolved = true;
                 resolve(updatedServer);
               }
-
               setConnectedServers(current =>
                 current.map(s => s.id === server.id ? updatedServer : s)
               );
@@ -74,11 +79,12 @@ export const useMcpServers = (servers: McpServer[]) => {
           }
         };
 
+
         ws.onerror = (error) => {
           const updatedServer = {
             ...server,
             status: 'error',
-            error: 'WebSocket connection error'
+            error: 'WebSocket connection error: ' + (error.message || 'Unknown error')
           };
 
           if (!resolved) {
@@ -90,6 +96,22 @@ export const useMcpServers = (servers: McpServer[]) => {
             current.map(s => s.id === server.id ? updatedServer : s)
           );
         };
+
+        let initializeTimeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            const timeoutServer = {
+              ...server,
+              status: 'error',
+              error: 'Connection timeout: Server did not respond to initialization'
+            };
+            reject(timeoutServer);
+
+            setConnectedServers(current =>
+              current.map(s => s.id === server.id ? timeoutServer : s)
+            );
+          }
+        }, 5000);
 
         ws.onclose = () => {
           const updatedServer = {

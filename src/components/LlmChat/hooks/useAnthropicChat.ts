@@ -57,7 +57,7 @@ export const useAnthropicChat = (
 
       const response = await anthropic.messages.create({
         model: activeConvo.settings.model,
-        max_tokens: 1024,
+        max_tokens: 8192,
         messages: updatedMessages.map(msg => ({
           role: msg.role,
           content: msg.content
