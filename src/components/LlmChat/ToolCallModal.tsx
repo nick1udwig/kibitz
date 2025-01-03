@@ -7,7 +7,7 @@ interface ToolCallModalProps {
   toolCall: {
     name: string;
     input: any;
-    result: string;
+    result: string | null;
   };
   onClose: () => void;
 }
@@ -16,30 +16,42 @@ export const ToolCallModal = ({ toolCall, onClose }: ToolCallModalProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className={`bg-background/95 backdrop-blur-sm ${isExpanded ? 'w-[80vw] max-w-[1200px]' : ''}`}>
-        <DialogHeader className="flex justify-between items-center">
-          <DialogTitle>Tool Call: {toolCall.name}</DialogTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </Button>
-        </DialogHeader>
-        <div className={`space-y-4 ${isExpanded ? 'h-[calc(80vh-120px)] overflow-auto' : ''}`}>
-          <div>
-            <h4 className="font-medium mb-2">Input Parameters:</h4>
-            <pre className="bg-muted/50 backdrop-blur-sm p-4 rounded-md overflow-auto text-sm">
-              {JSON.stringify(toolCall.input, null, 2)}
-            </pre>
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <div className="flex justify-between items-center">
+            <DialogTitle>Tool Call: {toolCall.name}</DialogTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsExpanded(!isExpanded)}
+            >
+              {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
           </div>
-          <div>
-            <h4 className="font-medium mb-2">Result:</h4>
-            <pre className="bg-muted/50 backdrop-blur-sm p-4 rounded-md overflow-auto text-sm">
-              {toolCall.result}
-            </pre>
+        </DialogHeader>
+        <div
+          className="space-y-4 transition-all duration-200"
+          style={isExpanded ? {
+            width: '80vw',
+            maxWidth: '1200px',
+            height: '70vh',
+            overflow: 'hidden'
+          } : undefined}
+        >
+          <div className={`h-full space-y-4 ${isExpanded ? 'overflow-y-auto pr-4' : ''}`}>
+            <div>
+              <h4 className="font-medium mb-2">Input:</h4>
+              <pre className="bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all">
+                {JSON.stringify(toolCall.input, null, 2)}
+              </pre>
+            </div>
+            <div>
+              <h4 className="font-medium mb-2">Result:</h4>
+              <pre className="bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all">
+                {toolCall.result || 'No result available'}
+              </pre>
+            </div>
           </div>
         </div>
       </DialogContent>

@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ToolCallModal } from './ToolCallModal';
 
 interface ChatViewProps {
   messages: Message[];
@@ -34,7 +35,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
     input: any;
-    result: string;
+    result: string | null;
   } | null>(null);
 
   const scrollToBottom = () => {
@@ -50,7 +51,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [messages]);
 
   const renderMessage = (message: Message, index: number) => {
-    // Handle array of message content (from Anthropic API)
     if (Array.isArray(message.content)) {
       return message.content.map((content, contentIndex) => {
         if (content.type === 'tool_use') {
@@ -69,14 +69,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
           return (
             <button
               key={`${index}-${contentIndex}`}
-              onClick={(e) => {
-                e.preventDefault();
-                setSelectedToolCall({
+              onClick={() => setSelectedToolCall({
                   name: content.name,
                   input: content.input,
                   result: toolResult
-                });
-              }}
+              })}
               className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
             >
               Calling tool: {content.name}
@@ -166,27 +163,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
       </div>
 
       {selectedToolCall && (
-        <Dialog open={true} onOpenChange={() => setSelectedToolCall(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Tool Call: {selectedToolCall.name}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <h4 className="font-medium mb-2">Input:</h4>
-                <pre className="bg-muted p-4 rounded-md overflow-x-auto">
-                  {JSON.stringify(selectedToolCall.input, null, 2)}
-                </pre>
-              </div>
-              <div>
-                <h4 className="font-medium mb-2">Result:</h4>
-                <pre className="bg-muted p-4 rounded-md overflow-x-auto">
-                  {selectedToolCall.result}
-                </pre>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ToolCallModal
+          toolCall={selectedToolCall}
+          onClose={() => setSelectedToolCall(null)}
+        />
       )}
     </div>
   );
