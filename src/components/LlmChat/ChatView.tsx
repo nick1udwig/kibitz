@@ -62,13 +62,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
       //}
 
       return message.content.map((content, contentIndex) => {
-        console.log(`${content.type}`);
         if (content.type === 'tool_use') {
           // Find corresponding tool result in next message
           const nextMessage = messages[index + 1];
           let toolResult = '';
           if (nextMessage && Array.isArray(nextMessage.content)) {
-            console.log(`${message}    ${nextMessage}`);
             const resultContent = nextMessage.content.find(c =>
               c.type === 'tool_result' && c.tool_use_id === content.id
             );
@@ -100,7 +98,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
         return null;
       });
     } else if (typeof message.content === 'string') {
-      console.log('!isArray');
       if (message.content.startsWith('Calling tool:')) {
         const toolName = message.content.replace('Calling tool:', '').trim();
         const nextMessage = messages[index + 1];

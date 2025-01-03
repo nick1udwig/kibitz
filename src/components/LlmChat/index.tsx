@@ -11,6 +11,7 @@ import { AdminView } from './AdminView';
 import { ConversationSidebar } from './ConversationSidebar';
 import { useConversations } from './hooks/useConversations';
 import { useAnthropicChat } from './hooks/useAnthropicChat';
+import { McpProvider } from './context/McpContext';
 
 export const ChatApp = () => {
   const [inputMessage, setInputMessage] = useState('');
@@ -54,71 +55,73 @@ export const ChatApp = () => {
   if (!activeConvo) return null;
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
-      <ConversationSidebar
-        conversations={conversations}
-        activeConvoId={activeConvoId}
-        onNewConversation={createNewConversation}
-        onSelectConversation={setActiveConvoId}
-        onDeleteConversation={deleteConversation}
-        onExportConversation={handleExportConversation}
-      />
+    <McpProvider>
+      <div className="min-h-screen bg-background text-foreground flex">
+        <ConversationSidebar
+          conversations={conversations}
+          activeConvoId={activeConvoId}
+          onNewConversation={createNewConversation}
+          onSelectConversation={setActiveConvoId}
+          onDeleteConversation={deleteConversation}
+          onExportConversation={handleExportConversation}
+        />
 
-      <div className="flex-1 p-4">
-        <ThemeToggle />
+        <div className="flex-1 p-4">
+          <ThemeToggle />
 
-        <div className="max-w-4xl mx-auto">
-          <Tabs defaultValue="chat" value={isSettingsView ? "settings" : "chat"}>
-            <div className="flex items-center justify-between mb-4">
-              <TabsList className="grid w-full grid-cols-2 max-w-[400px]">
-                <TabsTrigger
-                  value="chat"
-                  onClick={() => setIsSettingsView(false)}
-                >
-                  <MessageCircle className="w-4 h-4 mr-2" />
-                  Chat
-                </TabsTrigger>
-                <TabsTrigger
-                  value="settings"
-                  onClick={() => setIsSettingsView(true)}
-                >
-                  <Settings className="w-4 h-4 mr-2" />
-                  Settings
-                </TabsTrigger>
-              </TabsList>
-            </div>
+          <div className="max-w-4xl mx-auto">
+            <Tabs defaultValue="chat" value={isSettingsView ? "settings" : "chat"}>
+              <div className="flex items-center justify-between mb-4">
+                <TabsList className="grid w-full grid-cols-2 max-w-[400px]">
+                  <TabsTrigger
+                    value="chat"
+                    onClick={() => setIsSettingsView(false)}
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Chat
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="settings"
+                    onClick={() => setIsSettingsView(true)}
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Settings
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
-            {error && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+              {error && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
 
-            <TabsContent value="settings">
-              <AdminView
-                settings={activeConvo.settings}
-                onSettingsChange={updateConversationSettings}
-              />
-            </TabsContent>
-
-            <TabsContent value="chat">
-              <Card className="mt-0 border rounded-lg min-h-[600px] p-4 bg-background">
-                <ChatView
-                  messages={activeConvo.messages}
-                  inputMessage={inputMessage}
-                  onInputChange={setInputMessage}
-                  onSendMessage={() => {
-                    sendMessage(inputMessage);
-                    setInputMessage('');
-                  }}
-                  isLoading={isLoading}
+              <TabsContent value="settings">
+                <AdminView
+                  settings={activeConvo.settings}
+                  onSettingsChange={updateConversationSettings}
                 />
-              </Card>
-            </TabsContent>
-          </Tabs>
+              </TabsContent>
+
+              <TabsContent value="chat">
+                <Card className="mt-0 border rounded-lg min-h-[600px] p-4 bg-background">
+                  <ChatView
+                    messages={activeConvo.messages}
+                    inputMessage={inputMessage}
+                    onInputChange={setInputMessage}
+                    onSendMessage={() => {
+                      sendMessage(inputMessage);
+                      setInputMessage('');
+                    }}
+                    isLoading={isLoading}
+                  />
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
       </div>
-    </div>
+    </McpProvider>
   );
 };
 

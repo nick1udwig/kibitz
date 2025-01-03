@@ -1,5 +1,6 @@
 import { Inter } from "next/font/google";
 import { ThemeProvider } from "./providers";
+import { McpProvider } from "@/components/LlmChat/context/McpContext";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -18,7 +19,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <McpProvider>
+            {children}
+          </McpProvider>
         </ThemeProvider>
       </body>
     </html>

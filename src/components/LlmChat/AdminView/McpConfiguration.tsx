@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { McpServer } from '../types/mcp';
 import { Loader2 } from 'lucide-react';
 import { useMcpServers } from '@/components/LlmChat/hooks/useMcpServers';
+import { useMcp } from '../context/McpContext';
 
 interface McpConfigurationProps {
   servers: McpServer[];
@@ -13,9 +14,10 @@ interface McpConfigurationProps {
 }
 
 export const McpConfiguration = ({
-  servers = [],
+  servers,
   onServersChange
 }: McpConfigurationProps) => {
+  const { connectToServer, isServerConnected } = useMcp();
   const { servers: connectedServers, cleanupServer } = useMcpServers(servers);
   const [newServer, setNewServer] = useState({
     name: '',
@@ -37,6 +39,17 @@ export const McpConfiguration = ({
     cleanupServer(id);
     onServersChange(servers.filter(s => s.id !== id));
   };
+
+  useEffect(() => {
+    // Connect to any servers that aren't already connected
+    servers.forEach(server => {
+      if (!isServerConnected(server.id)) {
+        connectToServer(server).catch(error => {
+          console.error(`Failed to connect to server ${server.name}:`, error);
+        });
+      }
+    });
+  }, [servers]);
 
   return (
     <Card>

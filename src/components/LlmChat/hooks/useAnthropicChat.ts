@@ -4,14 +4,16 @@ import { useState } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Message, Conversation } from '../types';
 import { useMcpServers } from './useMcpServers';
+import { useMcp } from '../context/McpContext';
 
 export const useAnthropicChat = (
   activeConvo: Conversation | undefined,
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>
 ) => {
+  const { executeTool, getServerTools } = useMcp();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { servers, executeTool } = useMcpServers(activeConvo?.settings.mcpServers || []);
+  //const { servers, executeTool } = useMcpServers(activeConvo?.settings.mcpServers || []);
 
   const sendMessage = async (inputMessage: string) => {
     if (!inputMessage.trim() || !activeConvo?.settings.apiKey) {
@@ -19,8 +21,8 @@ export const useAnthropicChat = (
       return;
     }
 
-    setError(null);
     setIsLoading(true);
+    setError(null);
 
     const newMessage: Message = {
       role: 'user',
@@ -42,13 +44,22 @@ export const useAnthropicChat = (
         dangerouslyAllowBrowser: true,
       });
 
+      const serverTools = activeConvo.settings.mcpServers
+        .flatMap(server => getServerTools(server.id)
+          .map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema
+          }))
+        );
+
       const allTools = [
-        ...activeConvo.settings.tools,
-        ...servers.flatMap(s => s.tools || []).map(tool => ({
+        ...(activeConvo.settings.tools || []).map(tool => ({
           name: tool.name,
           description: tool.description,
-          input_schema: tool.inputSchema
-        }))
+          parameters: tool.schema
+        })),
+        ...serverTools
       ];
 
       // Initialize our message array with the conversation history
