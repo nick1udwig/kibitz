@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useRef, useState } from 'react';
+import React, { createContext, useContext, useRef, useState, useEffect } from 'react';
 import { McpServer, McpTool } from '../types/mcp';
 
 interface ServerConnection {
@@ -19,11 +19,20 @@ const McpContext = createContext<McpContextType | null>(null);
 
 export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const connections = useRef<Map<string, ServerConnection>>(new Map());
-  const [connectedServers, setConnectedServers] = useState<Map<string, {
+  const [connectedServers, setConnectedServers] = useState<{ [key: string]: {
     status: 'connected' | 'connecting' | 'disconnected' | 'error';
     tools: McpTool[];
     error?: string;
-  }>>(new Map());
+  }}>({});
+  //const [connectedServers, setConnectedServers] = useState<Map<string, {
+  //  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  //  tools: McpTool[];
+  //  error?: string;
+  //}>>(new Map());
+
+  useEffect(() => {
+    console.log(`Connected servers updated: ${JSON.stringify(connectedServers)}`);
+  }, [connectedServers]);
 
   const connectToServer = async (server: McpServer) => {
     // Skip if already connected
@@ -36,11 +45,13 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const ws = new WebSocket(server.uri);
 
       // Update status to connecting
-      setConnectedServers(prev => {
-        const next = new Map(prev);
-        next.set(server.id, { status: 'connecting', tools: [] });
-        return next;
-      });
+      setConnectedServers(prev => ({
+        ...prev,
+        [server.id]: {
+            status: 'connecting',
+            tools: []
+        }
+      }));
 
       let initialized = false;
 
@@ -80,71 +91,65 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else if (response.id === 2) {
           if (response.error) {
             console.error(`Failed to get tools for server ${server.id}:`, response.error);
-            setConnectedServers(prev => {
-              const next = new Map(prev);
-              next.set(server.id, {
+            setConnectedServers(prev => ({
+              ...prev,
+              [server.id]: {
                 status: 'error',
                 tools: [],
                 error: response.error.message
-              });
-              return next;
-            });
+              }
+            }));
             return;
           }
 
           // Store tools and update status to connected
-          setConnectedServers(prev => {
-            const next = new Map(prev);
-            next.set(server.id, {
+          setConnectedServers(prev => ({
+            ...prev,
+            [server.id]: {
               status: 'connected',
               tools: response.result.tools,
-              error: undefined
-            });
-            return next;
-          });
+            }
+          }));
+          console.log(`${server.name} connected!:\n  ${response.result.tools.length}\n  ${JSON.stringify(server)}`);
         }
       };
 
       ws.onclose = () => {
         console.log(`WebSocket closed for server ${server.id}`);
         connections.current.delete(server.id);
-        setConnectedServers(prev => {
-          const next = new Map(prev);
-          next.set(server.id, {
+        setConnectedServers(prev => ({
+          ...prev,
+          [server.id]: {
             status: 'disconnected',
-            tools: [],
-            error: undefined
-          });
-          return next;
-        });
+            tools: []
+          }
+        }));
       };
 
       ws.onerror = (error) => {
         console.error(`WebSocket error for server ${server.id}:`, error);
-        setConnectedServers(prev => {
-          const next = new Map(prev);
-          next.set(server.id, {
+        setConnectedServers(prev => ({
+          ...prev,
+          [server.id]: {
             status: 'error',
             tools: [],
             error: error.message || 'Connection error'
-          });
-          return next;
-        });
+          }
+        }));
       };
 
       connections.current.set(server.id, { ws });
 
     } catch (error) {
       console.error(`Failed to connect to server ${server.id}:`, error);
-      setConnectedServers(prev => {
-        const next = new Map(prev);
-        next.set(server.id, {
+      setConnectedServers(prev => ({
+        ...prev,
+        [server.id]: {
           status: 'error',
           tools: [],
           error: error instanceof Error ? error.message : 'Connection failed'
-        });
-        return next;
-      });
+        }
+      }));
     }
   };
 
@@ -157,7 +162,7 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const getServerTools = (serverId: string): McpTool[] => {
-    const serverInfo = connectedServers.get(serverId);
+    const serverInfo = connectedServers[serverId];
     console.log(`Getting tools for server ${serverId}:`, serverInfo);
     if (!serverInfo || serverInfo.status !== 'connected') {
       console.log(`Server ${serverId} not connected or missing tools`);
@@ -167,7 +172,7 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const isServerConnected = (serverId: string): boolean => {
-    return connectedServers.get(serverId)?.status === 'connected';
+    return connectedServers[serverId]?.status === 'connected';
   };
 
   const executeTool = async (serverId: string, toolName: string, args: any): Promise<string> => {

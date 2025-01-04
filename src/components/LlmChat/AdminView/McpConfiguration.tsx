@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { McpServer } from '../types/mcp';
 import { Loader2 } from 'lucide-react';
-import { useMcpServers } from '@/components/LlmChat/hooks/useMcpServers';
 import { useMcp } from '../context/McpContext';
 
 interface McpConfigurationProps {
@@ -17,8 +16,7 @@ export const McpConfiguration = ({
   servers,
   onServersChange
 }: McpConfigurationProps) => {
-  const { connectToServer, isServerConnected, disconnectServer } = useMcp(); // Get disconnectServer from useMcp
-  const { servers: connectedServers } = useMcpServers(servers);
+  const { connectToServer, isServerConnected, disconnectServer } = useMcp();
   const [newServer, setNewServer] = useState({
     name: '',
     uri: ''
@@ -44,12 +42,13 @@ export const McpConfiguration = ({
     // Connect to any servers that aren't already connected
     servers.forEach(server => {
       if (!isServerConnected(server.id)) {
+        console.log(`McpConfig kicking off connectToServer(${server.id})`);
         connectToServer(server).catch(error => {
           console.error(`Failed to connect to server ${server.name}:`, error);
         });
       }
     });
-  }, [servers, connectToServer, isServerConnected]);
+  }, [servers, connectToServer]);
 
   return (
     <Card>
