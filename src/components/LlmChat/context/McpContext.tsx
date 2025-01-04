@@ -50,6 +50,9 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setServers(prev => ({
         ...prev,
         [server.id]: {
+            id: server.id,
+            name: server.name,
+            uri: server.uri,
             status: 'connecting',
             tools: [],
             conversationId,
@@ -97,9 +100,13 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setServers(prev => ({
               ...prev,
               [server.id]: {
+                id: server.id,
+                name: server.name,
+                uri: server.uri,
                 status: 'error',
                 tools: [],
-                error: response.error.message
+                error: response.error.message,
+                conversationId,
               }
             }));
             return;
@@ -109,11 +116,15 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setServers(prev => ({
             ...prev,
             [server.id]: {
+              id: server.id,
+              name: server.name,
+              uri: server.uri,
               status: 'connected',
               tools: response.result.tools,
+              conversationId,
             }
           }));
-          console.log(`${server.name} connected!:\n  ${response.result.tools.length}\n  ${JSON.stringify(server)}`);
+          console.log(`${server.name} connected!:\n  ${response.result.tools.length}\n  ${JSON.stringify(servers)}`);
         }
       };
 
@@ -123,8 +134,12 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setServers(prev => ({
           ...prev,
           [server.id]: {
+            id: server.id,
+            name: server.name,
+            uri: server.uri,
             status: 'disconnected',
-            tools: []
+            tools: [],
+            conversationId,
           }
         }));
       };
@@ -134,9 +149,13 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setServers(prev => ({
           ...prev,
           [server.id]: {
+            id: server.id,
+            name: server.name,
+            uri: server.uri,
             status: 'error',
             tools: [],
-            error: error.message || 'Connection error'
+            error: error.message || 'Connection error',
+            conversationId,
           }
         }));
       };
@@ -148,6 +167,9 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setServers(prev => ({
         ...prev,
         [server.id]: {
+          id: server.id,
+          name: server.name,
+          uri: server.uri,
           status: 'error',
           tools: [],
           error: error instanceof Error ? error.message : 'Connection failed',
@@ -157,13 +179,16 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
   const getConversationServers = (conversationId: string): McpServer[] => {
+    console.log(`getConversationServers servers state: ${JSON.stringify(servers)}`);
     return Object.entries(servers)
       .filter(([_, state]) => state.conversationId === conversationId)
       .map(([id, state]) => ({
         id,
+        name: state.name,
+        uri: state.uri,
         status: state.status,
+        error: state.error,
         tools: state.tools,
-        error: state.error
       }));
   };
 

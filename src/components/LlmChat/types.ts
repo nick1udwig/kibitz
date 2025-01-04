@@ -25,8 +25,6 @@ export type ConversationSettings = {
   apiKey: string;
   model: string;
   systemPrompt: string;
-  tools: Tool[];
-  mcpServers?: McpServer[];
 };
 
 export type Conversation = {

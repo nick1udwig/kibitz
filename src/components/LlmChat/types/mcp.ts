@@ -14,10 +14,13 @@ export interface McpTool {
 }
 
 export interface ServerState {
+  id: string;
+  name: string;
+  uri: string; // WebSocket URI e.g. ws://localhost:3000
   status: 'connected' | 'connecting' | 'disconnected' | 'error';
-  tools: McpTool[];
   error?: string;
-  conversationId: string; // Added to track ownership
+  tools: McpTool[];
+  conversationId: string;
 }
 
 export interface ServerConnection {

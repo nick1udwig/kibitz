@@ -7,7 +7,7 @@ export const useAnthropicChat = (
   activeConvo: Conversation | undefined,
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>
 ) => {
-  const { executeTool, getServerTools, isServerConnected, connectToServer } = useMcp();
+  const { executeTool, getServerTools, isServerConnected, connectToServer, getConversationServers } = useMcp();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -22,8 +22,7 @@ export const useAnthropicChat = (
 
     // Debug log active conversation
     console.log('Active conversation:', activeConvo);
-    console.log('Active conversation settings:', activeConvo?.settings);
-    console.log('MCP Servers:', activeConvo?.settings.mcpServers);
+    //console.log('MCP Servers:', activeConvo?.settings.mcpServers);
 
     const newMessage: Message = {
       role: 'user',
@@ -46,22 +45,26 @@ export const useAnthropicChat = (
       });
 
       // Check if all servers are connected
-      const disconnectedServers = activeConvo?.settings.mcpServers.filter(
-        server => !isServerConnected(server.id)
-      );
+      //const disconnectedServers = activeConvo?.settings.mcpServers.filter(
+      //  server => !isServerConnected(server.id)
+      //);
+
+      const disconnectedServers = (getConversationServers(activeConvo.id) || [])
+        .filter(server => !isServerConnected(server.id));
 
       if (disconnectedServers?.length) {
         console.log('Reconnecting to disconnected servers:', disconnectedServers);
         await Promise.all(
-          disconnectedServers.map(server => connectToServer(server))
+          disconnectedServers.map(server => connectToServer(server, activeConvo.id))
         );
       }
 
+      console.log(`${activeConvo.id} ${getConversationServers(activeConvo.id)}`);
       // Get tools from connected servers
-      const serverTools = (activeConvo?.settings.mcpServers || [])
-        .filter(server => isServerConnected(server.id))
+      const allTools = (getConversationServers(activeConvo.id) || [])
         .flatMap(server => {
           const tools = getServerTools(server.id);
+
           console.log(`Tools for server ${server.id}:`, tools);
           return tools.map(tool => ({
             name: tool.name,
@@ -70,16 +73,6 @@ export const useAnthropicChat = (
             serverId: server.id
           }));
         });
-
-      // Combine local and server tools
-      const allTools = [
-        ...(activeConvo?.settings.tools || []).map(tool => ({
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.schema
-        })),
-        ...serverTools
-      ];
 
       console.log('All tools being sent to Anthropic:', allTools);
 
@@ -145,11 +138,6 @@ export const useAnthropicChat = (
         for (const content of response.content) {
           if (content.type === 'tool_use') {
             try {
-              //const serverWithTool = activeConvo.settings.mcpServers.find(s =>
-              //  getServerTools(s.id).some(t => t.name === content.name)
-              //);
-
-              //if (!serverWithTool) {
               const toolInfo = serverTools.find(t => t.name === content.name);
               if (!toolInfo) {
                 throw new Error(`No server found for tool ${content.name}`);

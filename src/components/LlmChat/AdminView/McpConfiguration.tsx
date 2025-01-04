@@ -7,39 +7,50 @@ import { McpServer } from '../types/mcp';
 import { Loader2 } from 'lucide-react';
 import { useMcp } from '../context/McpContext';
 
-interface McpConfigurationProps {
-  conversationId: string;
-  servers: McpServer[];
-  onServersChange: (servers: McpServer[]) => void;
-}
-
 export const McpConfiguration = ({ conversationId }: { conversationId: string }) => {
   const { servers, connectToServer, disconnectServer } = useMcp();
   const [newServer, setNewServer] = useState({ name: '', uri: '' });
+  const [formError, setFormError] = useState('');
 
-  const conversationServers = Object.entries(servers)
+  // Ensure we always have a defined value for server fields
+  const getServerName = (server: any) => {
+    return typeof server.name === 'string' ? server.name : '';
+  };
+
+  const getServerUri = (server: any) => {
+    return typeof server.uri === 'string' ? server.uri : '';
+  };
+
+  const conversationServers = Object.entries(servers || {})
     .filter(([_, state]) => state.conversationId === conversationId)
     .map(([id, state]) => ({
       id,
-      name: state.name,
-      uri: state.uri,
-      status: state.status,
-      tools: state.tools,
-      error: state.error
+      name: getServerName(state),
+      uri: getServerUri(state),
+      status: state?.status || 'disconnected',
+      tools: state?.tools || [],
+      error: state?.error
     }));
 
   const addServer = async () => {
-    const server = {
-      id: Math.random().toString(36).substring(7),
-      name: newServer.name,
-      uri: newServer.uri,
-      status: 'disconnected'
-    };
+    if (!newServer.name || !newServer.uri) {
+      setFormError('Both name and URI are required');
+      return;
+    }
 
     try {
+      const server = {
+        id: Math.random().toString(36).substring(7),
+        name: newServer.name.trim(),
+        uri: newServer.uri.trim(),
+        status: 'disconnected'
+      };
+
       await connectToServer(server, conversationId);
       setNewServer({ name: '', uri: '' });
+      setFormError('');
     } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Failed to add server');
       console.error('Failed to add server:', error);
     }
   };
@@ -54,10 +65,10 @@ export const McpConfiguration = ({ conversationId }: { conversationId: string })
         <h3 className="text-lg font-medium mb-4">WS-MCP Servers</h3>
 
         <div className="space-y-4">
-          {Object.values(servers).map(server => (
-            <div key={server.id} className="p-4 border rounded-lg">
+          {Object.entries(servers || {}).map(([serverId, server]) => (
+            <div key={serverId} className="p-4 border rounded-lg">
               <div className="flex justify-between items-center mb-2">
-                <span className="font-medium">{server.name}</span>
+                <span className="font-medium">{getServerName(server)}</span>
                 <div className="flex items-center gap-2">
                   {server.status === 'connecting' ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -67,13 +78,13 @@ export const McpConfiguration = ({ conversationId }: { conversationId: string })
                       server.status === 'error' ? 'bg-red-500/20 text-red-500' :
                       'bg-yellow-500/20 text-yellow-500'
                     }`}>
-                      {server.status}
+                      {server.status || 'disconnected'}
                     </span>
                   )}
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => removeServer(server.id)}
+                    onClick={() => removeServer(serverId)}
                   >
                     Remove
                   </Button>
@@ -87,8 +98,8 @@ export const McpConfiguration = ({ conversationId }: { conversationId: string })
               )}
 
               <div className="mt-2 text-sm text-muted-foreground">
-                <div>URI: {server.uri}</div>
-                {server.tools && (
+                <div>URI: {getServerUri(server)}</div>
+                {server.tools && server.tools.length > 0 && (
                   <div className="truncate">
                     Tools: {server.tools.map(t => t.name).join(', ')}
                   </div>
@@ -98,15 +109,20 @@ export const McpConfiguration = ({ conversationId }: { conversationId: string })
           ))}
 
           <div className="space-y-2">
+            {formError && (
+              <Alert variant="destructive">
+                <AlertDescription>{formError}</AlertDescription>
+              </Alert>
+            )}
             <Input
               placeholder="Server name"
-              value={newServer.name}
-              onChange={e => setNewServer({...newServer, name: e.target.value})}
+              value={newServer.name || ''}
+              onChange={e => setNewServer(prev => ({...prev, name: e.target.value}))}
             />
             <Input
               placeholder="WebSocket URI (e.g. ws://localhost:3000)"
-              value={newServer.uri}
-              onChange={e => setNewServer({...newServer, uri: e.target.value})}
+              value={newServer.uri || ''}
+              onChange={e => setNewServer(prev => ({...prev, uri: e.target.value}))}
             />
             <Button
               onClick={addServer}

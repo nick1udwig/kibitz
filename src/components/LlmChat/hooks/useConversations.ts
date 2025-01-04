@@ -19,16 +19,18 @@ export const useConversations = () => {
     if (savedConvos) {
       const parsed = JSON.parse(savedConvos) as StoredConversation[];
 
-      parsed.forEach(convo => {
-        const servers = convo.settings?.mcpServers;
-        if (servers && Array.isArray(servers)) {
-          servers.forEach(server => {
-            if (server && typeof server === 'object') {
-              connectToServer(server, convo.id).catch(console.error);
-            }
-          });
-        }
-      });
+      // TODO: reenable loading previously loaded WS-MCP;
+      //       it seems to do some controlled/uncontrolled component stuff
+      //parsed.forEach(convo => {
+      //  const servers = convo.settings?.mcpServers;
+      //  if (servers && Array.isArray(servers)) {
+      //    servers.forEach(server => {
+      //      if (server && typeof server === 'object') {
+      //        connectToServer(server, convo.id).catch(console.error);
+      //      }
+      //    });
+      //  }
+      //});
 
       // Store conversations without server info
       const cleanedConvos = parsed.map(convo => ({
