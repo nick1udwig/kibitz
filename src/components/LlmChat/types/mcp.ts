@@ -13,14 +13,13 @@ export interface McpTool {
   inputSchema: object;
 }
 
-// Add types for the handshake
-export interface McpHandshakeResponse {
-  name: string;
-  version: string;
-  capabilities: {
-    tools?: {
-      list: McpTool[];
-    };
-    // Could add other capabilities here
-  };
+export interface ServerState {
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  tools: McpTool[];
+  error?: string;
+  conversationId: string; // Added to track ownership
+}
+
+export interface ServerConnection {
+  ws: WebSocket;
 }

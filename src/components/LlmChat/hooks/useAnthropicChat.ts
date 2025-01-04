@@ -66,7 +66,8 @@ export const useAnthropicChat = (
           return tools.map(tool => ({
             name: tool.name,
             description: tool.description || '',
-            parameters: tool.inputSchema
+            parameters: tool.inputSchema,
+            serverId: server.id
           }));
         });
 
@@ -144,11 +145,13 @@ export const useAnthropicChat = (
         for (const content of response.content) {
           if (content.type === 'tool_use') {
             try {
-              const serverWithTool = activeConvo.settings.mcpServers.find(s =>
-                getServerTools(s.id).some(t => t.name === content.name)
-              );
+              //const serverWithTool = activeConvo.settings.mcpServers.find(s =>
+              //  getServerTools(s.id).some(t => t.name === content.name)
+              //);
 
-              if (!serverWithTool) {
+              //if (!serverWithTool) {
+              const toolInfo = serverTools.find(t => t.name === content.name);
+              if (!toolInfo) {
                 throw new Error(`No server found for tool ${content.name}`);
               }
 
@@ -173,7 +176,8 @@ export const useAnthropicChat = (
 
               // Execute the tool
               const result = await executeTool(
-                serverWithTool.id,
+                toolInfo.serverId,
+                //serverWithTool.id,
                 content.name,
                 content.input
               );

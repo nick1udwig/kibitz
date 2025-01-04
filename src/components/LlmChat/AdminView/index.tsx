@@ -14,6 +14,7 @@ interface AdminViewProps {
 
 export const AdminView = ({
   settings,
+  conversationId,
   onSettingsChange
 }: AdminViewProps) => {
   return (
@@ -70,10 +71,13 @@ export const AdminView = ({
       </Card>
 
       <McpConfiguration
-        servers={settings.mcpServers || []}
-        onServersChange={(mcpServers) => onSettingsChange({ ...settings, mcpServers })}
+        conversationId={conversationId}
+        servers={settings.mcpServers}
+        onServersChange={(mcpServers) => onSettingsChange({
+          ...settings,
+          mcpServers
+        })}
       />
-
     </div>
   );
 };

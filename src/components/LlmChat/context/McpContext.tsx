@@ -1,40 +1,42 @@
 "use client"
 
 import React, { createContext, useContext, useRef, useState, useEffect } from 'react';
-import { McpServer, McpTool } from '../types/mcp';
+import { McpServer, McpTool, ServerState, ServerConnection } from '../types/mcp';
 
 interface ServerConnection {
   ws: WebSocket;
 }
 
 interface McpContextType {
-  connectToServer: (server: McpServer) => Promise<void>;
+  connectToServer: (server: McpServer, conversationId: string) => Promise<void>;
   disconnectServer: (serverId: string) => void;
   getServerTools: (serverId: string) => McpTool[];
   executeTool: (serverId: string, toolName: string, args: any) => Promise<string>;
   isServerConnected: (serverId: string) => boolean;
+  getConversationServers: (conversationId: string) => McpServer[];
+  servers: { [key: string]: ServerState };
 }
 
 const McpContext = createContext<McpContextType | null>(null);
 
 export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const connections = useRef<Map<string, ServerConnection>>(new Map());
-  const [connectedServers, setConnectedServers] = useState<{ [key: string]: {
-    status: 'connected' | 'connecting' | 'disconnected' | 'error';
-    tools: McpTool[];
-    error?: string;
-  }}>({});
-  //const [connectedServers, setConnectedServers] = useState<Map<string, {
-  //  status: 'connected' | 'connecting' | 'disconnected' | 'error';
-  //  tools: McpTool[];
-  //  error?: string;
-  //}>>(new Map());
+  const [servers, setServers] = useState<{ [key: string]: ServerState}>({});
 
   useEffect(() => {
-    console.log(`Connected servers updated: ${JSON.stringify(connectedServers)}`);
-  }, [connectedServers]);
+    console.log(`Connected servers updated: ${JSON.stringify(servers)}`);
+  }, [servers]);
 
-  const connectToServer = async (server: McpServer) => {
+  const connectToServer = async (server: McpServer, conversationId: string) => {
+    const existingServer = Object.entries(servers).find(([_, state]) =>
+      state.status !== 'disconnected' &&
+      state.conversationId !== conversationId &&
+      state.conversationId !== undefined
+    );
+    if (existingServer) {
+      throw new Error('Server already connected to another conversation');
+    }
+
     // Skip if already connected
     if (connections.current.has(server.id)) {
       console.log(`Server ${server.id} already connected, skipping`);
@@ -45,11 +47,12 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const ws = new WebSocket(server.uri);
 
       // Update status to connecting
-      setConnectedServers(prev => ({
+      setServers(prev => ({
         ...prev,
         [server.id]: {
             status: 'connecting',
-            tools: []
+            tools: [],
+            conversationId,
         }
       }));
 
@@ -91,7 +94,7 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } else if (response.id === 2) {
           if (response.error) {
             console.error(`Failed to get tools for server ${server.id}:`, response.error);
-            setConnectedServers(prev => ({
+            setServers(prev => ({
               ...prev,
               [server.id]: {
                 status: 'error',
@@ -103,7 +106,7 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
 
           // Store tools and update status to connected
-          setConnectedServers(prev => ({
+          setServers(prev => ({
             ...prev,
             [server.id]: {
               status: 'connected',
@@ -117,7 +120,7 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ws.onclose = () => {
         console.log(`WebSocket closed for server ${server.id}`);
         connections.current.delete(server.id);
-        setConnectedServers(prev => ({
+        setServers(prev => ({
           ...prev,
           [server.id]: {
             status: 'disconnected',
@@ -128,7 +131,7 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       ws.onerror = (error) => {
         console.error(`WebSocket error for server ${server.id}:`, error);
-        setConnectedServers(prev => ({
+        setServers(prev => ({
           ...prev,
           [server.id]: {
             status: 'error',
@@ -142,15 +145,26 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     } catch (error) {
       console.error(`Failed to connect to server ${server.id}:`, error);
-      setConnectedServers(prev => ({
+      setServers(prev => ({
         ...prev,
         [server.id]: {
           status: 'error',
           tools: [],
-          error: error instanceof Error ? error.message : 'Connection failed'
+          error: error instanceof Error ? error.message : 'Connection failed',
+          conversationId
         }
       }));
     }
+  };
+  const getConversationServers = (conversationId: string): McpServer[] => {
+    return Object.entries(servers)
+      .filter(([_, state]) => state.conversationId === conversationId)
+      .map(([id, state]) => ({
+        id,
+        status: state.status,
+        tools: state.tools,
+        error: state.error
+      }));
   };
 
   const disconnectServer = (serverId: string) => {
@@ -158,17 +172,18 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (connection) {
       connection.ws.close();
       connections.current.delete(serverId);
+      setServers(prev => ({
+        ...prev,
+        [serverId]: {
+          ...prev[serverId],
+          status: 'disconnected'
+        }
+      }));
     }
   };
 
   const getServerTools = (serverId: string): McpTool[] => {
-    const serverInfo = connectedServers[serverId];
-    console.log(`Getting tools for server ${serverId}:`, serverInfo);
-    if (!serverInfo || serverInfo.status !== 'connected') {
-      console.log(`Server ${serverId} not connected or missing tools`);
-      return [];
-    }
-    return serverInfo.tools;
+    return servers[serverId]?.tools || [];
   };
 
   const isServerConnected = (serverId: string): boolean => {
@@ -213,6 +228,8 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     getServerTools,
     executeTool,
     isServerConnected,
+    getConversationServers,
+    servers,
   };
 
   return <McpContext.Provider value={value}>{children}</McpContext.Provider>;

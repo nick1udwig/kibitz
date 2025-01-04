@@ -8,47 +8,45 @@ import { Loader2 } from 'lucide-react';
 import { useMcp } from '../context/McpContext';
 
 interface McpConfigurationProps {
+  conversationId: string;
   servers: McpServer[];
   onServersChange: (servers: McpServer[]) => void;
 }
 
-export const McpConfiguration = ({
-  servers,
-  onServersChange
-}: McpConfigurationProps) => {
-  const { connectToServer, isServerConnected, disconnectServer } = useMcp();
-  const [newServer, setNewServer] = useState({
-    name: '',
-    uri: ''
-  });
+export const McpConfiguration = ({ conversationId }: { conversationId: string }) => {
+  const { servers, connectToServer, disconnectServer } = useMcp();
+  const [newServer, setNewServer] = useState({ name: '', uri: '' });
 
-  const addServer = () => {
-    onServersChange([...servers, {
+  const conversationServers = Object.entries(servers)
+    .filter(([_, state]) => state.conversationId === conversationId)
+    .map(([id, state]) => ({
+      id,
+      name: state.name,
+      uri: state.uri,
+      status: state.status,
+      tools: state.tools,
+      error: state.error
+    }));
+
+  const addServer = async () => {
+    const server = {
       id: Math.random().toString(36).substring(7),
       name: newServer.name,
       uri: newServer.uri,
       status: 'disconnected'
-    }]);
+    };
 
-    setNewServer({ name: '', uri: '' });
+    try {
+      await connectToServer(server, conversationId);
+      setNewServer({ name: '', uri: '' });
+    } catch (error) {
+      console.error('Failed to add server:', error);
+    }
   };
 
   const removeServer = (id: string) => {
-    disconnectServer(id); // Use disconnectServer instead of cleanupServer
-    onServersChange(servers.filter(s => s.id !== id));
+    disconnectServer(id);
   };
-
-  useEffect(() => {
-    // Connect to any servers that aren't already connected
-    servers.forEach(server => {
-      if (!isServerConnected(server.id)) {
-        console.log(`McpConfig kicking off connectToServer(${server.id})`);
-        connectToServer(server).catch(error => {
-          console.error(`Failed to connect to server ${server.name}:`, error);
-        });
-      }
-    });
-  }, [servers, connectToServer]);
 
   return (
     <Card>
@@ -56,7 +54,7 @@ export const McpConfiguration = ({
         <h3 className="text-lg font-medium mb-4">WS-MCP Servers</h3>
 
         <div className="space-y-4">
-          {servers.map(server => (
+          {Object.values(servers).map(server => (
             <div key={server.id} className="p-4 border rounded-lg">
               <div className="flex justify-between items-center mb-2">
                 <span className="font-medium">{server.name}</span>

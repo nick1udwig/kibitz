@@ -1,3 +1,5 @@
+import { McpServer } from './types/mcp';
+
 export type MessageContent = {
   type: 'text';
   text: string;
@@ -24,7 +26,7 @@ export type ConversationSettings = {
   model: string;
   systemPrompt: string;
   tools: Tool[];
-  mcpServers: McpServer[];
+  mcpServers?: McpServer[];
 };
 
 export type Conversation = {
@@ -39,3 +41,23 @@ export type Tool = {
   description: string;
   schema: object;
 };
+
+interface StoredMessage {
+  role: 'user' | 'assistant';
+  content: MessageContent[] | string;
+  timestamp: string;
+  toolInput?: any;
+}
+
+interface StoredConversation {
+  id: string;
+  name: string;
+  messages: StoredMessage[];
+  settings: {
+    apiKey: string;
+    model: string;
+    systemPrompt: string;
+    tools: Tool[];
+    mcpServers?: McpServer[];
+  };
+}

@@ -2,26 +2,48 @@
 
 import { useState, useEffect } from 'react';
 import { Conversation, ConversationSettings } from '../types';
+import { useMcp } from '../context/McpContext';
+import { McpServer } from '../types/mcp';
+import { StoredConversation } from '../types';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
 export const useConversations = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvoId, setActiveConvoId] = useState<string>('');
+  const { servers, connectToServer, getConversationServers } = useMcp();
 
   // Initialize with a default conversation if none exists
   useEffect(() => {
     const savedConvos = localStorage.getItem('chat_app_conversations');
     if (savedConvos) {
-      const parsed = JSON.parse(savedConvos).map((convo: any) => ({
+      const parsed = JSON.parse(savedConvos) as StoredConversation[];
+
+      parsed.forEach(convo => {
+        const servers = convo.settings?.mcpServers;
+        if (servers && Array.isArray(servers)) {
+          servers.forEach(server => {
+            if (server && typeof server === 'object') {
+              connectToServer(server, convo.id).catch(console.error);
+            }
+          });
+        }
+      });
+
+      // Store conversations without server info
+      const cleanedConvos = parsed.map(convo => ({
         ...convo,
         messages: convo.messages.map((msg: any) => ({
           ...msg,
           timestamp: new Date(msg.timestamp)
-        }))
+        })),
+        settings: {
+          ...convo.settings,
+        }
       }));
-      setConversations(parsed);
-      setActiveConvoId(parsed[0]?.id || '');
+
+      setConversations(cleanedConvos);
+      setActiveConvoId(cleanedConvos[0]?.id || '');
     } else {
       const defaultConvo: Conversation = {
         id: generateId(),
@@ -32,7 +54,6 @@ export const useConversations = () => {
           model: 'claude-3-5-sonnet-20241022',
           systemPrompt: '',
           tools: [],
-          mcpServers: []
         }
       };
       setConversations([defaultConvo]);
@@ -82,7 +103,6 @@ export const useConversations = () => {
             model: 'claude-3-5-sonnet-20241022',
             systemPrompt: '',
             tools: [],
-            mcpServers: []
           }
         };
         setConversations([defaultConvo]);
