@@ -7,31 +7,32 @@ import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import { Message } from './types';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { ToolCallModal } from './ToolCallModal';
+import { useProjects } from './context/ProjectContext';
+import { useMcp } from './context/McpContext';
+import { useAnthropicChat } from './hooks/useAnthropicChat';
 
-interface ChatViewProps {
-  messages: Message[];
-  inputMessage: string;
-  onInputChange: (value: string) => void;
-  onSendMessage: () => void;
-  isLoading: boolean;
-}
+export const ChatView: React.FC = () => {
+  const {
+    projects,
+    activeProjectId,
+    activeConversationId,
+    updateProjectSettings
+  } = useProjects();
 
-export const ChatView: React.FC<ChatViewProps> = ({
-  messages,
-  inputMessage,
-  onInputChange,
-  onSendMessage,
-  isLoading
-}) => {
+  // Find active project and conversation
+  const activeProject = projects.find(p => p.id === activeProjectId);
+  const activeConversation = activeProject?.conversations.find(
+    c => c.id === activeConversationId
+  );
+
+  const [inputMessage, setInputMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const { servers, executeTool } = useMcp();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const prevMessagesLength = useRef(messages.length);
+  const prevMessagesLength = useRef(activeConversation?.messages.length || 0);
+
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
     input: any;
@@ -43,32 +44,88 @@ export const ChatView: React.FC<ChatViewProps> = ({
   };
 
   useEffect(() => {
-    // Only scroll to bottom if new messages are added
-    if (messages.length > prevMessagesLength.current) {
+    const currentLength = activeConversation?.messages.length || 0;
+    if (currentLength > prevMessagesLength.current) {
       scrollToBottom();
     }
-    prevMessagesLength.current = messages.length;
-  }, [messages]);
+    prevMessagesLength.current = currentLength;
+  }, [activeConversation?.messages]);
+
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim() || !activeProject || !activeConversationId) return;
+
+    setIsLoading(true);
+    try {
+      // Add user message
+      const userMessage: Message = {
+        role: 'user',
+        content: inputMessage,
+        timestamp: new Date()
+      };
+
+      const updatedMessages = [...(activeConversation?.messages || []), userMessage];
+
+      // Update conversation with new message
+      const updatedConversations = activeProject.conversations.map(conv =>
+        conv.id === activeConversationId
+          ? { ...conv, messages: updatedMessages, lastUpdated: new Date() }
+          : conv
+      );
+
+      updateProjectSettings(activeProject.id, { conversations: updatedConversations });
+
+      // Clear input and scroll
+      setInputMessage('');
+      scrollToBottom();
+
+      // Get assistant response
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messages: updatedMessages,
+          apiKey: activeProject.settings.apiKey,
+          model: activeProject.settings.model,
+          systemPrompt: activeProject.settings.systemPrompt,
+          tools: activeProject.settings.mcpServers.flatMap(s => s.tools || [])
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response from API');
+      }
+
+      const assistantMessage = await response.json();
+
+      // Update conversation with assistant's response
+      const finalConversations = activeProject.conversations.map(conv =>
+        conv.id === activeConversationId
+          ? {
+              ...conv,
+              messages: [...updatedMessages, assistantMessage],
+              lastUpdated: new Date()
+            }
+          : conv
+      );
+
+      updateProjectSettings(activeProject.id, { conversations: finalConversations });
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const renderMessage = (message: Message, index: number) => {
     if (Array.isArray(message.content)) {
-      // doesn't work because when we filter in 139 we then dont have the tool_results in messages on line 68
-      //// don't show chat entries for `tool_result`s
-      //const resultContent = message.content.find(c =>
-      //  c.type === 'tool_result'
-      //);
-      //if (resultContent) {
-      //    return null;
-      //}
-
       return message.content.map((content, contentIndex) => {
-        console.log(`${content.type}`);
         if (content.type === 'tool_use') {
           // Find corresponding tool result in next message
-          const nextMessage = messages[index + 1];
+          const nextMessage = activeConversation?.messages[index + 1];
           let toolResult = '';
           if (nextMessage && Array.isArray(nextMessage.content)) {
-            console.log(`${message}    ${nextMessage}`);
             const resultContent = nextMessage.content.find(c =>
               c.type === 'tool_result' && c.tool_use_id === content.id
             );
@@ -81,9 +138,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <button
               key={`${index}-${contentIndex}`}
               onClick={() => setSelectedToolCall({
-                  name: content.name,
-                  input: content.input,
-                  result: toolResult
+                name: content.name,
+                input: content.input,
+                result: toolResult
               })}
               className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
             >
@@ -100,30 +157,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
         return null;
       });
     } else if (typeof message.content === 'string') {
-      console.log('!isArray');
-      if (message.content.startsWith('Calling tool:')) {
-        const toolName = message.content.replace('Calling tool:', '').trim();
-        const nextMessage = messages[index + 1];
-        const toolResult = nextMessage && typeof nextMessage.content === 'string'
-          ? nextMessage.content
-          : '';
-
-        return (
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              setSelectedToolCall({
-                name: toolName,
-                input: message.toolInput || {},
-                result: toolResult
-              });
-            }}
-            className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
-          >
-            {message.content}
-          </button>
-        );
-      }
       return (
         <ReactMarkdown className="prose dark:prose-invert max-w-none">
           {message.content}
@@ -133,10 +166,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
     return null;
   };
 
+  if (!activeConversation) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-muted-foreground">Select or create a conversation to begin chatting.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4 min-h-0">
-        {messages.filter((message, index) => renderMessage(message, index) !== null).map((message, index) => (
+      <div className="flex-1 overflow-y-auto space-y-4 mb-4 min-h-0 p-4">
+        {activeConversation.messages.map((message, index) => (
           <div
             key={index}
             className={`flex ${
@@ -153,19 +194,24 @@ export const ChatView: React.FC<ChatViewProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="flex gap-2 mt-auto">
+      <div className="flex gap-2 p-4 border-t">
         <Textarea
           value={inputMessage}
-          onChange={(e) => onInputChange(e.target.value)}
+          onChange={(e) => setInputMessage(e.target.value)}
           placeholder="Type your message... (Markdown supported)"
-          onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && !isLoading && onSendMessage()}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
+              e.preventDefault();
+              handleSendMessage();
+            }
+          }}
           className="flex-1 resize-none"
           rows={3}
           disabled={isLoading}
         />
         <Button
-          onClick={onSendMessage}
-          disabled={isLoading}
+          onClick={handleSendMessage}
+          disabled={isLoading || !activeProjectId || !activeConversationId}
           className="self-end"
         >
           {isLoading ? <Spinner /> : <Send className="w-4 h-4" />}

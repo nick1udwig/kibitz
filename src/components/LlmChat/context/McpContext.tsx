@@ -1,0 +1,183 @@
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import { McpServer, McpTool } from '../types/mcp';
+import { McpState, McpServerConnection } from './types';
+
+const McpContext = createContext<McpState | null>(null);
+
+export const useMcp = () => {
+  const context = useContext(McpContext);
+  if (!context) {
+    throw new Error('useMcp must be used within a McpProvider');
+  }
+  return context;
+};
+
+export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [servers, setServers] = useState<McpServerConnection[]>([]);
+  const connectionsRef = useRef<Map<string, WebSocket>>(new Map());
+
+  const cleanupServer = useCallback((serverId: string) => {
+    const ws = connectionsRef.current.get(serverId);
+    if (ws) {
+      ws.close();
+      connectionsRef.current.delete(serverId);
+      setServers(current =>
+        current.map(s => s.id === serverId
+          ? { ...s, status: 'disconnected' }
+          : s
+        )
+      );
+    }
+  }, []);
+
+  const connectToServer = useCallback(async (server: McpServer): Promise<McpServerConnection> => {
+    try {
+      const ws = new WebSocket(server.uri);
+      connectionsRef.current.set(server.id, ws);
+
+      return new Promise((resolve, reject) => {
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'initialize',
+            params: {
+              protocolVersion: '0.1.0',
+              clientInfo: { name: 'llm-chat', version: '1.0.0' },
+              capabilities: { tools: {} }
+            },
+            id: 1
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const response = JSON.parse(event.data);
+
+            if (response.id === 1) {
+              ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'notifications/initialized',
+              }));
+
+              ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'tools/list',
+                id: 2
+              }));
+            } else if (response.id === 2) {
+              const tools = response.result.tools;
+              const connectedServer = {
+                ...server,
+                status: 'connected' as const,
+                tools,
+                connection: ws
+              };
+              resolve(connectedServer);
+            }
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          reject(error);
+        };
+
+        ws.onclose = () => {
+          cleanupServer(server.id);
+        };
+      });
+    } catch (error) {
+      console.error(`Failed to connect to server ${server.name}:`, error);
+      return {
+        ...server,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Failed to connect'
+      };
+    }
+  }, [cleanupServer]);
+
+  const addServer = useCallback(async (server: McpServer) => {
+    setServers(current => [...current, { ...server, status: 'connecting' }]);
+
+    try {
+      const connectedServer = await connectToServer(server);
+      setServers(current =>
+        current.map(s => s.id === server.id ? connectedServer : s)
+      );
+    } catch (error) {
+      setServers(current =>
+        current.map(s => s.id === server.id
+          ? { ...s, status: 'error', error: 'Connection failed' }
+          : s
+        )
+      );
+    }
+  }, [connectToServer]);
+
+  const removeServer = useCallback((serverId: string) => {
+    cleanupServer(serverId);
+    setServers(current => current.filter(s => s.id !== serverId));
+  }, [cleanupServer]);
+
+  const executeTool = useCallback(async (
+    serverId: string,
+    toolName: string,
+    args: any
+  ): Promise<string> => {
+    const ws = connectionsRef.current.get(serverId);
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      throw new Error('Server not connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      const requestId = Math.random().toString(36).substring(7);
+
+      const messageHandler = (event: MessageEvent) => {
+        try {
+          const response = JSON.parse(event.data);
+          if (response.id === requestId) {
+            ws.removeEventListener('message', messageHandler);
+            if (response.error) {
+              reject(new Error(response.error.message));
+            } else {
+              resolve(response.result.content[0].text);
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing tool response:', error);
+        }
+      };
+
+      ws.addEventListener('message', messageHandler);
+
+      ws.send(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: { name: toolName, arguments: args },
+        id: requestId
+      }));
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      connectionsRef.current.forEach(ws => ws.close());
+      connectionsRef.current.clear();
+    };
+  }, []);
+
+  const value = {
+    servers,
+    addServer,
+    removeServer,
+    executeTool
+  };
+
+  return (
+    <McpContext.Provider value={value}>
+      {children}
+    </McpContext.Provider>
+  );
+};
