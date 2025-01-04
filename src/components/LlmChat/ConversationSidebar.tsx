@@ -1,3 +1,5 @@
+"use client";
+
 import { PlusCircle, Download, Trash2, ChevronDown, ChevronRight, FolderPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';

@@ -11,13 +11,12 @@ import { ConversationSidebar } from './ConversationSidebar';
 
 export const ChatApp = () => {
   const handleExportConversation = (projectId: string, conversationId?: string) => {
-    // TODO: Implement export functionality
     console.log('Export', { projectId, conversationId });
   };
 
   return (
-    <ProjectProvider>
-      <McpProvider>
+    <McpProvider>
+      <ProjectProvider>
         <div className="min-h-screen bg-background text-foreground flex">
           <ConversationSidebar onExportConversation={handleExportConversation} />
 
@@ -33,7 +32,7 @@ export const ChatApp = () => {
                   <TabsTrigger value="settings">Settings</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="chat">
+                <TabsContent value="chat" className="h-[calc(100vh-12rem)]">
                   <ChatView />
                 </TabsContent>
 
@@ -44,8 +43,8 @@ export const ChatApp = () => {
             </div>
           </div>
         </div>
-      </McpProvider>
-    </ProjectProvider>
+      </ProjectProvider>
+    </McpProvider>
   );
 };
 

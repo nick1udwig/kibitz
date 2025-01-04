@@ -1,6 +1,9 @@
+"use client";
+
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Project, ProjectSettings, ProjectState } from './types';
 import { Message } from '../types';
+import { useMcp } from './McpContext';
 
 const ProjectContext = createContext<ProjectState | null>(null);
 
@@ -22,6 +25,7 @@ export const useProjects = () => {
 };
 
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { servers } = useMcp();
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -98,13 +102,18 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       current.map(p => p.id === id
         ? {
             ...p,
-            settings: { ...p.settings, ...settings },
+            settings: {
+              ...p.settings,
+              ...settings,
+              // Ensure MCP servers are synced with context
+              mcpServers: settings.mcpServers || servers
+            },
             updatedAt: new Date()
           }
         : p
       )
     );
-  }, []);
+  }, [servers]);
 
   const createConversation = useCallback((projectId: string, name?: string) => {
     const conversationId = generateId();

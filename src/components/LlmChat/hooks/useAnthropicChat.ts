@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Message, Conversation } from '../types';
-import { useMcpServers } from './useMcpServers';
+import { useMcp } from '../context/McpContext';
 
 export const useAnthropicChat = (
   activeConvo: Conversation | undefined,
@@ -11,7 +11,7 @@ export const useAnthropicChat = (
 ) => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { servers, executeTool } = useMcpServers(activeConvo?.settings.mcpServers || []);
+  const { servers, executeTool } = useMcp();
 
   const sendMessage = async (inputMessage: string) => {
     if (!inputMessage.trim() || !activeConvo?.settings.apiKey) {
@@ -94,10 +94,21 @@ export const useAnthropicChat = (
       const processedMessages = await prepareMessages(updatedMessages);
 
       // Initialize our message array with the processed conversation history
-      let messages = processedMessages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
+      let messages = processedMessages.map(msg => {
+        // Handle special message types
+        if (Array.isArray(msg.content)) {
+          // This is a tool message
+          return {
+            role: msg.role,
+            content: msg.content
+          };
+        }
+        // Regular text message
+        return {
+          role: msg.role,
+          content: msg.content
+        };
+      });
 
       // Keep getting responses and handling tools until we get a final response
       while (true) {

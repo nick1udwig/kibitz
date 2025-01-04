@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from 'react';
+import { Anthropic } from '@anthropic-ai/sdk';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,7 +11,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
 import { useMcp } from './context/McpContext';
-import { useAnthropicChat } from './hooks/useAnthropicChat';
 
 export const ChatView: React.FC = () => {
   const {
@@ -78,41 +78,176 @@ export const ChatView: React.FC = () => {
       setInputMessage('');
       scrollToBottom();
 
-      // Get assistant response
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          messages: updatedMessages,
-          apiKey: activeProject.settings.apiKey,
-          model: activeProject.settings.model,
-          systemPrompt: activeProject.settings.systemPrompt,
-          tools: activeProject.settings.mcpServers.flatMap(s => s.tools || [])
-        })
+      // Initialize Anthropic client
+      const anthropic = new Anthropic({
+        apiKey: activeProject.settings.apiKey,
+        dangerouslyAllowBrowser: true
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to get response from API');
-      }
+      // Prepare tools if available
+      const availableTools = servers.flatMap(s => s.tools || []).map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.inputSchema
+      }));
 
-      const assistantMessage = await response.json();
+      // Initialize our message array with the conversation history
+      let messages = updatedMessages.map(msg => {
+        if (Array.isArray(msg.content)) {
+          return {
+            role: msg.role,
+            content: msg.content
+          };
+        }
+        return {
+          role: msg.role,
+          content: msg.content
+        };
+      });
 
-      // Update conversation with assistant's response
-      const finalConversations = activeProject.conversations.map(conv =>
-        conv.id === activeConversationId
-          ? {
-              ...conv,
-              messages: [...updatedMessages, assistantMessage],
-              lastUpdated: new Date()
+      // Keep getting responses and handling tools until we get a final response
+      while (true) {
+        const response = await anthropic.messages.create({
+          model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
+          max_tokens: 4096,
+          messages: messages,
+          ...(activeProject.settings.systemPrompt && {
+            system: activeProject.settings.systemPrompt
+          }),
+          ...(availableTools.length > 0 && { tools: availableTools })
+        });
+
+        // Add Claude's response to messages history
+        messages.push({
+          role: 'assistant',
+          content: response.content
+        });
+
+        // If response includes text content, show it in the chat
+        for (const content of response.content) {
+          if (content.type === 'text') {
+            const textMessage: Message = {
+              role: 'assistant',
+              content: content.text,
+              timestamp: new Date()
+            };
+
+            updateProjectSettings(activeProject.id, {
+              conversations: activeProject.conversations.map(conv =>
+                conv.id === activeConversationId
+                  ? {
+                      ...conv,
+                      messages: [...conv.messages, textMessage],
+                      lastUpdated: new Date()
+                    }
+                  : conv
+              )
+            });
+          }
+        }
+
+        // If there's no tool use, we're done
+        if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
+          break;
+        }
+
+        // Handle tool use
+        for (const content of response.content) {
+          if (content.type === 'tool_use') {
+            try {
+              const serverWithTool = servers.find(s =>
+                s.tools?.some(t => t.name === content.name)
+              );
+
+              if (!serverWithTool) {
+                throw new Error(`No server found for tool ${content.name}`);
+              }
+
+              // Show tool usage in chat
+              const toolUseMessage: Message = {
+                role: 'assistant',
+                content: [{
+                  type: 'tool_use',
+                  id: content.id,
+                  name: content.name,
+                  input: content.input,
+                }],
+                timestamp: new Date()
+              };
+
+              updateProjectSettings(activeProject.id, {
+                conversations: activeProject.conversations.map(conv =>
+                  conv.id === activeConversationId
+                    ? {
+                        ...conv,
+                        messages: [...conv.messages, toolUseMessage],
+                        lastUpdated: new Date()
+                      }
+                    : conv
+                )
+              });
+
+              const result = await executeTool(
+                serverWithTool.id,
+                content.name,
+                content.input
+              );
+
+              // Add tool result to messages array
+              const toolResultMessage = {
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: content.id,
+                  content: result
+                }],
+                timestamp: new Date()
+              };
+
+              messages.push(toolResultMessage);
+              updateProjectSettings(activeProject.id, {
+                conversations: activeProject.conversations.map(conv =>
+                  conv.id === activeConversationId
+                    ? {
+                        ...conv,
+                        messages: [...conv.messages, toolResultMessage],
+                        lastUpdated: new Date()
+                      }
+                    : conv
+                )
+              });
+
+            } catch (error) {
+              // Handle tool execution error
+              const errorMessage = {
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: content.id,
+                  content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  is_error: true
+                }],
+                timestamp: new Date()
+              };
+              messages.push(errorMessage);
+              updateProjectSettings(activeProject.id, {
+                conversations: activeProject.conversations.map(conv =>
+                  conv.id === activeConversationId
+                    ? {
+                        ...conv,
+                        messages: [...conv.messages, errorMessage],
+                        lastUpdated: new Date()
+                      }
+                    : conv
+                )
+              });
             }
-          : conv
-      );
-
-      updateProjectSettings(activeProject.id, { conversations: finalConversations });
+          }
+        }
+      }
     } catch (error) {
       console.error('Failed to send message:', error);
+      // You might want to add a toast notification here
     } finally {
       setIsLoading(false);
     }

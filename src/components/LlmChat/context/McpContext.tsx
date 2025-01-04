@@ -1,3 +1,5 @@
+"use client";
+
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { McpServer, McpTool } from '../types/mcp';
 import { McpState, McpServerConnection } from './types';
@@ -12,9 +14,36 @@ export const useMcp = () => {
   return context;
 };
 
-export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [servers, setServers] = useState<McpServerConnection[]>([]);
+interface McpProviderProps {
+  children: React.ReactNode;
+  initialServers?: McpServer[];
+}
+
+export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServers = [] }) => {
+  const [servers, setServers] = useState<McpServerConnection[]>(() =>
+    initialServers.map(server => ({
+      ...server,
+      status: 'disconnected'
+    }))
+  );
   const connectionsRef = useRef<Map<string, WebSocket>>(new Map());
+
+  // Try to restore server state from localStorage
+  useEffect(() => {
+    const savedServers = localStorage.getItem('mcp_servers');
+    if (savedServers) {
+      const parsed = JSON.parse(savedServers);
+      setServers(parsed.map((server: McpServerConnection) => ({
+        ...server,
+        status: 'disconnected' // Reset status on reload
+      })));
+    }
+  }, []);
+
+  // Save server state to localStorage
+  useEffect(() => {
+    localStorage.setItem('mcp_servers', JSON.stringify(servers));
+  }, [servers]);
 
   const cleanupServer = useCallback((serverId: string) => {
     const ws = connectionsRef.current.get(serverId);
@@ -23,12 +52,24 @@ export const McpProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       connectionsRef.current.delete(serverId);
       setServers(current =>
         current.map(s => s.id === serverId
-          ? { ...s, status: 'disconnected' }
+          ? { ...s, status: 'disconnected', tools: undefined }
           : s
         )
       );
     }
   }, []);
+
+  // Reconnect to servers on mount
+  useEffect(() => {
+    servers.forEach(server => {
+      if (server.status !== 'connected') {
+        connectToServer(server).catch(console.error);
+      }
+    });
+    return () => {
+      servers.forEach(server => cleanupServer(server.id));
+    };
+  }, []); // Run only on mount
 
   const connectToServer = useCallback(async (server: McpServer): Promise<McpServerConnection> => {
     try {
