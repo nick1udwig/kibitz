@@ -6,6 +6,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { useState } from 'react';
 import { useProjects } from './context/ProjectContext';
 import { Project } from './context/types';
+import { useRouter } from 'next/navigation';
 
 interface ConversationSidebarProps {
   onExportConversation: (projectId: string, conversationId?: string) => void;
@@ -23,6 +24,7 @@ export const ConversationSidebar = ({ onExportConversation }: ConversationSideba
     setActiveProject,
     setActiveConversation
   } = useProjects();
+  const router = useRouter();
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set([activeProjectId!]));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -132,6 +134,11 @@ export const ConversationSidebar = ({ onExportConversation }: ConversationSideba
                     onClick={() => {
                       setActiveProject(project.id);
                       setActiveConversation(convo.id);
+                      const tabsList = document.querySelector('[role="tablist"]');
+                      const chatTab = tabsList?.querySelector('[value="chat"]') as HTMLButtonElement;
+                      if (chatTab) {
+                        chatTab.click();
+                      }
                     }}
                   >
                     <span className="truncate flex-1">{convo.name}</span>

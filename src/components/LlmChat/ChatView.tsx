@@ -286,7 +286,7 @@ export const ChatView: React.FC = () => {
               <div
                 className={`max-w-[80%] rounded-lg px-4 py-2 ${
                   message.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-muted text-primary-foreground'
                     : 'bg-muted text-foreground'
                 }`}
               >
@@ -322,9 +322,15 @@ export const ChatView: React.FC = () => {
         <Button
           onClick={handleSendMessage}
           disabled={isLoading || !activeProjectId || !activeConversationId}
-          className="self-end"
+          className="self-end relative"
         >
-          {isLoading ? <Spinner /> : <Send className="w-4 h-4" />}
+          {isLoading ? (
+            <div className="bg-primary-foreground rounded-full p-1">
+              <Spinner />
+            </div>
+          ) : (
+            <Send className="w-4 h-4" />
+          )}
         </Button>
       </div>
 

@@ -84,11 +84,25 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [projects, activeProjectId, activeConversationId]);
 
   const createProject = useCallback((name: string, settings?: Partial<ProjectSettings>) => {
+    const currentProject = projects.find(p => p.id === activeProjectId);
+    const defaultConversationId = generateId();
     const newProject: Project = {
       id: generateId(),
       name,
-      settings: { ...DEFAULT_PROJECT_SETTINGS, ...settings },
-      conversations: [],
+      settings: {
+        ...DEFAULT_PROJECT_SETTINGS,
+        ...(currentProject && {
+          apiKey: currentProject.settings.apiKey,
+          systemPrompt: currentProject.settings.systemPrompt,
+        }),
+        ...settings,
+      },
+      conversations: [{
+        id: defaultConversationId,
+        name: "New Chat",
+        lastUpdated: new Date(),
+        messages: []
+      }],
       createdAt: new Date(),
       updatedAt: new Date()
     };
