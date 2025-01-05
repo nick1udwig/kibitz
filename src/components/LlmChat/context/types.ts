@@ -1,4 +1,5 @@
-// src/components/LlmChat/context/types.ts
+import { Message } from '../types';
+import { McpServer } from '../types/mcp';
 
 export interface ProjectSettings {
   apiKey: string;

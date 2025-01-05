@@ -10,23 +10,6 @@ import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
 import { useMcp } from './context/McpContext';
 
-const getUniqueTools = (mcpServers: any[], existingTools: Tool[]) => {
-  const toolMap = new Map<string, Tool>();
-  existingTools.forEach(tool => toolMap.set(tool.name, tool));
-  mcpServers.forEach(server => {
-    server.tools?.forEach(tool => {
-      if (!toolMap.has(tool.name)) {
-        toolMap.set(tool.name, {
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.inputSchema
-        });
-      }
-    });
-  });
-  return Array.from(toolMap.values());
-};
-
 export const ChatView: React.FC = () => {
   const {
     projects,
@@ -54,6 +37,47 @@ export const ChatView: React.FC = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConversation?.messages]);
+
+  const getUniqueTools = () => {
+    if (!activeProject?.settings.mcpServers?.length) {
+      return [];
+    }
+
+    const toolMap = new Map<string, Tool>();
+
+    servers
+      .filter(server =>
+        activeProject.settings.mcpServers.some(
+          configuredServer => configuredServer.id === server.id
+        )
+      )
+      .flatMap(s => s.tools || [])
+      .forEach(tool => {
+        if (!toolMap.has(tool.name)) {
+          toolMap.set(tool.name, {
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.inputSchema
+          });
+        }
+      });
+
+    return Array.from(toolMap.values());
+
+
+    servers.forEach(server => {
+      server.tools?.forEach(tool => {
+        if (!toolMap.has(tool.name)) {
+          toolMap.set(tool.name, {
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.inputSchema
+          });
+        }
+      });
+    });
+  };
+
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
     updateProjectSettings(projectId, {
@@ -95,7 +119,7 @@ export const ChatView: React.FC = () => {
         dangerouslyAllowBrowser: true
       });
 
-      const availableTools = getUniqueTools(servers, activeProject.settings.tools || []);
+      const availableTools = getUniqueTools();
 
       let apiMessages = currentMessages.map(msg => ({
         role: msg.role,

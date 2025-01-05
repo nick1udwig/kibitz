@@ -140,7 +140,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
               settings: {
                 ...p.settings,
                 ...updates.settings,
-                mcpServers: updates.settings.mcpServers || servers
+                ...(updates.settings.mcpServers !== undefined && {
+                  mcpServers: updates.settings.mcpServers
+                })
               }
             }),
             ...(updates.conversations && { conversations: updates.conversations }),
