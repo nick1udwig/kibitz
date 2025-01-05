@@ -1,5 +1,3 @@
-// src/components/LlmChat/hooks/useAnthropicChat.ts
-
 import { useState } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Message, Conversation } from '../types';
@@ -42,44 +40,45 @@ export const useAnthropicChat = (
         dangerouslyAllowBrowser: true,
       });
 
-      // Function to prepare messages and check token count
-      const prepareMessages = async (allMessages: Message[]) => {
-        // Always keep the first message
-        const firstMessage = allMessages[0];
-        let currentMessages = allMessages.slice(1);
-        let messagesToSend = [firstMessage, ...currentMessages];
+      //TODO
+      //// Function to prepare messages and check token count
+      //const prepareMessages = async (allMessages: Message[]) => {
+      //  // Always keep the first message
+      //  const firstMessage = allMessages[0];
+      //  let currentMessages = allMessages.slice(1);
+      //  let messagesToSend = [firstMessage, ...currentMessages];
 
-        // Check token count of current messages
-        const tokenCount = await anthropic.messages.countTokens({
-          model: activeConvo.settings.model,
-          messages: messagesToSend.map(msg => ({
-            role: msg.role,
-            content: msg.content
-          }))
-        });
+      //  // Check token count of current messages
+      //  const tokenCount = await anthropic.messages.countTokens({
+      //    model: activeConvo.settings.model,
+      //    messages: messagesToSend.map(msg => ({
+      //      role: msg.role,
+      //      content: msg.content
+      //    }))
+      //  });
 
-        // If we're approaching the limit (leave 1000 tokens for response)
-        while (tokenCount.input_tokens > 7000 && currentMessages.length > 0) {
-          // Remove the oldest non-first message
-          currentMessages = currentMessages.slice(1);
-          messagesToSend = [firstMessage, ...currentMessages];
+      //  // If we're approaching the limit (leave 1000 tokens for response)
+      //  while (tokenCount.input_tokens > 7000 && currentMessages.length > 0) {
+      //    // Remove the oldest non-first message
+      //    currentMessages = currentMessages.slice(1);
+      //    messagesToSend = [firstMessage, ...currentMessages];
 
-          // Recount tokens
-          const newTokenCount = await anthropic.messages.countTokens({
-            model: activeConvo.settings.model,
-            messages: messagesToSend.map(msg => ({
-              role: msg.role,
-              content: msg.content
-            }))
-          });
+      //    // Recount tokens
+      //    const newTokenCount = await anthropic.messages.countTokens({
+      //      model: activeConvo.settings.model,
+      //      messages: messagesToSend.map(msg => ({
+      //        role: msg.role,
+      //        content: msg.content
+      //      }))
+      //    });
 
-          if (newTokenCount.input_tokens <= 7000) {
-            break;
-          }
-        }
+      //    if (newTokenCount.input_tokens <= 7000) {
+      //      break;
+      //    }
+      //  }
 
-        return messagesToSend;
-      };
+      //  return messagesToSend;
+      //};
 
       const allTools = [
         ...activeConvo.settings.tools,
@@ -91,10 +90,11 @@ export const useAnthropicChat = (
       ];
 
       // Prepare messages with token count check
-      const processedMessages = await prepareMessages(updatedMessages);
+      //const processedMessages = await prepareMessages(updatedMessages);
 
       // Initialize our message array with the processed conversation history
-      let messages = processedMessages.map(msg => {
+      //let messages = processedMessages.map(msg => {
+      let messages = updatedMessages.map(msg => {
         // Handle special message types
         if (Array.isArray(msg.content)) {
           // This is a tool message

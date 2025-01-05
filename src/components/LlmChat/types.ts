@@ -37,5 +37,5 @@ export type Conversation = {
 export type Tool = {
   name: string;
   description: string;
-  schema: object;
+  input_schema: object;
 };

@@ -21,7 +21,13 @@ export const AdminView = () => {
   }
 
   const handleSettingsChange = (settings: Partial<ProjectSettings>) => {
-    updateProjectSettings(activeProject.id, settings);
+    // Update to include settings in the correct nested structure
+    updateProjectSettings(activeProject.id, {
+      settings: {
+        ...activeProject.settings,
+        ...settings
+      }
+    });
   };
 
   return (

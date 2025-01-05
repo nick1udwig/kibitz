@@ -1,3 +1,5 @@
+// src/components/LlmChat/context/ProjectContext.tsx
+
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
@@ -15,6 +17,11 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   systemPrompt: '',
   mcpServers: []
 };
+
+interface ProjectUpdates {
+  settings?: Partial<ProjectSettings>;
+  conversations?: ConversationBrief[];
+}
 
 export const useProjects = () => {
   const context = useContext(ProjectContext);
@@ -90,24 +97,39 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const deleteProject = useCallback((id: string) => {
-    setProjects(current => current.filter(p => p.id !== id));
+    setProjects(current => {
+      const updatedProjects = current.filter(p => p.id !== id);
+
+      // Immediately update localStorage to remove the project
+      const savedData = {
+        projects: updatedProjects,
+        activeProjectId: activeProjectId === id ? (updatedProjects[0]?.id ?? null) : activeProjectId,
+        activeConversationId: activeProjectId === id ? null : activeConversationId
+      };
+      localStorage.setItem('chat_app_projects', JSON.stringify(savedData));
+
+      return updatedProjects;
+    });
+
     if (activeProjectId === id) {
       setActiveProjectId(projects[0]?.id ?? null);
       setActiveConversationId(null);
     }
-  }, [activeProjectId, projects]);
+  }, [activeProjectId, activeConversationId, projects]);
 
-  const updateProjectSettings = useCallback((id: string, settings: Partial<ProjectSettings>) => {
+  const updateProjectSettings = useCallback((id: string, updates: ProjectUpdates) => {
     setProjects(current =>
       current.map(p => p.id === id
         ? {
             ...p,
-            settings: {
-              ...p.settings,
-              ...settings,
-              // Ensure MCP servers are synced with context
-              mcpServers: settings.mcpServers || servers
-            },
+            ...(updates.settings && {
+              settings: {
+                ...p.settings,
+                ...updates.settings,
+                mcpServers: updates.settings.mcpServers || servers
+              }
+            }),
+            ...(updates.conversations && { conversations: updates.conversations }),
             updatedAt: new Date()
           }
         : p
@@ -139,21 +161,33 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const deleteConversation = useCallback((projectId: string, conversationId: string) => {
-    setProjects(current =>
-      current.map(p => p.id === projectId
+    setProjects(current => {
+      const updatedProjects = current.map(p => p.id === projectId
         ? {
             ...p,
             conversations: p.conversations.filter(c => c.id !== conversationId),
             updatedAt: new Date()
           }
         : p
-      )
-    );
+      );
+
+      // Immediately update localStorage
+      const savedData = {
+        projects: updatedProjects,
+        activeProjectId,
+        activeConversationId: activeConversationId === conversationId ? null : activeConversationId
+      };
+      localStorage.setItem('chat_app_projects', JSON.stringify(savedData));
+
+      return updatedProjects;
+    });
+
     if (activeConversationId === conversationId) {
       const project = projects.find(p => p.id === projectId);
-      setActiveConversationId(project?.conversations[0]?.id ?? null);
+      const nextConvoId = project?.conversations.find(c => c.id !== conversationId)?.id ?? null;
+      setActiveConversationId(nextConvoId);
     }
-  }, [activeConversationId, projects]);
+  }, [activeConversationId, projects, activeProjectId]);
 
   const value: ProjectState = {
     projects,

@@ -36,13 +36,16 @@ export interface McpState {
   executeTool: (serverId: string, toolName: string, args: any) => Promise<string>;
 }
 
-export interface ProjectState {
+interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
   activeConversationId: string | null;
   createProject: (name: string, settings?: Partial<ProjectSettings>) => void;
   deleteProject: (id: string) => void;
-  updateProjectSettings: (id: string, settings: Partial<ProjectSettings>) => void;
+  updateProjectSettings: (id: string, updates: {
+    settings?: Partial<ProjectSettings>;
+    conversations?: ConversationBrief[];
+  }) => void;
   createConversation: (projectId: string, name?: string) => void;
   deleteConversation: (projectId: string, conversationId: string) => void;
   setActiveProject: (projectId: string | null) => void;

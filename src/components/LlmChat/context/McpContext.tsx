@@ -1,3 +1,5 @@
+// src/components/LlmChat/context/McpContext.tsx
+
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
@@ -74,10 +76,11 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   const connectToServer = useCallback(async (server: McpServer): Promise<McpServerConnection> => {
     try {
       const ws = new WebSocket(server.uri);
-      connectionsRef.current.set(server.id, ws);
 
       return new Promise((resolve, reject) => {
+        console.log(`${server.id} onopen`);
         ws.onopen = () => {
+          connectionsRef.current.set(server.id, ws);
           ws.send(JSON.stringify({
             jsonrpc: '2.0',
             method: 'initialize',
@@ -93,6 +96,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
         ws.onmessage = (event) => {
           try {
             const response = JSON.parse(event.data);
+            console.log(`${server.id} onmessage: ${JSON.stringify(response)}`);
 
             if (response.id === 1) {
               ws.send(JSON.stringify({
@@ -122,6 +126,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
         ws.onerror = (error) => {
           console.error('WebSocket error:', error);
+          cleanupServer(server.id);
           reject(error);
         };
 
@@ -159,7 +164,12 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
   const removeServer = useCallback((serverId: string) => {
     cleanupServer(serverId);
-    setServers(current => current.filter(s => s.id !== serverId));
+    setServers(current => {
+      const updatedServers = current.filter(s => s.id !== serverId);
+      // Update localStorage
+      localStorage.setItem('mcp_servers', JSON.stringify(updatedServers));
+      return updatedServers;
+    });
   }, [cleanupServer]);
 
   const executeTool = useCallback(async (
@@ -167,6 +177,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     toolName: string,
     args: any
   ): Promise<string> => {
+    console.log(`Executing tool ${toolName} on server ${serverId} with args:`, args);
     const ws = connectionsRef.current.get(serverId);
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       throw new Error('Server not connected');
@@ -174,10 +185,12 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
     return new Promise((resolve, reject) => {
       const requestId = Math.random().toString(36).substring(7);
+      console.log(`Creating tool request with id ${requestId}`);
 
       const messageHandler = (event: MessageEvent) => {
         try {
           const response = JSON.parse(event.data);
+          console.log(`Received response for request ${requestId}:`, JSON.stringify(response));
           if (response.id === requestId) {
             ws.removeEventListener('message', messageHandler);
             if (response.error) {
@@ -193,12 +206,14 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
       ws.addEventListener('message', messageHandler);
 
-      ws.send(JSON.stringify({
+      const request = {
         jsonrpc: '2.0',
         method: 'tools/call',
         params: { name: toolName, arguments: args },
         id: requestId
-      }));
+      };
+      console.log(`Sending tool request:`, request);
+      ws.send(JSON.stringify(request));
     });
   }, []);
 
