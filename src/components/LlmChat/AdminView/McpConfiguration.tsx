@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { McpServer } from '../types/mcp';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useMcp } from '../context/McpContext';
 
 interface McpConfigurationProps {
@@ -31,7 +31,7 @@ export const McpConfiguration = ({
     };
 
     // Add to project settings first
-    const updatedServers = [...servers, server];
+    const updatedServers = Array.isArray(servers) ? [...servers, server] : [server];
     onServersChange(updatedServers);
 
     // Connect using MCP context
@@ -81,7 +81,7 @@ export const McpConfiguration = ({
 
         {/* Server List */}
         <div className="space-y-3 mb-4">
-          {servers.map(server => (
+          {Array.isArray(servers) && servers.map(server => (
             <div key={server.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
               <div className="flex-1">
                 <div className="flex items-center gap-2">

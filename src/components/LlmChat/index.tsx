@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { McpProvider } from './context/McpContext';
-import { ProjectProvider } from './context/ProjectContext';
+import { ProjectProvider, useProjects } from './context/ProjectContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ThemeToggle } from './ThemeToggle';
 import { ChatView } from './ChatView';
@@ -15,8 +15,8 @@ export const ChatApp = () => {
   };
 
   return (
-    <McpProvider>
-      <ProjectProvider>
+    <ProjectProvider>
+      <McpProvider>
         <div className="min-h-screen bg-background text-foreground flex">
           <ConversationSidebar onExportConversation={handleExportConversation} />
 
@@ -43,8 +43,8 @@ export const ChatApp = () => {
             </div>
           </div>
         </div>
-      </ProjectProvider>
-    </McpProvider>
+      </McpProvider>
+    </ProjectProvider>
   );
 };
 

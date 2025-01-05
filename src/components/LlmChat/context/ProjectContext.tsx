@@ -1,5 +1,3 @@
-// src/components/LlmChat/context/ProjectContext.tsx
-
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
@@ -31,18 +29,66 @@ export const useProjects = () => {
 };
 
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { servers } = useMcp();
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
 
   // Initialize with saved data or defaults
+  //useEffect(() => {
+  //  const savedData = localStorage.getItem('chat_app_projects');
+  //  if (savedData) {
+  //    const parsed = JSON.parse(savedData);
+  //    setProjects(parsed.projects.map((proj: any) => ({
+  //      ...proj,
+  //      settings: {
+  //        apiKey: proj.settings.apiKey,
+  //        model: proj.settings.model,
+  //        systemPrompt: proj.settings.systemPrompt,
+  //        mcpServers: { ...proj.settings.mcpServers, status: 'disconnected' },
+  //      },
+  //      conversations: proj.conversations.map((conv: any) => ({
+  //        ...conv,
+  //        lastUpdated: new Date(conv.lastUpdated),
+  //        messages: conv.messages.map((msg: any) => ({
+  //          ...msg,
+  //          timestamp: new Date(msg.timestamp)
+  //        }))
+  //      })),
+  //      createdAt: new Date(proj.createdAt),
+  //      updatedAt: new Date(proj.updatedAt)
+  //    })));
+  //    setActiveProjectId(parsed.activeProjectId);
+  //    setActiveConversationId(parsed.activeConversationId);
+  //  } else {
+  //    // Create default project
+  //    const defaultProject: Project = {
+  //      id: generateId(),
+  //      name: 'Default Project',
+  //      settings: DEFAULT_PROJECT_SETTINGS,
+  //      conversations: [],
+  //      createdAt: new Date(),
+  //      updatedAt: new Date()
+  //    };
+  //    setProjects([defaultProject]);
+  //    setActiveProjectId(defaultProject.id);
+  //  }
+  //}, []);
   useEffect(() => {
     const savedData = localStorage.getItem('chat_app_projects');
     if (savedData) {
       const parsed = JSON.parse(savedData);
       setProjects(parsed.projects.map((proj: any) => ({
         ...proj,
+        settings: {
+          apiKey: proj.settings.apiKey,
+          model: proj.settings.model,
+          systemPrompt: proj.settings.systemPrompt,
+          // Preserve mcpServers array but reset status
+          mcpServers: (proj.settings.mcpServers || []).map((server: any) => ({
+            ...server,
+            status: 'disconnected'
+          })),
+        },
         conversations: proj.conversations.map((conv: any) => ({
           ...conv,
           lastUpdated: new Date(conv.lastUpdated),
@@ -57,11 +103,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setActiveProjectId(parsed.activeProjectId);
       setActiveConversationId(parsed.activeConversationId);
     } else {
-      // Create default project
+      // Create default project with empty mcpServers array
       const defaultProject: Project = {
         id: generateId(),
         name: 'Default Project',
-        settings: DEFAULT_PROJECT_SETTINGS,
+        settings: {
+          ...DEFAULT_PROJECT_SETTINGS,
+          mcpServers: []
+        },
         conversations: [],
         createdAt: new Date(),
         updatedAt: new Date()
@@ -70,6 +119,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setActiveProjectId(defaultProject.id);
     }
   }, []);
+
 
   // Save state changes
   useEffect(() => {
@@ -150,7 +200,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         : p
       )
     );
-  }, [servers]);
+  });
 
   const createConversation = useCallback((projectId: string, name?: string) => {
     const conversationId = generateId();
