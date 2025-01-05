@@ -3,8 +3,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { Project, ProjectSettings, ProjectState } from './types';
-import { Message } from '../types';
+import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
 import { useMcp } from './McpContext';
 
 const ProjectContext = createContext<ProjectState | null>(null);

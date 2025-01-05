@@ -121,7 +121,7 @@ export const ChatView: React.FC = () => {
 
       const availableTools = getUniqueTools();
 
-      let apiMessages = currentMessages.map(msg => ({
+      const apiMessages = currentMessages.map(msg => ({
         role: msg.role,
         content: msg.content
       }));

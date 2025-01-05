@@ -37,7 +37,7 @@ export interface McpState {
   executeTool: (serverId: string, toolName: string, args: any) => Promise<string>;
 }
 
-interface ProjectState {
+export interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
   activeConversationId: string | null;
