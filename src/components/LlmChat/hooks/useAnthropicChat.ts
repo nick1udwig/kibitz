@@ -1,9 +1,7 @@
-"use client";
-
 import { useState } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Message, Conversation } from '../types';
-import { useMcpServers } from './useMcpServers';
+import { useMcp } from '../context/McpContext';
 
 export const useAnthropicChat = (
   activeConvo: Conversation | undefined,
@@ -11,7 +9,7 @@ export const useAnthropicChat = (
 ) => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { servers, executeTool } = useMcpServers(activeConvo?.settings.mcpServers || []);
+  const { servers, executeTool } = useMcp();
 
   const sendMessage = async (inputMessage: string) => {
     if (!inputMessage.trim() || !activeConvo?.settings.apiKey) {
@@ -42,6 +40,46 @@ export const useAnthropicChat = (
         dangerouslyAllowBrowser: true,
       });
 
+      //TODO
+      //// Function to prepare messages and check token count
+      //const prepareMessages = async (allMessages: Message[]) => {
+      //  // Always keep the first message
+      //  const firstMessage = allMessages[0];
+      //  let currentMessages = allMessages.slice(1);
+      //  let messagesToSend = [firstMessage, ...currentMessages];
+
+      //  // Check token count of current messages
+      //  const tokenCount = await anthropic.messages.countTokens({
+      //    model: activeConvo.settings.model,
+      //    messages: messagesToSend.map(msg => ({
+      //      role: msg.role,
+      //      content: msg.content
+      //    }))
+      //  });
+
+      //  // If we're approaching the limit (leave 1000 tokens for response)
+      //  while (tokenCount.input_tokens > 7000 && currentMessages.length > 0) {
+      //    // Remove the oldest non-first message
+      //    currentMessages = currentMessages.slice(1);
+      //    messagesToSend = [firstMessage, ...currentMessages];
+
+      //    // Recount tokens
+      //    const newTokenCount = await anthropic.messages.countTokens({
+      //      model: activeConvo.settings.model,
+      //      messages: messagesToSend.map(msg => ({
+      //        role: msg.role,
+      //        content: msg.content
+      //      }))
+      //    });
+
+      //    if (newTokenCount.input_tokens <= 7000) {
+      //      break;
+      //    }
+      //  }
+
+      //  return messagesToSend;
+      //};
+
       const allTools = [
         ...activeConvo.settings.tools,
         ...servers.flatMap(s => s.tools || []).map(tool => ({
@@ -51,11 +89,26 @@ export const useAnthropicChat = (
         }))
       ];
 
-      // Initialize our message array with the conversation history
-      let messages = updatedMessages.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
+      // Prepare messages with token count check
+      //const processedMessages = await prepareMessages(updatedMessages);
+
+      // Initialize our message array with the processed conversation history
+      //let messages = processedMessages.map(msg => {
+      let messages = updatedMessages.map(msg => {
+        // Handle special message types
+        if (Array.isArray(msg.content)) {
+          // This is a tool message
+          return {
+            role: msg.role,
+            content: msg.content
+          };
+        }
+        // Regular text message
+        return {
+          role: msg.role,
+          content: msg.content
+        };
+      });
 
       // Keep getting responses and handling tools until we get a final response
       while (true) {
@@ -121,7 +174,6 @@ export const useAnthropicChat = (
                             name: content.name,
                             input: content.input,
                         }],
-                        //content: `Calling tool: ${content.name}`,
                         timestamp: new Date()
                       }]
                     }

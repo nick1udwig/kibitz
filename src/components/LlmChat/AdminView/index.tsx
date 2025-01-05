@@ -3,19 +3,33 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { ConversationSettings } from '../types';
-import { ToolConfiguration } from './ToolConfiguration';
+import { useProjects } from '../context/ProjectContext';
+import { ProjectSettings } from '../context/types';
 import { McpConfiguration } from './McpConfiguration';
 
-interface AdminViewProps {
-  settings: ConversationSettings;
-  onSettingsChange: (settings: ConversationSettings) => void;
-}
+export const AdminView = () => {
+  const { projects, activeProjectId, updateProjectSettings } = useProjects();
 
-export const AdminView = ({
-  settings,
-  onSettingsChange
-}: AdminViewProps) => {
+  const activeProject = projects.find(p => p.id === activeProjectId);
+
+  if (!activeProject) {
+    return (
+      <div className="text-center text-muted-foreground">
+        Select a project to configure settings
+      </div>
+    );
+  }
+
+  const handleSettingsChange = (settings: Partial<ProjectSettings>) => {
+    // Update to include settings in the correct nested structure
+    updateProjectSettings(activeProject.id, {
+      settings: {
+        ...activeProject.settings,
+        ...settings
+      }
+    });
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -28,9 +42,8 @@ export const AdminView = ({
               </label>
               <Input
                 type="password"
-                value={settings.apiKey}
-                onChange={(e) => onSettingsChange({
-                  ...settings,
+                value={activeProject.settings.apiKey}
+                onChange={(e) => handleSettingsChange({
                   apiKey: e.target.value
                 })}
                 placeholder="Enter your Anthropic API key"
@@ -42,9 +55,8 @@ export const AdminView = ({
                 Model
               </label>
               <Input
-                value={settings.model}
-                onChange={(e) => onSettingsChange({
-                  ...settings,
+                value={activeProject.settings.model}
+                onChange={(e) => handleSettingsChange({
                   model: e.target.value
                 })}
                 placeholder="claude-3-5-sonnet-20241022"
@@ -56,9 +68,8 @@ export const AdminView = ({
                 System Prompt
               </label>
               <Textarea
-                value={settings.systemPrompt}
-                onChange={(e) => onSettingsChange({
-                  ...settings,
+                value={activeProject.settings.systemPrompt}
+                onChange={(e) => handleSettingsChange({
                   systemPrompt: e.target.value
                 })}
                 placeholder="Enter a system prompt..."
@@ -70,10 +81,9 @@ export const AdminView = ({
       </Card>
 
       <McpConfiguration
-        servers={settings.mcpServers || []}
-        onServersChange={(mcpServers) => onSettingsChange({ ...settings, mcpServers })}
+        servers={activeProject.settings.mcpServers}
+        onServersChange={(mcpServers) => handleSettingsChange({ mcpServers })}
       />
-
     </div>
   );
 };
