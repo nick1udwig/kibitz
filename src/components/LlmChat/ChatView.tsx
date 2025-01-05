@@ -339,8 +339,8 @@ export const ChatView: React.FC = () => {
               handleSendMessage();
             }
           }}
-          className="flex-1 resize-none"
-          rows={3}
+          className="flex-1"
+          maxRows={8}
           disabled={isLoading}
         />
         <Button
