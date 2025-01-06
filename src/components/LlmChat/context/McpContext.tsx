@@ -33,46 +33,6 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   const connectionsRef = useRef<Map<string, WebSocket>>(new Map());
   const reconnectTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
-  // TODO: figure out how to restore server state from localStorage
-  //       problem is that we use onServersChange in AdminView/McpConfiguration and AdminView/index
-  //       to propagate changes to servers here over to settings that are actually viewable by GUI.
-  //       So this method has two issues:
-  //       1. Can't propagate to GUI
-  //       2. It gets into an infinite reconnect loop somehow
-  //// Try to restore server state from localStorage
-  useEffect(() => {
-    if (hasInitialized) {
-      return;
-    }
-    hasInitialized = true;
-    const savedServers = localStorage.getItem('mcp_servers');
-    if (savedServers) {
-      try {
-        const parsed = JSON.parse(savedServers);
-        console.log(`loading servers from local storage: ${JSON.stringify(parsed)}`);
-        parsed.forEach(server => {
-          addServer(server)
-            .catch(error => {
-              console.error(`Initial connection failed for ${server.name}:`, error);
-            })
-            .then(newServer => {
-              console.log(`newServer ${JSON.stringify(newServer)}`);
-              projects.forEach(project => {
-                updateProjectSettings(project.id, { settings: {
-                  ...project.settings,
-                  mcpServers: project.settings.mcpServers.map(s =>
-                    newServer && s.id === newServer.id ? { ...s, status: newServer.status } : s
-                  ),
-                }})
-              })}
-            );
-        });
-      } catch (error) {
-        console.error('Error parsing saved servers:', error);
-      }
-    }
-  }, [projects, addServer, updateProjectSettings]);
-
   const cleanupServer = useCallback((serverId: string) => {
     // Clear any existing reconnection timeout
     const existingTimeout = reconnectTimeoutsRef.current.get(serverId);
@@ -219,13 +179,6 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     }
   }, [cleanupServer, scheduleReconnect]);
 
-  // Save server state to localStorage
-  useEffect(() => {
-    localStorage.setItem('mcp_servers', JSON.stringify(servers));
-  }, [servers]);
-
-
-  // Rest of the component implementation remains the same...
   const addServer = useCallback(async (server: McpServer) => {
     setServers(current => [...current, { ...server, status: 'connecting' }]);
 
@@ -245,6 +198,53 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       return servers.find(s => s.id === server.id);
     }
   }, [connectToServer]);
+
+
+  // TODO: figure out how to restore server state from localStorage
+  //       problem is that we use onServersChange in AdminView/McpConfiguration and AdminView/index
+  //       to propagate changes to servers here over to settings that are actually viewable by GUI.
+  //       So this method has two issues:
+  //       1. Can't propagate to GUI
+  //       2. It gets into an infinite reconnect loop somehow
+  //// Try to restore server state from localStorage
+  useEffect(() => {
+    if (hasInitialized) {
+      return;
+    }
+    hasInitialized = true;
+    const savedServers = localStorage.getItem('mcp_servers');
+    if (savedServers) {
+      try {
+        const parsed = JSON.parse(savedServers);
+        console.log(`loading servers from local storage: ${JSON.stringify(parsed)}`);
+        parsed.forEach(server => {
+          addServer(server)
+            .catch(error => {
+              console.error(`Initial connection failed for ${server.name}:`, error);
+            })
+            .then(newServer => {
+              console.log(`newServer ${JSON.stringify(newServer)}`);
+              projects.forEach(project => {
+                updateProjectSettings(project.id, { settings: {
+                  ...project.settings,
+                  mcpServers: project.settings.mcpServers.map(s =>
+                    newServer && s.id === newServer.id ? { ...s, status: newServer.status } : s
+                  ),
+                }})
+              })}
+            );
+        });
+      } catch (error) {
+        console.error('Error parsing saved servers:', error);
+      }
+    }
+  }, [projects, addServer, updateProjectSettings]);
+
+  // Save server state to localStorage
+  useEffect(() => {
+    localStorage.setItem('mcp_servers', JSON.stringify(servers));
+  }, [servers]);
+
 
   const removeServer = useCallback((serverId: string) => {
     cleanupServer(serverId);
