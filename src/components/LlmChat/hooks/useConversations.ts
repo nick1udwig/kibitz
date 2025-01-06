@@ -13,9 +13,9 @@ export const useConversations = () => {
   useEffect(() => {
     const savedConvos = localStorage.getItem('chat_app_conversations');
     if (savedConvos) {
-      const parsed = JSON.parse(savedConvos).map((convo: any) => ({
+      const parsed = JSON.parse(savedConvos).map((convo: Conversation) => ({
         ...convo,
-        messages: convo.messages.map((msg: any) => ({
+        messages: convo.messages.map((msg: Message) => ({
           ...msg,
           timestamp: new Date(msg.timestamp)
         }))
@@ -55,7 +55,13 @@ export const useConversations = () => {
       id: generateId(),
       name: `Conversation ${conversations.length + 1}`,
       messages: [],
-      settings: { ...currentConvo?.settings! }
+      settings: currentConvo?.settings ?? {
+        apiKey: '',
+        model: 'claude-3-5-sonnet-20241022',
+        systemPrompt: '',
+        tools: [],
+        mcpServers: []
+      }
     };
     setConversations([...conversations, newConvo]);
     setActiveConvoId(newConvo.id);

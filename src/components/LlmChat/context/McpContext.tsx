@@ -388,7 +388,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
         console.error('Error parsing saved servers:', error);
       }
     }
-  }, [projects]);
+  }, [projects, addServer, updateProjectSettings]);
 
   const cleanupServer = useCallback((serverId: string) => {
     // Clear any existing reconnection timeout

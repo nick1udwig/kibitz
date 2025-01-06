@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { McpProvider } from './context/McpContext';
-import { ProjectProvider, useProjects } from './context/ProjectContext';
+import { ProjectProvider } from './context/ProjectContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ThemeToggle } from './ThemeToggle';
 import { ChatView } from './ChatView';

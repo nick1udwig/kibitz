@@ -5,7 +5,7 @@ export type MessageContent = {
   type: 'tool_use';
   id: string;
   name: string;
-  input: any;
+  input: Record<string, unknown>;
 } | {
   type: 'tool_result';
   tool_use_id: string;
@@ -16,7 +16,7 @@ export type Message = {
   role: 'user' | 'assistant';
   content: MessageContent[] | string;
   timestamp: Date;
-  toolInput?: any;
+  toolInput?: Record<string, unknown>;
 };
 
 export type ConversationSettings = {

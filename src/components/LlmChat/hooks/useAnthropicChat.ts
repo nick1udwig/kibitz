@@ -94,7 +94,7 @@ export const useAnthropicChat = (
 
       // Initialize our message array with the processed conversation history
       //let messages = processedMessages.map(msg => {
-      let messages = updatedMessages.map(msg => {
+      const messages = updatedMessages.map(msg => {
         // Handle special message types
         if (Array.isArray(msg.content)) {
           // This is a tool message
