@@ -6,7 +6,7 @@ import { Maximize2, Minimize2 } from 'lucide-react';
 interface ToolCallModalProps {
   toolCall: {
     name: string;
-    input: any;
+    input: Record<string, unknown>;
     result: string | null;
   };
   onClose: () => void;

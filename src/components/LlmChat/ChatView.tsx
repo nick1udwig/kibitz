@@ -30,7 +30,7 @@ export const ChatView: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
-    input: any;
+    input: Record<string, unknown>;
     result: string | null;
   } | null>(null);
 

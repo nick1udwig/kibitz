@@ -606,7 +606,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     servers,
     addServer,
     removeServer,
-    executeTool: async (serverId: string, toolName: string, args: any) => {
+    executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>) => {
       const ws = connectionsRef.current.get(serverId);
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         throw new Error('Server not connected');

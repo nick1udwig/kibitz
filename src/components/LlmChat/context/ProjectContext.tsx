@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
-import { useMcp } from './McpContext';
+
 
 const ProjectContext = createContext<ProjectState | null>(null);
 
@@ -77,14 +77,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const savedData = localStorage.getItem('chat_app_projects');
     if (savedData) {
       const parsed = JSON.parse(savedData);
-      setProjects(parsed.projects.map((proj: any) => ({
+      setProjects(parsed.projects.map((proj: Project) => ({
         ...proj,
         settings: {
           apiKey: proj.settings.apiKey,
           model: proj.settings.model,
           systemPrompt: proj.settings.systemPrompt,
           // Preserve mcpServers array but reset status
-          mcpServers: (proj.settings.mcpServers || []).map((server: any) => ({
+          mcpServers: (proj.settings.mcpServers || []).map((server: McpServer) => ({
             ...server,
             status: 'disconnected'
           })),
@@ -92,7 +92,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         conversations: proj.conversations.map((conv: any) => ({
           ...conv,
           lastUpdated: new Date(conv.lastUpdated),
-          messages: conv.messages.map((msg: any) => ({
+          messages: conv.messages.map((msg: Message) => ({
             ...msg,
             timestamp: new Date(msg.timestamp)
           }))

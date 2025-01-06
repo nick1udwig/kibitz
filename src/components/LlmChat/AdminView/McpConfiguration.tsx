@@ -135,7 +135,7 @@ export const McpConfiguration = ({
         <div className="mt-4">
           <Alert>
             <AlertDescription>
-              Connect to WebSocket MCP servers to extend Claude's capabilities with custom tools.
+              Connect to WebSocket MCP servers to extend Claude&apos;s capabilities with custom tools.
               Each server should implement the MCP protocol.
             </AlertDescription>
           </Alert>

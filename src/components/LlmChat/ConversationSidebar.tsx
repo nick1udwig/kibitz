@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { useState } from 'react';
 import { useProjects } from './context/ProjectContext';
-import { Project } from './context/types';
-import { useRouter } from 'next/navigation';
+
 
 interface ConversationSidebarProps {
   onExportConversation: (projectId: string, conversationId?: string) => void;
@@ -24,7 +23,7 @@ export const ConversationSidebar = ({ onExportConversation }: ConversationSideba
     setActiveProject,
     setActiveConversation
   } = useProjects();
-  const router = useRouter();
+
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set([activeProjectId!]));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
