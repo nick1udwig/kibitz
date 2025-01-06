@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
+//import { Anthropic, Tool } from '@anthropic-ai/sdk';
 import { Anthropic } from '@anthropic-ai/sdk';
+import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
-import { Message, Tool } from './types';
+//import { Message, Tool } from './types';
+import { Message } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
@@ -57,7 +60,7 @@ export const ChatView: React.FC = () => {
           toolMap.set(tool.name, {
             name: tool.name,
             description: tool.description,
-            input_schema: tool.inputSchema
+            input_schema: tool.input_schema
           });
         }
       });
@@ -71,7 +74,7 @@ export const ChatView: React.FC = () => {
           toolMap.set(tool.name, {
             name: tool.name,
             description: tool.description,
-            input_schema: tool.inputSchema
+            input_schema: tool.input_schema
           });
         }
       });
@@ -136,10 +139,71 @@ export const ChatView: React.FC = () => {
           }),
           ...(availableTools.length > 0 && { tools: availableTools })
         });
+        //const response = await anthropic.messages.create({
+        //  model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
+        //  max_tokens: 8192,
+        //  messages: apiMessages,
+        //  ...(activeProject.settings.systemPrompt && {
+        //    system: activeProject.settings.systemPrompt
+        //  }),
+        //  ...({ tools: availableTools.length > 0 ? availableTools : undefined })
+        //});
+        //const response = availableTools.length > 0 ?
+        //  await anthropic.messages.create({
+        //    model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
+        //    max_tokens: 8192,
+        //    messages: apiMessages,
+        //    ...(activeProject.settings.systemPrompt && {
+        //      system: activeProject.settings.systemPrompt
+        //    }),
+        //    tools: availableTools,
+        //  })
+        //:
+        //  await anthropic.messages.create({
+        //    model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
+        //    max_tokens: 8192,
+        //    messages: apiMessages,
+        //    ...(activeProject.settings.systemPrompt && {
+        //      system: activeProject.settings.systemPrompt
+        //    }),
+        //  });
 
+        //const transformedContent = response.content.map(content => {
+        //  if (content.type === 'text') {
+        //    return {
+        //      type: 'text',
+        //      text: content.text
+        //    };
+        //  } else if (content.type === 'tool_use') {
+        //    return {
+        //      type: 'tool_use',
+        //      id: content.id,
+        //      name: content.name,
+        //      input: content.input as Record<string, unknown>
+        //    };
+        //  }
+        //  return content;
+        //});
+        const transformedContent = response.content.map(content => {
+          if (content.type === 'text') {
+            return {
+              type: 'text' as const,
+              text: content.text
+            };
+          } else if (content.type === 'tool_use') {
+            return {
+              type: 'tool_use' as const,
+              id: content.id,
+              name: content.name,
+              input: content.input as Record<string, unknown>
+            };
+          }
+          throw new Error(`Unexpected content type: ${content}`);
+        });
         apiMessages.push({
           role: response.role,
-          content: response.content,
+          //content: response.content,
+          content: transformedContent,
         });
 
         // Process each type of content in the response
@@ -178,7 +242,7 @@ export const ChatView: React.FC = () => {
                   type: 'tool_use',
                   id: content.id,
                   name: content.name,
-                  input: content.input,
+                  input: content.input as Record<string, unknown>,
                 }],
                 timestamp: new Date()
               };
@@ -189,7 +253,7 @@ export const ChatView: React.FC = () => {
               const result = await executeTool(
                 serverWithTool.id,
                 content.name,
-                content.input
+                content.input as Record<string, unknown>,
               );
 
               const toolResultMessage: Message = {
@@ -260,7 +324,7 @@ export const ChatView: React.FC = () => {
             const resultContent = nextMessage.content.find(c =>
               c.type === 'tool_result' && c.tool_use_id === content.id
             );
-            if (resultContent) {
+            if (resultContent && resultContent.type === 'tool_result') {
               toolResult = resultContent.content;
             }
           }

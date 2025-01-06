@@ -49,6 +49,9 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     }
   }, []);
 
+  // use a ref to avoid circular dependencies between scheduleReconnect & connectToServer
+  const connectToServerRef = useRef<(server: McpServer) => Promise<McpServerConnection>>(null!);
+
   const scheduleReconnect = useCallback((server: McpServer, delay: number = 5000) => {
     // Clear any existing reconnection timeout
     const existingTimeout = reconnectTimeoutsRef.current.get(server.id);
@@ -58,7 +61,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
     // Schedule new reconnection attempt
     const timeout = setTimeout(() => {
-      connectToServer(server).catch(error => {
+      connectToServerRef.current?.(server).catch(error => {
         console.error(`Reconnection failed for ${server.name}:`, error);
         // If reconnection fails, schedule another attempt with exponential backoff
         scheduleReconnect(server, Math.min(delay * 2, 30000)); // Cap at 30 seconds
@@ -118,7 +121,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
           scheduleReconnect(server);
         };
 
-        ws.onerror = (error) => {
+          ws.onerror = (error) => {
           clearTimeout(timeout);
           console.error('WebSocket error:', error);
           cleanupServer(server.id);
@@ -188,7 +191,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
         current.map(s => s.id === server.id ? connectedServer : s)
       );
       return connectedServer;
-    } catch (error) {
+    } catch {
       setServers(current =>
         current.map(s => s.id === server.id
           ? { ...s, status: 'error', error: 'Connection failed' }
@@ -197,7 +200,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       );
       return servers.find(s => s.id === server.id);
     }
-  }, [connectToServer]);
+  }, [connectToServer, servers]);
 
 
   // TODO: figure out how to restore server state from localStorage
@@ -215,7 +218,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     const savedServers = localStorage.getItem('mcp_servers');
     if (savedServers) {
       try {
-        const parsed = JSON.parse(savedServers);
+        const parsed = JSON.parse(savedServers) as McpServer[];
         console.log(`loading servers from local storage: ${JSON.stringify(parsed)}`);
         parsed.forEach(server => {
           addServer(server)
@@ -255,7 +258,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     servers,
     addServer,
     removeServer,
-    executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>) => {
+    executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>): Promise<string> => {
       const ws = connectionsRef.current.get(serverId);
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         throw new Error('Server not connected');
@@ -272,11 +275,12 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
               if (response.error) {
                 reject(new Error(response.error.message));
               } else {
-                resolve(response.result.content[0].text);
+                resolve(response.result.content[0].text as string);
               }
             }
           } catch (error) {
             console.error('Error parsing tool response:', error);
+            reject(new Error('Failed to parse tool response'));
           }
         };
 

@@ -1,3 +1,6 @@
+import { McpServer } from './types/mcp';
+import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
+
 export type MessageContent = {
   type: 'text';
   text: string;
@@ -10,6 +13,7 @@ export type MessageContent = {
   type: 'tool_result';
   tool_use_id: string;
   content: string;
+  is_error?: boolean,
 };
 
 export type Message = {
@@ -34,8 +38,8 @@ export type Conversation = {
   settings: ConversationSettings;
 };
 
-export type Tool = {
-  name: string;
-  description: string;
-  input_schema: object;
-};
+//export type Tool = {
+//  name: string;
+//  description: string;
+//  input_schema: object;
+//};

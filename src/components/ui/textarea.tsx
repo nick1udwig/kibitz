@@ -11,7 +11,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, maxRows = 8, onChange, ...props }, ref) => {
     const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
-    const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const handleChange = React.useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
       const textarea = textareaRef.current;
       if (textarea) {
         textarea.style.height = 'auto';
@@ -22,7 +22,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         textarea.style.height = `${newHeight}px`;
       }
       onChange?.(event);
-    };
+    }, [maxRows, onChange]);
 
     React.useEffect(() => {
       if (textareaRef.current) {

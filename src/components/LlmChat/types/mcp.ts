@@ -1,17 +1,20 @@
+import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
+
 export interface McpServer {
   id: string;
   name: string;
   uri: string; // WebSocket URI e.g. ws://localhost:3000
   status: 'connected' | 'connecting' | 'disconnected' | 'error';
   error?: string;
-  tools?: McpTool[];
+  tools?: Tool[];
+  //tools?: McpTool[];
 }
 
-export interface McpTool {
-  name: string;
-  description: string;
-  inputSchema: object;
-}
+//export interface McpTool {
+//  name: string;
+//  description: string;
+//  inputSchema: object;
+//}
 
 // Add types for the handshake
 export interface McpHandshakeResponse {
@@ -19,7 +22,8 @@ export interface McpHandshakeResponse {
   version: string;
   capabilities: {
     tools?: {
-      list: McpTool[];
+      list: Tool[];
+      //list: McpTool[];
     };
     // Could add other capabilities here
   };

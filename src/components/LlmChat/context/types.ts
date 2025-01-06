@@ -32,7 +32,7 @@ export interface McpServerConnection extends McpServer {
 
 export interface McpState {
   servers: McpServerConnection[];
-  addServer: (server: McpServer) => Promise<void>;
+  addServer: (server: McpServer) => Promise<McpServerConnection | void>;
   removeServer: (serverId: string) => void;
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>;
 }

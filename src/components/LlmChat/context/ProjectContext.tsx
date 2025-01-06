@@ -2,6 +2,9 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
+import { Message } from '../types';
+import { McpServer } from '../types/mcp';
+
 
 
 const ProjectContext = createContext<ProjectState | null>(null);
@@ -77,7 +80,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const savedData = localStorage.getItem('chat_app_projects');
     if (savedData) {
       const parsed = JSON.parse(savedData);
-      setProjects(parsed.projects.map((proj: Project) => ({
+      setProjects(parsed.projects.map((proj: Project & { settings: ProjectSettings }) => ({
         ...proj,
         settings: {
           apiKey: proj.settings.apiKey,
@@ -89,7 +92,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             status: 'disconnected'
           })),
         },
-        conversations: proj.conversations.map((conv: any) => ({
+        conversations: proj.conversations.map((conv: ConversationBrief & { messages: Message[] }) => ({
           ...conv,
           lastUpdated: new Date(conv.lastUpdated),
           messages: conv.messages.map((msg: Message) => ({
@@ -118,7 +121,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setProjects([defaultProject]);
       setActiveProjectId(defaultProject.id);
     }
-  }, []);
+  }, [activeProjectId, activeConversationId, projects]);
 
 
   // Save state changes
@@ -157,7 +160,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     setProjects(current => [...current, newProject]);
     setActiveProjectId(newProject.id);
-  }, []);
+  }, [activeProjectId, projects]);
 
   const deleteProject = useCallback((id: string) => {
     setProjects(current => {
@@ -172,7 +175,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.setItem('chat_app_projects', JSON.stringify(savedData));
 
       return updatedProjects;
-    });
+  });
 
     if (activeProjectId === id) {
       setActiveProjectId(projects[0]?.id ?? null);
@@ -200,7 +203,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         : p
       )
     );
-  });
+  }, []);
 
   const createConversation = useCallback((projectId: string, name?: string) => {
     const conversationId = generateId();
