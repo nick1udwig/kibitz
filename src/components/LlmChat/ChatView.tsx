@@ -16,7 +16,8 @@ export const ChatView: React.FC = () => {
     projects,
     activeProjectId,
     activeConversationId,
-    updateProjectSettings
+    updateProjectSettings,
+    renameConversation
   } = useProjects();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -158,6 +159,29 @@ export const ChatView: React.FC = () => {
             };
             currentMessages.push(assistantMessage);
             updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+          }
+        }
+
+        // Generate conversation name after first exchange if it's still the default name
+        if (activeConversation.messages.length === 2 && activeConversation.name.startsWith("New Chat")) {
+          const userFirstMessage = activeConversation.messages[0].content as string;
+          const assistantFirstMessage = activeConversation.messages[1].content;
+
+          // Create a summary prompt for the model
+          const summaryResponse = await anthropic.messages.create({
+            model: "claude-3-5-sonnet-20240122",
+            max_tokens: 50,
+            messages: [{
+              role: "user",
+              content: `Based on this chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose:\n\nUser: ${userFirstMessage}\nAssistant: ${Array.isArray(assistantFirstMessage)
+                ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                : assistantFirstMessage}`
+            }]
+          });
+
+          const suggestedTitle = summaryResponse.content[0].text.replace(/["']/g, '').trim();
+          if (suggestedTitle) {
+            renameConversation(activeProject.id, activeConversationId, suggestedTitle);
           }
         }
 
