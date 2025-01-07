@@ -352,7 +352,8 @@ export const ChatView: React.FC = () => {
       const convoId = activeProject?.conversations[numConvos - 1].id;
       setActiveConversation(convoId);
     }
-  }, [activeProjectId, activeConversation, createConversation, setActiveConversation, activeProject?.conversations]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, activeConversation, createConversation, setActiveConversation]);
 
   if (!activeConversation) {
     return (
