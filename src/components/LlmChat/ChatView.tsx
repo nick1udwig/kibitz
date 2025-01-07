@@ -11,6 +11,8 @@ import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
 import { useMcp } from './context/McpContext';
 
+const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+
 export const ChatView: React.FC = () => {
   const {
     projects,
@@ -118,7 +120,7 @@ export const ChatView: React.FC = () => {
 
       while (true) {
         const response = await anthropic.messages.create({
-          model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
+          model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
           messages: apiMessages,
           ...(activeProject.settings.systemPrompt && {
@@ -145,7 +147,6 @@ export const ChatView: React.FC = () => {
         });
         apiMessages.push({
           role: response.role,
-          //content: response.content,
           content: transformedContent,
         });
 
@@ -162,14 +163,14 @@ export const ChatView: React.FC = () => {
           }
         }
 
-        // Generate conversation name after first exchange if it's still the default name
-        if (activeConversation.messages.length === 2 && activeConversation.name.startsWith("New Chat")) {
-          const userFirstMessage = activeConversation.messages[0].content as string;
-          const assistantFirstMessage = activeConversation.messages[1].content;
+        // Generate conversation name after first exchange
+        if (activeConversation && apiMessages.length === 2) {
+          const userFirstMessage = apiMessages[0].content as string;
+          const assistantFirstMessage = apiMessages[1].content;
 
           // Create a summary prompt for the model
           const summaryResponse = await anthropic.messages.create({
-            model: "claude-3-5-sonnet-20240122",
+            model: activeProject.settings.model || DEFAULT_MODEL,
             max_tokens: 50,
             messages: [{
               role: "user",
@@ -179,9 +180,20 @@ export const ChatView: React.FC = () => {
             }]
           });
 
-          const suggestedTitle = summaryResponse.content[0].text.replace(/["']/g, '').trim();
-          if (suggestedTitle) {
-            renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+          const type = summaryResponse.content[0].type;
+          if (type == 'text') {
+            const suggestedTitle = summaryResponse.content[0].text
+              .replace(/["']/g, '')
+              .replace('title:', '')
+              .replace('Title:', '')
+              .replace('title', '')
+              .replace('Title', '')
+              .trim();
+            if (suggestedTitle) {
+              renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+            }
+          } else {
+            console.log(`Failed to rename conversation. Got back: ${summaryResponse}`);
           }
         }
 
