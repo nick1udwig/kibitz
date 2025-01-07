@@ -9,6 +9,7 @@ import { Message } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
+import { useFocusControl } from './context/useFocusControl';
 import { useMcp } from './context/McpContext';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
@@ -20,8 +21,6 @@ export const ChatView: React.FC = () => {
     activeConversationId,
     updateProjectSettings,
     renameConversation,
-    createConversation,
-    setActiveConversation,
   } = useProjects();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -333,27 +332,8 @@ export const ChatView: React.FC = () => {
     );
   };
 
-  // If no conversation is active, create one
-  useEffect(() => {
-    if (!activeProjectId) {
-      return;
-    }
-    const numConvos = activeProject?.conversations.length;
-    if (!numConvos) {
-        createConversation(activeProjectId);
-        return;
-    }
-    if (numConvos == 0 || activeProject?.conversations[numConvos - 1].messages.length != 0) {
-      createConversation(activeProjectId);
-    } else {
-      if (activeConversation) {
-        return;
-      }
-      const convoId = activeProject?.conversations[numConvos - 1].id;
-      setActiveConversation(convoId);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId, activeConversation, createConversation, setActiveConversation]);
+  // Use the focus control hook for managing conversation focus
+  useFocusControl();
 
   if (!activeConversation) {
     return (

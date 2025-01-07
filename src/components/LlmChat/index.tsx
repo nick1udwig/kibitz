@@ -13,6 +13,7 @@ import { ConversationSidebar } from './ConversationSidebar';
 
 export const ChatApp = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('chat');
 
   // Handle initial mobile state
   React.useEffect(() => {
@@ -56,19 +57,25 @@ export const ChatApp = () => {
             </div>
 
             <div className="p-4">
-              <Tabs defaultValue="chat" className="max-w-4xl mx-auto">
+              <Tabs defaultValue="chat" className="max-w-4xl mx-auto" onValueChange={setActiveTab}>
                 <TabsList className="mb-4">
                   <TabsTrigger value="chat">Chat</TabsTrigger>
                   <TabsTrigger value="settings">Settings</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="chat" className="h-[calc(100vh-12rem)]">
-                  <ChatView />
-                </TabsContent>
+                {/* Keep the ChatView always mounted to preserve conversation state */}
+                <div className={activeTab === 'settings' ? 'hidden' : ''}>
+                  <TabsContent value="chat" className="h-[calc(100vh-12rem)]" forceMount>
+                    <ChatView />
+                  </TabsContent>
+                </div>
 
-                <TabsContent value="settings">
-                  <AdminView />
-                </TabsContent>
+                {/* Show AdminView only when settings tab is active */}
+                <div className={activeTab === 'chat' ? 'hidden' : ''}>
+                  <TabsContent value="settings" forceMount>
+                    <AdminView />
+                  </TabsContent>
+                </div>
               </Tabs>
             </div>
           </div>
