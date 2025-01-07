@@ -11,12 +11,15 @@ import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
 import { useMcp } from './context/McpContext';
 
+const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+
 export const ChatView: React.FC = () => {
   const {
     projects,
     activeProjectId,
     activeConversationId,
-    updateProjectSettings
+    updateProjectSettings,
+    renameConversation
   } = useProjects();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -117,7 +120,7 @@ export const ChatView: React.FC = () => {
 
       while (true) {
         const response = await anthropic.messages.create({
-          model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
+          model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
           messages: apiMessages,
           ...(activeProject.settings.systemPrompt && {
@@ -144,7 +147,6 @@ export const ChatView: React.FC = () => {
         });
         apiMessages.push({
           role: response.role,
-          //content: response.content,
           content: transformedContent,
         });
 
@@ -158,6 +160,40 @@ export const ChatView: React.FC = () => {
             };
             currentMessages.push(assistantMessage);
             updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+          }
+        }
+
+        // Generate conversation name after first exchange
+        if (activeConversation && apiMessages.length === 2) {
+          const userFirstMessage = apiMessages[0].content as string;
+          const assistantFirstMessage = apiMessages[1].content;
+
+          // Create a summary prompt for the model
+          const summaryResponse = await anthropic.messages.create({
+            model: activeProject.settings.model || DEFAULT_MODEL,
+            max_tokens: 50,
+            messages: [{
+              role: "user",
+              content: `Based on this chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose:\n\nUser: ${userFirstMessage}\nAssistant: ${Array.isArray(assistantFirstMessage)
+                ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                : assistantFirstMessage}`
+            }]
+          });
+
+          const type = summaryResponse.content[0].type;
+          if (type == 'text') {
+            const suggestedTitle = summaryResponse.content[0].text
+              .replace(/["']/g, '')
+              .replace('title:', '')
+              .replace('Title:', '')
+              .replace('title', '')
+              .replace('Title', '')
+              .trim();
+            if (suggestedTitle) {
+              renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+            }
+          } else {
+            console.log(`Failed to rename conversation. Got back: ${summaryResponse}`);
           }
         }
 

@@ -50,6 +50,7 @@ export interface ProjectState {
   }) => void;
   createConversation: (projectId: string, name?: string) => void;
   deleteConversation: (projectId: string, conversationId: string) => void;
+  renameConversation: (projectId: string, conversationId: string, newName: string) => void;
   setActiveProject: (projectId: string | null) => void;
   setActiveConversation: (conversationId: string | null) => void;
 }
