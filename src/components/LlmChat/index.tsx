@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { McpProvider } from './context/McpContext';
 import { ProjectProvider } from './context/ProjectContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,6 +10,7 @@ import { AdminView } from './AdminView';
 import { ConversationSidebar } from './ConversationSidebar';
 
 export const ChatApp = () => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const handleExportConversation = (projectId: string, conversationId?: string) => {
     console.log('Export', { projectId, conversationId });
   };
@@ -17,8 +18,20 @@ export const ChatApp = () => {
   return (
     <ProjectProvider>
       <McpProvider>
-        <div className="min-h-screen bg-background text-foreground flex">
-          <ConversationSidebar onExportConversation={handleExportConversation} />
+        <div className="min-h-screen bg-background text-foreground flex relative">
+          {/* Mobile menu overlay */}
+          {isMobileMenuOpen && (
+            <div
+              className="fixed inset-0 bg-black/50 md:hidden z-40"
+              onClick={() => setIsMobileMenuOpen(false)}
+            />
+          )}
+
+          <ConversationSidebar
+            onExportConversation={handleExportConversation}
+            isMobileMenuOpen={isMobileMenuOpen}
+            onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          />
 
           <div className="flex-1">
             <div className="p-4 border-b">

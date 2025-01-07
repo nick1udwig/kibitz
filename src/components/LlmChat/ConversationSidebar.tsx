@@ -1,6 +1,6 @@
 "use client";
 
-import { PlusCircle, Download, Trash2, ChevronDown, ChevronRight, FolderPlus } from 'lucide-react';
+import { PlusCircle, Download, Trash2, ChevronDown, ChevronRight, FolderPlus, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { useState } from 'react';
@@ -9,9 +9,15 @@ import { useProjects } from './context/ProjectContext';
 
 interface ConversationSidebarProps {
   onExportConversation: (projectId: string, conversationId?: string) => void;
+  isMobileMenuOpen?: boolean;
+  onMobileMenuToggle?: () => void;
 }
 
-export const ConversationSidebar = ({ onExportConversation }: ConversationSidebarProps) => {
+export const ConversationSidebar = ({
+  onExportConversation,
+  isMobileMenuOpen = true,
+  onMobileMenuToggle
+}: ConversationSidebarProps) => {
   const {
     projects,
     activeProjectId,
@@ -60,7 +66,21 @@ export const ConversationSidebar = ({ onExportConversation }: ConversationSideba
   };
 
   return (
-    <div className="w-64 border-r p-4 flex flex-col h-full">
+    <div className={`
+      md:w-64 md:static md:translate-x-0
+      ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      absolute z-50 bg-background w-[80vw] border-r p-4 flex flex-col h-full
+      transition-transform duration-200 ease-in-out
+    `}>
+      {/* Mobile Menu Toggle */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="absolute right-2 top-2 md:hidden"
+        onClick={onMobileMenuToggle}
+      >
+        <Menu className="w-4 h-4" />
+      </Button>
       {/* Top buttons */}
       <div className="flex gap-2 mb-4">
         <Button
