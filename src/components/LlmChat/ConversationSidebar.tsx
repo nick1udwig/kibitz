@@ -29,6 +29,14 @@ export const ConversationSidebar = ({ onExportConversation }: ConversationSideba
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{ type: 'project' | 'conversation', projectId: string, conversationId?: string } | null>(null);
 
+  const expandProject = (projectId: string) => {
+    const newExpanded = new Set(expandedProjects);
+    if (!newExpanded.has(projectId)) {
+      newExpanded.add(projectId);
+      setExpandedProjects(newExpanded);
+    }
+  };
+
   const toggleProjectExpanded = (projectId: string) => {
     const newExpanded = new Set(expandedProjects);
     if (newExpanded.has(projectId)) {
@@ -56,7 +64,10 @@ export const ConversationSidebar = ({ onExportConversation }: ConversationSideba
       {/* Top buttons */}
       <div className="flex gap-2 mb-4">
         <Button
-          onClick={() => createProject('New Project')}
+          onClick={() => {
+            createProject('New Project');
+            // First conversation will be created automatically by ChatView
+          }}
           className="flex-1"
           variant="outline"
         >
@@ -82,7 +93,8 @@ export const ConversationSidebar = ({ onExportConversation }: ConversationSideba
                 ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
               onClick={() => {
                 setActiveProject(project.id);
-                toggleProjectExpanded(project.id);
+                setActiveConversation(null); // Clear active conversation to trigger auto-creation in ChatView
+                expandProject(project.id);
               }}
             >
               <button

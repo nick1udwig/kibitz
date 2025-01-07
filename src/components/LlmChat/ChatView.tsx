@@ -19,7 +19,9 @@ export const ChatView: React.FC = () => {
     activeProjectId,
     activeConversationId,
     updateProjectSettings,
-    renameConversation
+    renameConversation,
+    createConversation,
+    setActiveConversation,
   } = useProjects();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -332,10 +334,29 @@ export const ChatView: React.FC = () => {
     );
   };
 
+  // If no conversation is active, create one
+  useEffect(() => {
+    console.log(`${activeProjectId} ${activeConversation}`);
+    if (!activeProjectId) {
+      return;
+    }
+    const numConvos = activeProject?.conversations.length;
+    if (!numConvos) {
+        createConversation(activeProjectId);
+        return;
+    }
+    if (numConvos == 0 || activeProject?.conversations[numConvos - 1].messages.length != 0) {
+      createConversation(activeProjectId);
+    } else {
+      const convoId = activeProject?.conversations[numConvos - 1].id;
+      setActiveConversation(convoId);
+    }
+  }, [activeProjectId, activeConversation, createConversation, setActiveConversation, activeProject?.conversations]);
+
   if (!activeConversation) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-muted-foreground">Select or create a conversation to begin chatting.</p>
+        <Spinner />
       </div>
     );
   }

@@ -152,7 +152,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
                 id: 2
               }));
             } else if (response.id === 2) {
-              if (response.results['error']) {
+              if (response['error']) {
                 console.log(`Received unexpected WS-MCP message: ${response.results}`);
                 return server;
               }
@@ -233,7 +233,6 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
               console.error(`Initial connection failed for ${server.name}:`, error);
             })
             .then(newServer => {
-              console.log(`newServer ${JSON.stringify(newServer)}`);
               projects.forEach(project => {
                 updateProjectSettings(project.id, { settings: {
                   ...project.settings,
