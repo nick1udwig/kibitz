@@ -355,9 +355,7 @@ export const ChatView: React.FC = () => {
           className="self-end relative"
         >
           {isLoading ? (
-            <div className="bg-primary-foreground rounded-full p-1">
-              <Spinner />
-            </div>
+            <Spinner />
           ) : (
             <Send className="w-4 h-4" />
           )}
