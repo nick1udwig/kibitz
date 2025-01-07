@@ -338,7 +338,7 @@ export const ChatView: React.FC = () => {
     if (activeProjectId && !activeConversation) {
       createConversation(activeProjectId);
     }
-  }, [activeProjectId, activeConversation]);
+  }, [activeProjectId, activeConversation, createConversation]);
 
   if (!activeConversation) {
     return (
