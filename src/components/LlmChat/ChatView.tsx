@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send } from 'lucide-react';
@@ -28,16 +28,43 @@ export const ChatView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { servers, executeTool } = useMcp();
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
     input: Record<string, unknown>;
     result: string | null;
   } | null>(null);
 
+  const isNearBottom = useCallback(() => {
+    const container = chatContainerRef.current;
+    if (!container) return false;
+
+    const threshold = 100; // pixels from bottom
+    const position = container.scrollHeight - container.scrollTop - container.clientHeight;
+    return position <= threshold;
+  }, []);
+
+  // Update shouldAutoScroll when user scrolls
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeConversation?.messages]);
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      setShouldAutoScroll(isNearBottom());
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [isNearBottom]);
+
+  // Auto-scroll only if user was already near bottom
+  useEffect(() => {
+    if (shouldAutoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [activeConversation?.messages, shouldAutoScroll]);
 
   const getUniqueTools = () => {
     if (!activeProject?.settings.mcpServers?.length) {
@@ -306,7 +333,7 @@ export const ChatView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4">
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
           {activeConversation.messages.map((message, index) => (
             <div
