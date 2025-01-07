@@ -152,6 +152,10 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
                 id: 2
               }));
             } else if (response.id === 2) {
+              if (response.results.error) {
+                console.log(`Received unexpected WS-MCP message: ${response.results}`);
+                return server;
+              }
               const tools: ATool[] = response.result.tools.map((tool: Tool) => ({
                 ...tool,
                 input_schema: tool.inputSchema,
@@ -171,6 +175,11 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
             }
           } catch (error) {
             console.error('Error parsing WebSocket message:', error);
+            return {
+              ...server,
+              status: 'error',
+              error: error instanceof Error ? error.message : 'Error parsing WebSocket message'
+            };
           }
         };
       });
