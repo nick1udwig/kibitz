@@ -19,7 +19,8 @@ export const ChatView: React.FC = () => {
     activeProjectId,
     activeConversationId,
     updateProjectSettings,
-    renameConversation
+    renameConversation,
+    createConversation
   } = useProjects();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -332,10 +333,17 @@ export const ChatView: React.FC = () => {
     );
   };
 
+  // If no conversation is active, create one
+  useEffect(() => {
+    if (activeProjectId && !activeConversation) {
+      createConversation(activeProjectId);
+    }
+  }, [activeProjectId, activeConversation]);
+
   if (!activeConversation) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-muted-foreground">Select or create a conversation to begin chatting.</p>
+        <Spinner />
       </div>
     );
   }

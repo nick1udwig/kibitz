@@ -133,9 +133,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const createProject = useCallback((name: string, settings?: Partial<ProjectSettings>) => {
     const currentProject = projects.find(p => p.id === activeProjectId);
-    const defaultConversationId = generateId();
+    const projectId = generateId();
     const newProject: Project = {
-      id: generateId(),
+      id: projectId,
       name,
       settings: {
         ...DEFAULT_PROJECT_SETTINGS,
@@ -145,17 +145,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }),
         ...settings,
       },
-      conversations: [{
-        id: defaultConversationId,
-        name: "New Chat",
-        lastUpdated: new Date(),
-        messages: []
-      }],
+      conversations: [],
       createdAt: new Date(),
       updatedAt: new Date()
     };
     setProjects(prev => [...prev, newProject]);
-    setActiveProjectId(newProject.id);
+    setActiveProjectId(projectId);
+    setActiveConversationId(null); // Clear active conversation to trigger auto-creation in ChatView
+    return projectId;
   }, [activeProjectId, projects]);
 
   const deleteProject = useCallback((id: string) => {
