@@ -67,7 +67,6 @@ export const ChatView: React.FC = () => {
           });
         }
       });
-    console.log(`getUniqueTools:\n ${JSON.stringify(servers)}\n\n${JSON.stringify(Array.from(toolMap.values()))}`);
 
     return Array.from(toolMap.values());
   };
@@ -336,7 +335,6 @@ export const ChatView: React.FC = () => {
 
   // If no conversation is active, create one
   useEffect(() => {
-    console.log(`${activeProjectId} ${activeConversation}`);
     if (!activeProjectId) {
       return;
     }

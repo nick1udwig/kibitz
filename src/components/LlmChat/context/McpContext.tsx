@@ -214,13 +214,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   }, [connectToServer, servers]);
 
 
-  //// TODO: figure out how to restore server state from localStorage
-  ////       problem is that we use onServersChange in AdminView/McpConfiguration and AdminView/index
-  ////       to propagate changes to servers here over to settings that are actually viewable by GUI.
-  ////       So this method has two issues:
-  ////       1. Can't propagate to GUI
-  ////       2. It gets into an infinite reconnect loop somehow
-  ////// Try to restore server state from localStorage
+  // Try to restore server state from localStorage
   useEffect(() => {
     const savedServers = localStorage.getItem('mcp_servers');
     if (savedServers) {
