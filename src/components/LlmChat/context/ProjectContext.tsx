@@ -1,11 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
 import { Message } from '../types';
 import { McpServer } from '../types/mcp';
-
-
 
 const ProjectContext = createContext<ProjectState | null>(null);
 
@@ -36,96 +34,69 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
 
-  // Initialize with saved data or defaults
-  //useEffect(() => {
-  //  const savedData = localStorage.getItem('chat_app_projects');
-  //  if (savedData) {
-  //    const parsed = JSON.parse(savedData);
-  //    setProjects(parsed.projects.map((proj: any) => ({
-  //      ...proj,
-  //      settings: {
-  //        apiKey: proj.settings.apiKey,
-  //        model: proj.settings.model,
-  //        systemPrompt: proj.settings.systemPrompt,
-  //        mcpServers: { ...proj.settings.mcpServers, status: 'disconnected' },
-  //      },
-  //      conversations: proj.conversations.map((conv: any) => ({
-  //        ...conv,
-  //        lastUpdated: new Date(conv.lastUpdated),
-  //        messages: conv.messages.map((msg: any) => ({
-  //          ...msg,
-  //          timestamp: new Date(msg.timestamp)
-  //        }))
-  //      })),
-  //      createdAt: new Date(proj.createdAt),
-  //      updatedAt: new Date(proj.updatedAt)
-  //    })));
-  //    setActiveProjectId(parsed.activeProjectId);
-  //    setActiveConversationId(parsed.activeConversationId);
-  //  } else {
-  //    // Create default project
-  //    const defaultProject: Project = {
-  //      id: generateId(),
-  //      name: 'Default Project',
-  //      settings: DEFAULT_PROJECT_SETTINGS,
-  //      conversations: [],
-  //      createdAt: new Date(),
-  //      updatedAt: new Date()
-  //    };
-  //    setProjects([defaultProject]);
-  //    setActiveProjectId(defaultProject.id);
-  //  }
-  //}, []);
+  // Use ref to track if initial load has happened
+  const initialized = useRef(false);
+
+  const createDefaultProject = useCallback(() => {
+    const defaultProject: Project = {
+      id: generateId(),
+      name: 'Default Project',
+      settings: {
+        ...DEFAULT_PROJECT_SETTINGS,
+        mcpServers: []
+      },
+      conversations: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    setProjects([defaultProject]);
+    setActiveProjectId(defaultProject.id);
+  }, []);
+
   useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+
     const savedData = localStorage.getItem('chat_app_projects');
     if (savedData) {
-      const parsed = JSON.parse(savedData);
-      setProjects(parsed.projects.map((proj: Project & { settings: ProjectSettings }) => ({
-        ...proj,
-        settings: {
-          apiKey: proj.settings.apiKey,
-          model: proj.settings.model,
-          systemPrompt: proj.settings.systemPrompt,
-          // Preserve mcpServers array but reset status
-          mcpServers: (proj.settings.mcpServers || []).map((server: McpServer) => ({
-            ...server,
-            status: 'disconnected'
+      try {
+        const parsed = JSON.parse(savedData);
+        setProjects(parsed.projects.map((proj: Project & { settings: ProjectSettings }) => ({
+          ...proj,
+          settings: {
+            apiKey: proj.settings.apiKey,
+            model: proj.settings.model,
+            systemPrompt: proj.settings.systemPrompt,
+            mcpServers: (proj.settings.mcpServers || []).map((server: McpServer) => ({
+              ...server,
+              status: 'disconnected'
+            })),
+          },
+          conversations: proj.conversations.map((conv: ConversationBrief & { messages: Message[] }) => ({
+            ...conv,
+            lastUpdated: new Date(conv.lastUpdated),
+            messages: conv.messages.map((msg: Message) => ({
+              ...msg,
+              timestamp: new Date(msg.timestamp)
+            }))
           })),
-        },
-        conversations: proj.conversations.map((conv: ConversationBrief & { messages: Message[] }) => ({
-          ...conv,
-          lastUpdated: new Date(conv.lastUpdated),
-          messages: conv.messages.map((msg: Message) => ({
-            ...msg,
-            timestamp: new Date(msg.timestamp)
-          }))
-        })),
-        createdAt: new Date(proj.createdAt),
-        updatedAt: new Date(proj.updatedAt)
-      })));
-      setActiveProjectId(parsed.activeProjectId);
-      setActiveConversationId(parsed.activeConversationId);
+          createdAt: new Date(proj.createdAt),
+          updatedAt: new Date(proj.updatedAt)
+        })));
+        setActiveProjectId(parsed.activeProjectId);
+        setActiveConversationId(parsed.activeConversationId);
+      } catch (error) {
+        console.error('Error parsing saved data:', error);
+        createDefaultProject();
+      }
     } else {
-      // Create default project with empty mcpServers array
-      const defaultProject: Project = {
-        id: generateId(),
-        name: 'Default Project',
-        settings: {
-          ...DEFAULT_PROJECT_SETTINGS,
-          mcpServers: []
-        },
-        conversations: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-      setProjects([defaultProject]);
-      setActiveProjectId(defaultProject.id);
+      createDefaultProject();
     }
-  }, [activeProjectId, activeConversationId, projects]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-
-  // Save state changes
-  useEffect(() => {
+  // Save state changes with debounce
+  const saveToLocalStorage = useCallback(() => {
     if (projects.length > 0) {
       localStorage.setItem('chat_app_projects', JSON.stringify({
         projects,
@@ -134,6 +105,31 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }));
     }
   }, [projects, activeProjectId, activeConversationId]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(saveToLocalStorage, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [saveToLocalStorage]);
+
+  const updateProjectSettings = useCallback((id: string, updates: ProjectUpdates) => {
+    setProjects(current =>
+      current.map(p => {
+        if (p.id !== id) return p;
+        return {
+          ...p,
+          settings: updates.settings ? {
+            ...p.settings,
+            ...updates.settings,
+            mcpServers: updates.settings.mcpServers !== undefined
+              ? updates.settings.mcpServers
+              : p.settings.mcpServers
+          } : p.settings,
+          conversations: updates.conversations || p.conversations,
+          updatedAt: new Date()
+        };
+      })
+    );
+  }, []);
 
   const createProject = useCallback((name: string, settings?: Partial<ProjectSettings>) => {
     const currentProject = projects.find(p => p.id === activeProjectId);
@@ -158,104 +154,67 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       createdAt: new Date(),
       updatedAt: new Date()
     };
-    setProjects(current => [...current, newProject]);
+    setProjects(prev => [...prev, newProject]);
     setActiveProjectId(newProject.id);
   }, [activeProjectId, projects]);
 
   const deleteProject = useCallback((id: string) => {
     setProjects(current => {
       const updatedProjects = current.filter(p => p.id !== id);
-
-      // Immediately update localStorage to remove the project
-      const savedData = {
-        projects: updatedProjects,
-        activeProjectId: activeProjectId === id ? (updatedProjects[0]?.id ?? null) : activeProjectId,
-        activeConversationId: activeProjectId === id ? null : activeConversationId
-      };
-      localStorage.setItem('chat_app_projects', JSON.stringify(savedData));
-
       return updatedProjects;
-  });
+    });
 
     if (activeProjectId === id) {
-      setActiveProjectId(projects[0]?.id ?? null);
-      setActiveConversationId(null);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      setActiveProjectId(prev => {
+        const newActiveId = projects.find(p => p.id !== id)?.id ?? null;
+        setActiveConversationId(null);
+        return newActiveId;
+      });
     }
-  }, [activeProjectId, activeConversationId, projects]);
-
-  const updateProjectSettings = useCallback((id: string, updates: ProjectUpdates) => {
-    setProjects(current =>
-      current.map(p => p.id === id
-        ? {
-            ...p,
-            ...(updates.settings && {
-              settings: {
-                ...p.settings,
-                ...updates.settings,
-                ...(updates.settings.mcpServers !== undefined && {
-                  mcpServers: updates.settings.mcpServers
-                })
-              }
-            }),
-            ...(updates.conversations && { conversations: updates.conversations }),
-            updatedAt: new Date()
-          }
-        : p
-      )
-    );
-  }, []);
+  }, [activeProjectId, projects]);
 
   const createConversation = useCallback((projectId: string, name?: string) => {
     const conversationId = generateId();
     setProjects(current =>
-      current.map(p => p.id === projectId
-        ? {
-            ...p,
-            conversations: [
-              ...p.conversations,
-              {
-                id: conversationId,
-                name: name || `Conversation ${p.conversations.length + 1}`,
-                lastUpdated: new Date(),
-                messages: []
-              }
-            ],
-            updatedAt: new Date()
-          }
-        : p
-      )
+      current.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          conversations: [
+            ...p.conversations,
+            {
+              id: conversationId,
+              name: name || `Conversation ${p.conversations.length + 1}`,
+              lastUpdated: new Date(),
+              messages: []
+            }
+          ],
+          updatedAt: new Date()
+        };
+      })
     );
     setActiveConversationId(conversationId);
   }, []);
 
   const deleteConversation = useCallback((projectId: string, conversationId: string) => {
-    setProjects(current => {
-      const updatedProjects = current.map(p => p.id === projectId
-        ? {
-            ...p,
-            conversations: p.conversations.filter(c => c.id !== conversationId),
-            updatedAt: new Date()
-          }
-        : p
-      );
-
-      // Immediately update localStorage
-      const savedData = {
-        projects: updatedProjects,
-        activeProjectId,
-        activeConversationId: activeConversationId === conversationId ? null : activeConversationId
-      };
-      localStorage.setItem('chat_app_projects', JSON.stringify(savedData));
-
-      return updatedProjects;
-    });
+    setProjects(current =>
+      current.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          conversations: p.conversations.filter(c => c.id !== conversationId),
+          updatedAt: new Date()
+        };
+      })
+    );
 
     if (activeConversationId === conversationId) {
       const project = projects.find(p => p.id === projectId);
       const nextConvoId = project?.conversations.find(c => c.id !== conversationId)?.id ?? null;
       setActiveConversationId(nextConvoId);
     }
-  }, [activeConversationId, projects, activeProjectId]);
+  }, [activeConversationId, projects]);
 
   const value: ProjectState = {
     projects,

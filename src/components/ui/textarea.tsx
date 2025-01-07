@@ -28,7 +28,8 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       if (textareaRef.current) {
         handleChange({ target: textareaRef.current } as React.ChangeEvent<HTMLTextAreaElement>);
       }
-    }, [handleChange]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
       <textarea

@@ -20,8 +20,6 @@ interface McpProviderProps {
   initialServers?: McpServer[];
 }
 
-let hasInitialized = false;
-
 export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServers = [] }) => {
   const { projects, updateProjectSettings } = useProjects();
   const [servers, setServers] = useState<McpServerConnection[]>(() =>
@@ -203,18 +201,14 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   }, [connectToServer, servers]);
 
 
-  // TODO: figure out how to restore server state from localStorage
-  //       problem is that we use onServersChange in AdminView/McpConfiguration and AdminView/index
-  //       to propagate changes to servers here over to settings that are actually viewable by GUI.
-  //       So this method has two issues:
-  //       1. Can't propagate to GUI
-  //       2. It gets into an infinite reconnect loop somehow
-  //// Try to restore server state from localStorage
+  //// TODO: figure out how to restore server state from localStorage
+  ////       problem is that we use onServersChange in AdminView/McpConfiguration and AdminView/index
+  ////       to propagate changes to servers here over to settings that are actually viewable by GUI.
+  ////       So this method has two issues:
+  ////       1. Can't propagate to GUI
+  ////       2. It gets into an infinite reconnect loop somehow
+  ////// Try to restore server state from localStorage
   useEffect(() => {
-    if (hasInitialized) {
-      return;
-    }
-    hasInitialized = true;
     const savedServers = localStorage.getItem('mcp_servers');
     if (savedServers) {
       try {
@@ -241,7 +235,9 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
         console.error('Error parsing saved servers:', error);
       }
     }
-  }, [projects, addServer, updateProjectSettings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  ////}, [projects, addServer, updateProjectSettings]);
 
   // Save server state to localStorage
   useEffect(() => {
