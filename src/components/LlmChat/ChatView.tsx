@@ -346,6 +346,9 @@ export const ChatView: React.FC = () => {
     if (numConvos == 0 || activeProject?.conversations[numConvos - 1].messages.length != 0) {
       createConversation(activeProjectId);
     } else {
+      if (activeConversation) {
+        return;
+      }
       const convoId = activeProject?.conversations[numConvos - 1].id;
       setActiveConversation(convoId);
     }
