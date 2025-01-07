@@ -37,9 +37,3 @@ export type Conversation = {
   messages: Message[];
   settings: ConversationSettings;
 };
-
-//export type Tool = {
-//  name: string;
-//  description: string;
-//  input_schema: object;
-//};

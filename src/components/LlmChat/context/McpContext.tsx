@@ -2,8 +2,9 @@
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { McpServer } from '../types/mcp';
-import { McpState, McpServerConnection } from './types';
+import { McpState, McpServerConnection, Tool } from './types';
 import { useProjects } from './ProjectContext';
+import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
 
 const McpContext = createContext<McpState | null>(null);
 
@@ -151,7 +152,10 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
                 id: 2
               }));
             } else if (response.id === 2) {
-              const tools = response.result.tools;
+              const tools: ATool[] = response.result.tools.map((tool: Tool) => ({
+                ...tool,
+                input_schema: tool.inputSchema,
+              }));
               const connectedServer = {
                 ...server,
                 status: 'connected' as const,

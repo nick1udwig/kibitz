@@ -1,5 +1,6 @@
 import { Message } from '../types';
 import { McpServer } from '../types/mcp';
+import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
 
 export interface ProjectSettings {
   apiKey: string;
@@ -52,3 +53,9 @@ export interface ProjectState {
   setActiveProject: (projectId: string | null) => void;
   setActiveConversation: (conversationId: string | null) => void;
 }
+
+export interface Tool {
+  name: string,
+  inputSchema: ATool.InputSchema,
+  description?: string,
+};

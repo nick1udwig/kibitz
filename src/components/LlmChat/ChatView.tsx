@@ -1,12 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
-//import { Anthropic, Tool } from '@anthropic-ai/sdk';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
-//import { Message, Tool } from './types';
 import { Message } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
@@ -64,21 +62,9 @@ export const ChatView: React.FC = () => {
           });
         }
       });
+    console.log(`getUniqueTools:\n ${JSON.stringify(servers)}\n\n${JSON.stringify(Array.from(toolMap.values()))}`);
 
     return Array.from(toolMap.values());
-
-
-    servers.forEach(server => {
-      server.tools?.forEach(tool => {
-        if (!toolMap.has(tool.name)) {
-          toolMap.set(tool.name, {
-            name: tool.name,
-            description: tool.description,
-            input_schema: tool.input_schema
-          });
-        }
-      });
-    });
   };
 
 
@@ -139,51 +125,7 @@ export const ChatView: React.FC = () => {
           }),
           ...(availableTools.length > 0 && { tools: availableTools })
         });
-        //const response = await anthropic.messages.create({
-        //  model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
-        //  max_tokens: 8192,
-        //  messages: apiMessages,
-        //  ...(activeProject.settings.systemPrompt && {
-        //    system: activeProject.settings.systemPrompt
-        //  }),
-        //  ...({ tools: availableTools.length > 0 ? availableTools : undefined })
-        //});
-        //const response = availableTools.length > 0 ?
-        //  await anthropic.messages.create({
-        //    model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
-        //    max_tokens: 8192,
-        //    messages: apiMessages,
-        //    ...(activeProject.settings.systemPrompt && {
-        //      system: activeProject.settings.systemPrompt
-        //    }),
-        //    tools: availableTools,
-        //  })
-        //:
-        //  await anthropic.messages.create({
-        //    model: activeProject.settings.model || 'claude-3-5-sonnet-20241022',
-        //    max_tokens: 8192,
-        //    messages: apiMessages,
-        //    ...(activeProject.settings.systemPrompt && {
-        //      system: activeProject.settings.systemPrompt
-        //    }),
-        //  });
 
-        //const transformedContent = response.content.map(content => {
-        //  if (content.type === 'text') {
-        //    return {
-        //      type: 'text',
-        //      text: content.text
-        //    };
-        //  } else if (content.type === 'tool_use') {
-        //    return {
-        //      type: 'tool_use',
-        //      id: content.id,
-        //      name: content.name,
-        //      input: content.input as Record<string, unknown>
-        //    };
-        //  }
-        //  return content;
-        //});
         const transformedContent = response.content.map(content => {
           if (content.type === 'text') {
             return {
