@@ -20,7 +20,8 @@ export const ChatView: React.FC = () => {
     activeConversationId,
     updateProjectSettings,
     renameConversation,
-    createConversation
+    createConversation,
+    setActiveConversation,
   } = useProjects();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -335,10 +336,22 @@ export const ChatView: React.FC = () => {
 
   // If no conversation is active, create one
   useEffect(() => {
-    if (activeProjectId && !activeConversation) {
-      createConversation(activeProjectId);
+    console.log(`${activeProjectId} ${activeConversation}`);
+    if (!activeProjectId) {
+      return;
     }
-  }, [activeProjectId, activeConversation, createConversation]);
+    const numConvos = activeProject?.conversations.length;
+    if (!numConvos) {
+        createConversation(activeProjectId);
+        return;
+    }
+    if (numConvos == 0 || activeProject?.conversations[numConvos - 1].messages.length != 0) {
+      createConversation(activeProjectId);
+    } else {
+      const convoId = activeProject?.conversations[numConvos - 1].id;
+      setActiveConversation(convoId);
+    }
+  }, [activeProjectId, activeConversation, createConversation, setActiveConversation, activeProject?.conversations]);
 
   if (!activeConversation) {
     return (
