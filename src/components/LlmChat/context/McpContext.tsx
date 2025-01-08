@@ -136,11 +136,24 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
           reject(error);
         };
 
-        ws.onmessage = (event) => {
+          ws.onmessage = (event) => {
           try {
             const response = JSON.parse(event.data);
 
+            // Handle status update notifications
+            if (!response.id && response.method === 'notifications/status') {
+              const { status } = response.params;
+              setServers(current =>
+                current.map(s => s.id === server.id
+                  ? { ...s, status: status.toLowerCase() }
+                  : s
+                )
+              );
+              return;
+            }
+
             if (response.id === 1) {
+              // Subscribe to status updates after initialization
               ws.send(JSON.stringify({
                 jsonrpc: '2.0',
                 method: 'notifications/initialized',
@@ -148,12 +161,23 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
               ws.send(JSON.stringify({
                 jsonrpc: '2.0',
+                method: 'notifications/subscribe',
+                params: { notifications: ['status'] },
+                id: 'status-sub'
+              }));
+
+              ws.send(JSON.stringify({
+                jsonrpc: '2.0',
                 method: 'tools/list',
                 id: 2
               }));
+            } else if (response.id === 'status-sub') {
+              if (response.error) {
+                console.error('Failed to subscribe to status updates:', response.error);
+              }
             } else if (response.id === 2) {
               if (response['error']) {
-                console.log(`Received unexpected WS-MCP message: ${response.results}`);
+                console.error(`Received unexpected WS-MCP message: ${response.results}`);
                 return server;
               }
               const tools: ATool[] = response.result.tools.map((tool: Tool) => ({
