@@ -173,7 +173,7 @@ export const ConversationSidebar = ({
                       }
                     }}
                   >
-                    <span className="truncate flex-1">{convo.name}</span>
+                    <span className="truncate flex-1" title={convo.name}>{convo.name}</span>
                     <Button
                       variant="ghost"
                       size="sm"
