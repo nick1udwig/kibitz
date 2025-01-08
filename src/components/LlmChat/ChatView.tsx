@@ -113,7 +113,7 @@ export const ChatView: React.FC = () => {
 
       const availableTools = getUniqueTools();
 
-      const apiMessages = currentMessages.map(msg => ({
+      let apiMessages = currentMessages.map(msg => ({
         role: msg.role,
         content: typeof msg.content === 'string' ?
         [{
@@ -266,6 +266,17 @@ export const ChatView: React.FC = () => {
 
               currentMessages.push(toolResultMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+
+              apiMessages = apiMessages.map(m => m.content[0].type !== 'tool_result' ?
+                m :
+                {
+                  ...m,
+                  content: [{
+                    ...m.content[0],
+                    content: 'elided',
+                  }],
+                }
+              );
 
               apiMessages.push({
                 role: 'user',
