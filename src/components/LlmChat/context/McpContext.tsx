@@ -256,10 +256,34 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     setServers(current => current.filter(s => s.id !== serverId));
   }, [cleanupServer]);
 
+  const reconnectServer = useCallback(async (serverId: string) => {
+    const server = servers.find(s => s.id === serverId);
+    if (!server) {
+      throw new Error('Server not found');
+    }
+
+    try {
+      const connectedServer = await connectToServer(server);
+      setServers(current =>
+        current.map(s => s.id === serverId ? connectedServer : s)
+      );
+      return connectedServer;
+    } catch (error) {
+      setServers(current =>
+        current.map(s => s.id === serverId
+          ? { ...s, status: 'error', error: 'Reconnection failed' }
+          : s
+        )
+      );
+      throw error;
+    }
+  }, [connectToServer, servers]);
+
   const value = {
     servers,
     addServer,
     removeServer,
+    reconnectServer,
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>): Promise<string> => {
       const ws = connectionsRef.current.get(serverId);
       if (!ws || ws.readyState !== WebSocket.OPEN) {
