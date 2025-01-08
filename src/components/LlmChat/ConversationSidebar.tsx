@@ -29,6 +29,7 @@ export const ConversationSidebar = ({
     createConversation,
     deleteConversation,
     renameConversation,
+    renameProject,
     setActiveProject,
     setActiveConversation
   } = useProjects();
@@ -38,7 +39,7 @@ export const ConversationSidebar = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{ type: 'project' | 'conversation', projectId: string, conversationId?: string } | null>(null);
-  const [renameItem, setRenameItem] = useState<{ projectId: string, conversationId: string, currentName: string } | null>(null);
+  const [renameItem, setRenameItem] = useState<{ type: 'project' | 'conversation', projectId: string, conversationId?: string, currentName: string } | null>(null);
   const [newName, setNewName] = useState('');
 
   const expandProject = (projectId: string) => {
@@ -144,6 +145,23 @@ export const ConversationSidebar = ({
                 className="p-1 h-6 w-6"
                 onClick={(e) => {
                   e.stopPropagation();
+                  setRenameItem({
+                    type: 'project',
+                    projectId: project.id,
+                    currentName: project.name
+                  });
+                  setNewName(project.name);
+                  setShowRenameDialog(true);
+                }}
+              >
+                <Pencil className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="p-1 h-6 w-6"
+                onClick={(e) => {
+                  e.stopPropagation();
                   setItemToDelete({ type: 'project', projectId: project.id });
                   setShowDeleteConfirm(true);
                 }}
@@ -187,6 +205,7 @@ export const ConversationSidebar = ({
                       onClick={(e) => {
                         e.stopPropagation();
                         setRenameItem({
+                          type: 'conversation',
                           projectId: project.id,
                           conversationId: convo.id,
                           currentName: convo.name
@@ -246,7 +265,7 @@ export const ConversationSidebar = ({
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename Conversation</DialogTitle>
+            <DialogTitle>Rename {renameItem?.type === 'project' ? 'Project' : 'Conversation'}</DialogTitle>
           </DialogHeader>
           <Input
             value={newName}
@@ -268,7 +287,11 @@ export const ConversationSidebar = ({
             <Button
               onClick={() => {
                 if (renameItem && newName.trim()) {
-                  renameConversation(renameItem.projectId, renameItem.conversationId, newName.trim());
+                  if (renameItem.type === 'project') {
+                    renameProject(renameItem.projectId, newName.trim());
+                  } else if (renameItem.conversationId) {
+                    renameConversation(renameItem.projectId, renameItem.conversationId, newName.trim());
+                  }
                   setShowRenameDialog(false);
                   setRenameItem(null);
                   setNewName('');
