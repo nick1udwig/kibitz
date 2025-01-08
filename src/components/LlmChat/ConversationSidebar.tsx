@@ -1,8 +1,10 @@
 "use client";
 
-import { PlusCircle, Download, Trash2, ChevronDown, ChevronRight, FolderPlus, Menu } from 'lucide-react';
+import { PlusCircle, Download, Trash2, ChevronDown, ChevronRight, FolderPlus, Menu, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useState } from 'react';
 import { useProjects } from './context/ProjectContext';
 
@@ -26,6 +28,7 @@ export const ConversationSidebar = ({
     deleteProject,
     createConversation,
     deleteConversation,
+    renameConversation,
     setActiveProject,
     setActiveConversation
   } = useProjects();
@@ -33,7 +36,10 @@ export const ConversationSidebar = ({
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set([activeProjectId!]));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{ type: 'project' | 'conversation', projectId: string, conversationId?: string } | null>(null);
+  const [renameItem, setRenameItem] = useState<{ projectId: string, conversationId: string, currentName: string } | null>(null);
+  const [newName, setNewName] = useState('');
 
   const expandProject = (projectId: string) => {
     const newExpanded = new Set(expandedProjects);
@@ -180,6 +186,23 @@ export const ConversationSidebar = ({
                       className="p-1 h-6 w-6"
                       onClick={(e) => {
                         e.stopPropagation();
+                        setRenameItem({
+                          projectId: project.id,
+                          conversationId: convo.id,
+                          currentName: convo.name
+                        });
+                        setNewName(convo.name);
+                        setShowRenameDialog(true);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="p-1 h-6 w-6"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setItemToDelete({
                           type: 'conversation',
                           projectId: project.id,
@@ -218,6 +241,45 @@ export const ConversationSidebar = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rename dialog */}
+      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Conversation</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Enter new name"
+            className="my-4"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRenameDialog(false);
+                setRenameItem(null);
+                setNewName('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (renameItem && newName.trim()) {
+                  renameConversation(renameItem.projectId, renameItem.conversationId, newName.trim());
+                  setShowRenameDialog(false);
+                  setRenameItem(null);
+                  setNewName('');
+                }
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
