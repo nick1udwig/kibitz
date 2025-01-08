@@ -5,6 +5,7 @@ import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { Message } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
@@ -357,8 +358,47 @@ export const ChatView: React.FC = () => {
       });
     }
 
-    return (
-      <ReactMarkdown className="prose dark:prose-invert max-w-none">
+      return (
+      <ReactMarkdown
+        className="prose dark:prose-invert max-w-none"
+        components={{
+          code({ inline, className, children, ...props }) {
+            if (inline) {
+              return (
+                <code className="bg-muted text-muted-foreground px-1 py-0.5 rounded" {...props}>
+                  {children}
+                </code>
+              );
+            }
+            const match = /language-(\w+)/.exec(className || '');
+            const lang = match ? match[1] : '';
+            
+            return (
+              <div className="relative">
+                <SyntaxHighlighter
+                  {...props}
+                  PreTag="div"
+                  language={lang || 'text'}
+                  useInlineStyles={true}
+                  customStyle={{
+                    margin: 0,
+                    padding: '1rem',
+                    background: 'var(--muted)',
+                    borderRadius: '0.5rem',
+                  }}
+                  codeTagProps={{
+                    style: {
+                      color: 'var(--muted-foreground)',
+                    },
+                  }}
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              </div>
+            );
+          },
+        }}
+      >
         {message.content}
       </ReactMarkdown>
     );
