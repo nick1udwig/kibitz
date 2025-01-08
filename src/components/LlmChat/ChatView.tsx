@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
-import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
+import { Tool, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -115,32 +115,52 @@ export const ChatView: React.FC = () => {
 
       const apiMessages = currentMessages.map(msg => ({
         role: msg.role,
-        content: msg.content
+        content: typeof msg.content === 'string' ?
+        [{
+          type: 'text' as const,
+          text: msg.content,
+          cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+        }]
+        :
+        msg.content.map((c, index, array) =>
+          index !== array.length - 1 ? c :
+          {
+            ...c,
+            cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+          }
+        )
       }));
 
+      // TODO: make cache_control an option in AdminView
       while (true) {
         const response = await anthropic.messages.create({
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
           messages: apiMessages,
           ...(activeProject.settings.systemPrompt && {
-            system: activeProject.settings.systemPrompt
+            system: [
+              {
+                type: "text",
+                text: activeProject.settings.systemPrompt,
+                cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+              }
+            ],
           }),
-          ...(availableTools.length > 0 && { tools: availableTools })
+          ...(availableTools.length > 0 && { tools: availableTools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: {type: 'ephemeral'} as CacheControlEphemeral}) })
         });
 
         const transformedContent = response.content.map(content => {
           if (content.type === 'text') {
             return {
               type: 'text' as const,
-              text: content.text
+              text: content.text,
             };
           } else if (content.type === 'tool_use') {
             return {
               type: 'tool_use' as const,
               id: content.id,
               name: content.name,
-              input: content.input as Record<string, unknown>
+              input: content.input as Record<string, unknown>,
             };
           }
           throw new Error(`Unexpected content type: ${content}`);
@@ -165,18 +185,18 @@ export const ChatView: React.FC = () => {
 
         // Generate conversation name after first exchange
         if (activeConversation && apiMessages.length === 2) {
-          const userFirstMessage = apiMessages[0].content as string;
+          const userFirstMessage = apiMessages[0].content;
           const assistantFirstMessage = apiMessages[1].content;
 
           // Create a summary prompt for the model
           const summaryResponse = await anthropic.messages.create({
             model: activeProject.settings.model || DEFAULT_MODEL,
-            max_tokens: 50,
+            max_tokens: 20,
             messages: [{
               role: "user",
-              content: `Based on this chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose:\n\nUser: ${userFirstMessage}\nAssistant: ${Array.isArray(assistantFirstMessage)
+              content: `User: ${JSON.stringify(userFirstMessage)}\nAssistant: ${Array.isArray(assistantFirstMessage)
                 ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-                : assistantFirstMessage}`
+                : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
             }]
           });
 
@@ -239,7 +259,7 @@ export const ChatView: React.FC = () => {
                 content: [{
                   type: 'tool_result',
                   tool_use_id: content.id,
-                  content: result
+                  content: result,
                 }],
                 timestamp: new Date()
               };
@@ -252,7 +272,8 @@ export const ChatView: React.FC = () => {
                 content: [{
                   type: 'tool_result',
                   tool_use_id: content.id,
-                  content: result
+                  content: result,
+                  //cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
                 }]
               });
 
@@ -277,7 +298,7 @@ export const ChatView: React.FC = () => {
                   type: 'tool_result',
                   tool_use_id: content.id,
                   content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  is_error: true
+                  is_error: true,
                 }]
               });
             }

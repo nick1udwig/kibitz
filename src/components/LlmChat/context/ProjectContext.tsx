@@ -237,6 +237,16 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     );
   }, []);
 
+  const renameProject = useCallback((projectId: string, newName: string) => {
+    setProjects(current =>
+      current.map(p =>
+        p.id === projectId
+          ? { ...p, name: newName, updatedAt: new Date() }
+          : p
+      )
+    );
+  }, []);
+
   const value: ProjectState = {
     projects,
     activeProjectId,
@@ -248,7 +258,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     deleteConversation,
     renameConversation,
     setActiveProject: setActiveProjectId,
-    setActiveConversation: setActiveConversationId
+    setActiveConversation: setActiveConversationId,
+    renameProject
   };
 
   return (
