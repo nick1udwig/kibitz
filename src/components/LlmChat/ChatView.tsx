@@ -171,12 +171,12 @@ export const ChatView: React.FC = () => {
           // Create a summary prompt for the model
           const summaryResponse = await anthropic.messages.create({
             model: activeProject.settings.model || DEFAULT_MODEL,
-            max_tokens: 50,
+            max_tokens: 20,
             messages: [{
               role: "user",
-              content: `Based on this chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose:\n\nUser: ${userFirstMessage}\nAssistant: ${Array.isArray(assistantFirstMessage)
+              content: `User: ${userFirstMessage}\nAssistant: ${Array.isArray(assistantFirstMessage)
                 ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-                : assistantFirstMessage}`
+                : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
             }]
           });
 
