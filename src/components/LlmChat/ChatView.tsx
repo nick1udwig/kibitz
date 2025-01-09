@@ -68,13 +68,33 @@ export const ChatView: React.FC = () => {
 
   // Handle message updates
   useEffect(() => {
-    if (!chatContainerRef.current) return;
-
-    // Always scroll to bottom on initial load (when messages first populate)
-    if (activeConversation?.messages.length && wasAtBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!chatContainerRef.current || !activeConversation?.messages.length) {
+      return;
     }
-  }, [activeConversation?.messages, wasAtBottom]);
+
+    const container = chatContainerRef.current;
+    const isAtBottom = () => {
+      const scrollBottom = Math.ceil(container.scrollHeight - container.scrollTop);
+      const visibleHeight = Math.ceil(container.clientHeight);
+      return scrollBottom <= visibleHeight + 2; // Adding small buffer for rounding
+    };
+
+    // Get the last message
+    const lastMessage = activeConversation.messages[activeConversation.messages.length - 1];
+    // We don't need to use lastMessageTimestamp directly as we have lastUpdated from the conversation
+
+    // Scroll if:
+    // 1. User was already at bottom before the message came in
+    // 2. Last message is from the assistant (auto-scroll for responses)
+    // 3. Last message is from the user (they just sent a message)
+    if (wasAtBottom || lastMessage.role === 'assistant' || lastMessage.role === 'user') {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        // Update wasAtBottom after scrolling
+        setWasAtBottom(isAtBottom());
+      });
+    }
+  }, [activeConversation?.messages, wasAtBottom, activeConversation?.lastUpdated]);
 
   const getUniqueTools = (should_cache: boolean) => {
     if (!activeProject?.settings.mcpServers?.length) {
