@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
-import { Tool, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
+import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { Message } from './types';
+import { Message, MessageContent } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
@@ -14,6 +14,7 @@ import { useFocusControl } from './context/useFocusControl';
 import { useMcp } from './context/McpContext';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+//const HAIKU_MODEL = 'claude-3-5-haiku-20241022';
 
 export const ChatView: React.FC = () => {
   const {
@@ -34,17 +35,69 @@ export const ChatView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const { servers, executeTool } = useMcp();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [wasAtBottom, setWasAtBottom] = useState(true);
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
     input: Record<string, unknown>;
     result: string | null;
   } | null>(null);
 
+  // Scroll handling logic
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeConversation?.messages]);
+    if (!chatContainerRef.current) return;
 
-  const getUniqueTools = () => {
+    const container = chatContainerRef.current;
+
+    const isAtBottom = () => {
+      const scrollBottom = Math.ceil(container.scrollHeight - container.scrollTop);
+      const visibleHeight = Math.ceil(container.clientHeight);
+      return scrollBottom <= visibleHeight + 2; // Adding small buffer for rounding
+    };
+
+    const handleScroll = () => {
+      setWasAtBottom(isAtBottom());
+    };
+
+    // Initial scroll to bottom and state update
+    container.scrollTop = container.scrollHeight;
+    setWasAtBottom(true);
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []); // Only run on mount
+
+  // Handle message updates
+  useEffect(() => {
+    if (!chatContainerRef.current || !activeConversation?.messages.length) {
+      return;
+    }
+
+    const container = chatContainerRef.current;
+    const isAtBottom = () => {
+      const scrollBottom = Math.ceil(container.scrollHeight - container.scrollTop);
+      const visibleHeight = Math.ceil(container.clientHeight);
+      return scrollBottom <= visibleHeight + 2; // Adding small buffer for rounding
+    };
+
+    // Get the last message
+    const lastMessage = activeConversation.messages[activeConversation.messages.length - 1];
+    // We don't need to use lastMessageTimestamp directly as we have lastUpdated from the conversation
+
+    // Scroll if:
+    // 1. User was already at bottom before the message came in
+    // 2. Last message is from the assistant (auto-scroll for responses)
+    // 3. Last message is from the user (they just sent a message)
+    if (wasAtBottom || lastMessage.role === 'assistant' || lastMessage.role === 'user') {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        // Update wasAtBottom after scrolling
+        setWasAtBottom(isAtBottom());
+      });
+    }
+  }, [activeConversation?.messages, wasAtBottom, activeConversation?.lastUpdated]);
+
+  const getUniqueTools = (should_cache: boolean) => {
     if (!activeProject?.settings.mcpServers?.length) {
       return [];
     }
@@ -68,9 +121,9 @@ export const ChatView: React.FC = () => {
         }
       });
 
-    return Array.from(toolMap.values());
+    const tools = Array.from(toolMap.values());
+    return !should_cache ? tools : tools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: {type: 'ephemeral'} as CacheControlEphemeral});
   };
-
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
     updateProjectSettings(projectId, {
@@ -96,6 +149,8 @@ export const ChatView: React.FC = () => {
     setIsLoading(true);
     setError(null);
 
+    //let isFirstRequest = true;
+
     try {
       const userMessage: Message = {
         role: 'user',
@@ -112,42 +167,191 @@ export const ChatView: React.FC = () => {
         dangerouslyAllowBrowser: true
       });
 
-      const availableTools = getUniqueTools();
+      // Track which tool results are saved and shouldn't be dropped
+      const savedToolResults = new Set<string>();
 
-      let apiMessages = currentMessages.map(msg => ({
+      const toolsCached = getUniqueTools(true);
+      const tools = getUniqueTools(false);
+
+      const apiMessages = currentMessages.map(msg => ({
         role: msg.role,
-        content: typeof msg.content === 'string' ?
+        content: typeof msg.content !== 'string' ? msg.content :
         [{
           type: 'text' as const,
           text: msg.content,
-          cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-        }]
-        :
-        msg.content.map((c, index, array) =>
-          index !== array.length - 1 ? c :
-          {
-            ...c,
-            cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-          }
-        )
+        }] as MessageContent[]
+        //: msg
+        //msg.content.map((c, index, array) =>
+        //  index !== array.length - 1 ? c :
+        //  {
+        //    ...c,
+        //    cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+        //  }
+        //)
       }));
 
-      // TODO: make cache_control an option in AdminView
+      const systemPromptContent = [
+        {
+          type: "text",
+          text: `${activeProject.settings.systemPrompt || ''}`,
+        },
+      ] as TextBlockParam[];
+
       while (true) {
+        const cachedApiMessages = apiMessages.map((m, index, array) =>
+          index < array.length - 3 ? m :
+            {
+              ...m,
+              //content: typeof (m.content as MessageContent[] | string) !== 'string' ? m.content : (m.content as MessageContent[]).map((c, index, array) =>
+              content: typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] as MessageContent[] : m.content.map((c, index, array) =>
+                index != array.length - 1 ? c :
+                {
+                  ...c,
+                  cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+                }
+              )
+            }
+        );
+
+        // Get the ID of the newest tool result
+        const newestToolResultId = currentMessages
+          .filter((msg): msg is Message & { content: MessageContent[] } =>
+            Array.isArray(msg.content)
+          )
+          .flatMap(msg => msg.content)
+          .filter((content): content is MessageContent & { tool_use_id: string } =>
+            'tool_use_id' in content && content.type === 'tool_result'
+          )
+          .map(content => content.tool_use_id)
+          .pop();
+
+        if (activeProject.settings.elideToolResults) {
+          if ((cachedApiMessages[cachedApiMessages.length - 1].content as MessageContent[])[0].type === 'tool_result') {
+            // eliding seems to work well(?) with sonnet but not with haiku;
+            //  however, haiku works well(?) without eliding.
+            //  More testing needed
+            const keepToolResponse = await anthropic.messages.create({
+              model: DEFAULT_MODEL,
+              //model: HAIKU_MODEL,
+              max_tokens: 8192,
+              messages: [
+                ...cachedApiMessages.filter(msg => {
+                  if (!Array.isArray(msg.content)) return false;
+
+                  // Check if message contains a tool result
+                  const toolResult = msg.content.find(c =>
+                    c.type === 'tool_use' || c.type === 'tool_result'
+                  );
+                  return toolResult;
+                }).map(msg =>
+                  !msg.content.find(c => c.type === 'tool_result') ?
+                  {
+                    ...msg,
+                    content: [
+                      msg.content[0],
+                      {
+                        type: 'text' as const,
+                        text: `${JSON.stringify(msg.content[1])}`,
+                      },
+                    ],
+                  } :
+                  {
+                    ...msg,
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: `${JSON.stringify({ ...msg.content[0], content: 'elided'})}`,
+                      },
+                    ],
+                  }
+                ),
+                {
+                  role: 'user',
+                  content: [{
+                    type: 'text' as const,
+                    text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
+                    //text: 'Rate each `message`: will the `type: tool_result` be required in the future beyond an immediate response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
+                    cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+                  }],
+                },
+              ],
+              system: [{
+                type: 'text' as const,
+                text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
+                //text: 'Rate each `message`: will the `type: tool_result` be required in the future beyond an immediate response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
+                cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+              }],
+              //...(tools.length > 0 && {
+              //  tools: tools
+              //})
+            });
+
+            // Split the input string into lines
+            if (keepToolResponse.content[0].type === 'text') {
+              console.log('a');
+              const lines = keepToolResponse.content[0].text.split('\n');
+
+              // Process each line
+              for (const line of lines) {
+                // Split each line into key and value
+                const [key, value] = line.split(': ');
+
+                if (value.trim() === 'Yes') {
+                  console.log('b');
+                  savedToolResults.add(key);
+                } else if (value.trim() === 'No') {
+                  console.log('c');
+                  savedToolResults.delete(key);
+                }
+              }
+            }
+            console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}\n${JSON.stringify(savedToolResults)}`);
+
+            //if (keepToolResponse.content[0].type === 'text' && keepToolResponse.content[0].text === 'Yes') {
+            //  const content = apiMessages[apiMessages.length - 1].content[0];
+            //  if (content.type === 'tool_result') {
+            //    savedToolResults.add(content.tool_use_id as string);
+            //    console.log(`added ${content.tool_use_id}`);
+            //  }
+            //}
+          }
+        }
+
+        const apiMessagesToSend = !activeProject.settings.elideToolResults ? cachedApiMessages :
+        apiMessages
+          .map(msg => {
+            // Keep non-tool-result messages
+            if (!Array.isArray(msg.content)) return msg;
+
+            // Check if message contains a tool result
+            const toolResult = msg.content.find(c =>
+              c.type === 'tool_result'
+            );
+            if (!toolResult) return msg;
+
+            // Keep if it's the newest tool result or if it's saved
+            const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
+            return toolUseId === newestToolResultId || savedToolResults.has(toolUseId) ?
+              msg :
+              {
+                ...msg,
+                content: [{
+                  ...msg.content[0],
+                  content: 'elided',
+                }],
+              };
+          });
+
         const response = await anthropic.messages.create({
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
-          messages: apiMessages,
-          ...(activeProject.settings.systemPrompt && {
-            system: [
-              {
-                type: "text",
-                text: activeProject.settings.systemPrompt,
-                cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-              }
-            ],
+          messages: apiMessagesToSend,
+          ...(systemPromptContent && {
+            system: systemPromptContent
           }),
-          ...(availableTools.length > 0 && { tools: availableTools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: {type: 'ephemeral'} as CacheControlEphemeral}) })
+          ...(tools.length > 0 && {
+            tools: toolsCached
+          })
         });
 
         const transformedContent = response.content.map(content => {
@@ -166,6 +370,7 @@ export const ChatView: React.FC = () => {
           }
           throw new Error(`Unexpected content type: ${content}`);
         });
+
         apiMessages.push({
           role: response.role,
           content: transformedContent,
@@ -181,51 +386,41 @@ export const ChatView: React.FC = () => {
             };
             currentMessages.push(assistantMessage);
             updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-          }
-        }
 
-        // Generate conversation name after first exchange
-        if (activeConversation && apiMessages.length === 2) {
-          const userFirstMessage = apiMessages[0].content;
-          const assistantFirstMessage = apiMessages[1].content;
+            // Generate conversation name after first exchange
+            if (activeConversation && apiMessages.length === 2) {
+              const userFirstMessage = apiMessages[0].content;
+              const assistantFirstMessage = apiMessages[1].content;
 
-          // Create a summary prompt for the model
-          const summaryResponse = await anthropic.messages.create({
-            model: activeProject.settings.model || DEFAULT_MODEL,
-            max_tokens: 20,
-            messages: [{
-              role: "user",
-              content: `User: ${JSON.stringify(userFirstMessage)}\nAssistant: ${Array.isArray(assistantFirstMessage)
-                ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-                : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
-            }]
-          });
+              // Create a summary prompt for the model
+              const summaryResponse = await anthropic.messages.create({
+                model: activeProject.settings.model || DEFAULT_MODEL,
+                max_tokens: 20,
+                messages: [{
+                  role: "user",
+                  content: `User: ${JSON.stringify(userFirstMessage)}\nAssistant: ${Array.isArray(assistantFirstMessage)
+                    ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                    : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
+                }]
+              });
 
-          const type = summaryResponse.content[0].type;
-          if (type == 'text') {
-            const suggestedTitle = summaryResponse.content[0].text
-              .replace(/["']/g, '')
-              .replace('title:', '')
-              .replace('Title:', '')
-              .replace('title', '')
-              .replace('Title', '')
-              .trim();
-            if (suggestedTitle) {
-              renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+              const type = summaryResponse.content[0].type;
+              if (type == 'text') {
+                const suggestedTitle = summaryResponse.content[0].text
+                  .replace(/["']/g, '')
+                  .replace('title:', '')
+                  .replace('Title:', '')
+                  .replace('title', '')
+                  .replace('Title', '')
+                  .trim();
+                if (suggestedTitle) {
+                  renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+                }
+              } else {
+                console.log(`Failed to rename conversation. Got back: ${summaryResponse}`);
+              }
             }
-          } else {
-            console.log(`Failed to rename conversation. Got back: ${summaryResponse}`);
-          }
-        }
-
-        // Break if no tool use or if response is complete
-        if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
-          break;
-        }
-
-        // Handle tool calls
-        for (const content of response.content) {
-          if (content.type === 'tool_use') {
+          } else if (content.type === 'tool_use') {
             try {
               const serverWithTool = servers.find(s =>
                 s.tools?.some(t => t.name === content.name)
@@ -234,6 +429,13 @@ export const ChatView: React.FC = () => {
               if (!serverWithTool) {
                 throw new Error(`No server found for tool ${content.name}`);
               }
+
+              const result = await executeTool(
+                serverWithTool.id,
+                content.name,
+                content.input as Record<string, unknown>,
+              );
+
 
               const toolUseMessage: Message = {
                 role: 'assistant',
@@ -246,15 +448,6 @@ export const ChatView: React.FC = () => {
                 timestamp: new Date()
               };
 
-              currentMessages.push(toolUseMessage);
-              updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-              const result = await executeTool(
-                serverWithTool.id,
-                content.name,
-                content.input as Record<string, unknown>,
-              );
-
               const toolResultMessage: Message = {
                 role: 'user',
                 content: [{
@@ -265,19 +458,8 @@ export const ChatView: React.FC = () => {
                 timestamp: new Date()
               };
 
-              currentMessages.push(toolResultMessage);
+              currentMessages.push(toolUseMessage, toolResultMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-              apiMessages = apiMessages.map(m => m.content[0].type !== 'tool_result' ?
-                m :
-                {
-                  ...m,
-                  content: [{
-                    ...m.content[0],
-                    content: 'elided',
-                  }],
-                }
-              );
 
               apiMessages.push({
                 role: 'user',
@@ -285,7 +467,6 @@ export const ChatView: React.FC = () => {
                   type: 'tool_result',
                   tool_use_id: content.id,
                   content: result,
-                  //cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
                 }]
               });
 
@@ -316,7 +497,14 @@ export const ChatView: React.FC = () => {
             }
           }
         }
+
+        // Break if no tool use or if response is complete
+        if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
+          break;
+        }
+        //isFirstRequest = false;
       }
+
     } catch (error) {
       console.error('Failed to send message:', error);
       setError(error instanceof Error ? error.message : 'An error occurred');
@@ -372,7 +560,7 @@ export const ChatView: React.FC = () => {
             }
             const match = /language-(\w+)/.exec(className || '');
             const lang = match ? match[1] : '';
-            
+
             return (
               <div className="relative">
                 <SyntaxHighlighter
@@ -417,7 +605,7 @@ export const ChatView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4">
+    <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
           {activeConversation.messages.map((message, index) => (
             <div

@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { McpServer } from '../types/mcp';
-import { Trash2 } from 'lucide-react';
+import { Trash2, RefreshCw } from 'lucide-react';
 import { useMcp } from '../context/McpContext';
 
 interface McpConfigurationProps {
@@ -20,7 +20,7 @@ export const McpConfiguration = ({
     name: '',
     uri: ''
   });
-  const { addServer, removeServer } = useMcp();
+  const { addServer, removeServer, reconnectServer } = useMcp();
 
   const handleAddServer = async () => {
     const server = {
@@ -95,14 +95,24 @@ export const McpConfiguration = ({
                   <div className="text-sm text-red-500 mt-1">{server.error}</div>
                 )}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleRemoveServer(server.id)}
-                className="ml-2"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <div className="flex gap-2 ml-2">
+                {server.status !== 'connected' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => reconnectServer(server.id)}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRemoveServer(server.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ))}
         </div>

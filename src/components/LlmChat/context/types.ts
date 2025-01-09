@@ -37,6 +37,7 @@ export interface McpState {
   addServer: (server: McpServer) => Promise<McpServerConnection | void>;
   removeServer: (serverId: string) => void;
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>;
+  reconnectServer: (serverId: string) => Promise<McpServerConnection>;
 }
 
 export interface ProjectState {
