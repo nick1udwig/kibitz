@@ -528,17 +528,25 @@ export const ChatView: React.FC = () => {
           }
 
           return (
-            <button
-              key={`${index}-${contentIndex}`}
-              onClick={() => setSelectedToolCall({
-                name: content.name,
-                input: content.input,
-                result: toolResult
-              })}
-              className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+            <div
+              key={`message-${index}-content-${contentIndex}`}
+              className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                message.role === 'user'
+                  ? 'bg-muted text-primary-foreground'
+                  : 'bg-muted text-foreground'
+              }`}
             >
-              Calling tool: {content.name}
-            </button>
+              <button
+                onClick={() => setSelectedToolCall({
+                  name: content.name,
+                  input: content.input,
+                  result: toolResult
+                })}
+                className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+              >
+                Calling tool: {content.name}
+              </button>
+            </div>
           );
         }
         return null;
@@ -546,9 +554,17 @@ export const ChatView: React.FC = () => {
     }
 
     return (
-      <ReactMarkdown className="prose dark:prose-invert max-w-none">
-        {message.content}
-      </ReactMarkdown>
+      <div
+        className={`max-w-[80%] rounded-lg px-4 py-2 ${
+          message.role === 'user'
+            ? 'bg-muted text-primary-foreground'
+            : 'bg-muted text-foreground'
+        }`}
+      >
+        <ReactMarkdown className="prose dark:prose-invert max-w-none">
+          {message.content}
+        </ReactMarkdown>
+      </div>
     );
   };
 
@@ -572,15 +588,7 @@ export const ChatView: React.FC = () => {
               key={index}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-muted text-primary-foreground'
-                    : 'bg-muted text-foreground'
-                }`}
-              >
-                {renderMessage(message, index)}
-              </div>
+              {renderMessage(message, index)}
             </div>
           ))}
           <div ref={messagesEndRef} />
