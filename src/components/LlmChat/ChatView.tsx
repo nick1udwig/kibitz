@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
-import { Tool, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
+import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
-import { Message } from './types';
+import { Message, MessageContent } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
@@ -67,9 +67,9 @@ export const ChatView: React.FC = () => {
         }
       });
 
-    return Array.from(toolMap.values());
+    return Array.from(toolMap.values())
+      .map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: {type: 'ephemeral'} as CacheControlEphemeral});
   };
-
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
     updateProjectSettings(projectId, {
@@ -111,9 +111,12 @@ export const ChatView: React.FC = () => {
         dangerouslyAllowBrowser: true
       });
 
-      const availableTools = getUniqueTools();
+      // Track which tool results are saved and shouldn't be dropped
+      const savedToolResults = new Set<string>();
 
-      let apiMessages = currentMessages.map(msg => ({
+      const tools = getUniqueTools();
+
+      const apiMessages = currentMessages.map(msg => ({
         role: msg.role,
         content: typeof msg.content === 'string' ?
         [{
@@ -131,22 +134,112 @@ export const ChatView: React.FC = () => {
         )
       }));
 
-      // TODO: make cache_control an option in AdminView
+      const systemPromptContent = [
+        {
+          type: "text",
+          text: `${activeProject.settings.systemPrompt || ''}`,
+        },
+      ] as TextBlockParam[];
+
       while (true) {
+        // Get the ID of the newest tool result
+        const newestToolResultId = currentMessages
+          .filter((msg): msg is Message & { content: MessageContent[] } =>
+            Array.isArray(msg.content)
+          )
+          .flatMap(msg => msg.content)
+          .filter((content): content is MessageContent & { tool_use_id: string } =>
+            'tool_use_id' in content && content.type === 'tool_result'
+          )
+          .map(content => content.tool_use_id)
+          .pop();
+
+        const apiMessagesToUpdateSavedResults = apiMessages
+          .map(msg => {
+            // Keep non-tool-result messages
+            if (!Array.isArray(msg.content)) return msg;
+
+            // Check if message contains a tool result
+            const toolResult = msg.content.find(c =>
+              c.type === 'tool_result'
+            );
+            if (!toolResult) return msg;
+
+            // Keep if it's the newest tool result or if it's saved
+            const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
+            return toolUseId === newestToolResultId ?
+              msg :
+              {
+                ...msg,
+                content: [{
+                  ...msg.content[0],
+                  content: 'elided',
+                }],
+              };
+          });
+
+        if (apiMessagesToUpdateSavedResults[apiMessagesToUpdateSavedResults.length - 1].content[0].type === 'tool_result') {
+          const keepToolResponse = await anthropic.messages.create({
+            model: DEFAULT_MODEL,
+            max_tokens: 8192,
+            messages: [
+              ...apiMessagesToUpdateSavedResults,
+              {
+                role: 'user',
+                content: [{
+                  type: 'text' as const,
+                  text: 'Given the message history as context, will the most recent tool_result message be required in the future beyond an immediate response? Reply only with `Yes` or `No`.',
+                }],
+              },
+            ],
+            ...(tools.length > 0 && {
+              tools: tools
+            })
+          });
+          console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}`);
+          if (keepToolResponse.content[0].type === 'text' && keepToolResponse.content[0].text === 'Yes') {
+            const content = apiMessagesToUpdateSavedResults[apiMessagesToUpdateSavedResults.length - 1].content[0];
+            if (content.type === 'tool_result') {
+              savedToolResults.add(content.tool_use_id as string);
+              console.log(`added ${content.tool_use_id}`);
+            }
+          }
+        }
+
+        const apiMessagesToSend = apiMessages
+          .map(msg => {
+            // Keep non-tool-result messages
+            if (!Array.isArray(msg.content)) return msg;
+
+            // Check if message contains a tool result
+            const toolResult = msg.content.find(c =>
+              c.type === 'tool_result'
+            );
+            if (!toolResult) return msg;
+
+            // Keep if it's the newest tool result or if it's saved
+            const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
+            return toolUseId === newestToolResultId || savedToolResults.has(toolUseId) ?
+              msg :
+              {
+                ...msg,
+                content: [{
+                  ...msg.content[0],
+                  content: 'elided',
+                }],
+              };
+          });
+
         const response = await anthropic.messages.create({
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
-          messages: apiMessages,
-          ...(activeProject.settings.systemPrompt && {
-            system: [
-              {
-                type: "text",
-                text: activeProject.settings.systemPrompt,
-                cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-              }
-            ],
+          messages: apiMessagesToSend,
+          ...(systemPromptContent && {
+            system: systemPromptContent
           }),
-          ...(availableTools.length > 0 && { tools: availableTools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: {type: 'ephemeral'} as CacheControlEphemeral}) })
+          ...(tools.length > 0 && {
+            tools: tools
+          })
         });
 
         const transformedContent = response.content.map(content => {
@@ -165,6 +258,7 @@ export const ChatView: React.FC = () => {
           }
           throw new Error(`Unexpected content type: ${content}`);
         });
+
         apiMessages.push({
           role: response.role,
           content: transformedContent,
@@ -180,51 +274,41 @@ export const ChatView: React.FC = () => {
             };
             currentMessages.push(assistantMessage);
             updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-          }
-        }
 
-        // Generate conversation name after first exchange
-        if (activeConversation && apiMessages.length === 2) {
-          const userFirstMessage = apiMessages[0].content;
-          const assistantFirstMessage = apiMessages[1].content;
+            // Generate conversation name after first exchange
+            if (activeConversation && apiMessages.length === 2) {
+              const userFirstMessage = apiMessages[0].content;
+              const assistantFirstMessage = apiMessages[1].content;
 
-          // Create a summary prompt for the model
-          const summaryResponse = await anthropic.messages.create({
-            model: activeProject.settings.model || DEFAULT_MODEL,
-            max_tokens: 20,
-            messages: [{
-              role: "user",
-              content: `User: ${JSON.stringify(userFirstMessage)}\nAssistant: ${Array.isArray(assistantFirstMessage)
-                ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-                : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
-            }]
-          });
+              // Create a summary prompt for the model
+              const summaryResponse = await anthropic.messages.create({
+                model: activeProject.settings.model || DEFAULT_MODEL,
+                max_tokens: 20,
+                messages: [{
+                  role: "user",
+                  content: `User: ${JSON.stringify(userFirstMessage)}\nAssistant: ${Array.isArray(assistantFirstMessage)
+                    ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                    : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
+                }]
+              });
 
-          const type = summaryResponse.content[0].type;
-          if (type == 'text') {
-            const suggestedTitle = summaryResponse.content[0].text
-              .replace(/["']/g, '')
-              .replace('title:', '')
-              .replace('Title:', '')
-              .replace('title', '')
-              .replace('Title', '')
-              .trim();
-            if (suggestedTitle) {
-              renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+              const type = summaryResponse.content[0].type;
+              if (type == 'text') {
+                const suggestedTitle = summaryResponse.content[0].text
+                  .replace(/["']/g, '')
+                  .replace('title:', '')
+                  .replace('Title:', '')
+                  .replace('title', '')
+                  .replace('Title', '')
+                  .trim();
+                if (suggestedTitle) {
+                  renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+                }
+              } else {
+                console.log(`Failed to rename conversation. Got back: ${summaryResponse}`);
+              }
             }
-          } else {
-            console.log(`Failed to rename conversation. Got back: ${summaryResponse}`);
-          }
-        }
-
-        // Break if no tool use or if response is complete
-        if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
-          break;
-        }
-
-        // Handle tool calls
-        for (const content of response.content) {
-          if (content.type === 'tool_use') {
+          } else if (content.type === 'tool_use') {
             try {
               const serverWithTool = servers.find(s =>
                 s.tools?.some(t => t.name === content.name)
@@ -233,6 +317,13 @@ export const ChatView: React.FC = () => {
               if (!serverWithTool) {
                 throw new Error(`No server found for tool ${content.name}`);
               }
+
+              const result = await executeTool(
+                serverWithTool.id,
+                content.name,
+                content.input as Record<string, unknown>,
+              );
+
 
               const toolUseMessage: Message = {
                 role: 'assistant',
@@ -245,15 +336,6 @@ export const ChatView: React.FC = () => {
                 timestamp: new Date()
               };
 
-              currentMessages.push(toolUseMessage);
-              updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-              const result = await executeTool(
-                serverWithTool.id,
-                content.name,
-                content.input as Record<string, unknown>,
-              );
-
               const toolResultMessage: Message = {
                 role: 'user',
                 content: [{
@@ -264,19 +346,8 @@ export const ChatView: React.FC = () => {
                 timestamp: new Date()
               };
 
-              currentMessages.push(toolResultMessage);
+              currentMessages.push(toolUseMessage, toolResultMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-              apiMessages = apiMessages.map(m => m.content[0].type !== 'tool_result' ?
-                m :
-                {
-                  ...m,
-                  content: [{
-                    ...m.content[0],
-                    content: 'elided',
-                  }],
-                }
-              );
 
               apiMessages.push({
                 role: 'user',
@@ -284,7 +355,6 @@ export const ChatView: React.FC = () => {
                   type: 'tool_result',
                   tool_use_id: content.id,
                   content: result,
-                  //cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
                 }]
               });
 
@@ -315,7 +385,13 @@ export const ChatView: React.FC = () => {
             }
           }
         }
+
+        // Break if no tool use or if response is complete
+        if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
+          break;
+        }
       }
+
     } catch (error) {
       console.error('Failed to send message:', error);
       setError(error instanceof Error ? error.message : 'An error occurred');
