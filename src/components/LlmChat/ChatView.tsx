@@ -13,6 +13,7 @@ import { useFocusControl } from './context/useFocusControl';
 import { useMcp } from './context/McpContext';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+const HAIKU_MODEL = 'claude-3-5-haiku-20241022';
 
 export const ChatView: React.FC = () => {
   const {
@@ -155,56 +156,94 @@ export const ChatView: React.FC = () => {
           .pop();
 
         if (activeProject.settings.elideToolResults) {
-          const apiMessagesToUpdateSavedResults = apiMessages
-            .map(msg => {
-              // Keep non-tool-result messages
-              if (!Array.isArray(msg.content)) return msg;
-
-              // Check if message contains a tool result
-              const toolResult = msg.content.find(c =>
-                c.type === 'tool_result'
-              );
-              if (!toolResult) return msg;
-
-              // Keep if it's the newest tool result or if it's saved
-              const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
-              return toolUseId === newestToolResultId ?
-                msg :
-                {
-                  ...msg,
-                  content: [{
-                    ...msg.content[0],
-                    content: 'elided',
-                  }],
-                };
-            });
-
-          if (apiMessagesToUpdateSavedResults[apiMessagesToUpdateSavedResults.length - 1].content[0].type === 'tool_result') {
+          if (apiMessages[apiMessages.length - 1].content[0].type === 'tool_result') {
+            // eliding seems to work well(?) with sonnet but not with haiku;
+            //  however, haiku works well(?) without eliding.
+            //  More testing needed
             const keepToolResponse = await anthropic.messages.create({
               model: DEFAULT_MODEL,
+              //model: HAIKU_MODEL,
               max_tokens: 8192,
               messages: [
-                ...apiMessagesToUpdateSavedResults,
+                ...apiMessages.filter(msg => {
+                  if (!Array.isArray(msg.content)) return false;
+
+                  // Check if message contains a tool result
+                  const toolResult = msg.content.find(c =>
+                    c.type === 'tool_use' || c.type === 'tool_result'
+                  );
+                  return toolResult;
+                }).map(msg =>
+                  !msg.content.find(c => c.type === 'tool_result') ?
+                  {
+                    ...msg,
+                    content: [
+                      msg.content[0],
+                      {
+                        type: 'text' as const,
+                        text: `${JSON.stringify(msg.content[1])}`,
+                      },
+                    ],
+                  } :
+                  {
+                    ...msg,
+                    content: [
+                      {
+                        type: 'text' as const,
+                        text: `${JSON.stringify({ ...msg.content[0], content: 'elided'})}`,
+                      },
+                    ],
+                  }
+                ),
                 {
                   role: 'user',
                   content: [{
                     type: 'text' as const,
-                    text: 'Given the message history as context, will the most recent tool_result message be required in the future beyond an immediate response? Reply only with `Yes` or `No`.',
+                    text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
+                    //text: 'Rate each `message`: will the `type: tool_result` be required in the future beyond an immediate response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
+                    cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
                   }],
                 },
               ],
-              ...(tools.length > 0 && {
-                tools: tools
-              })
+              system: [{
+                type: 'text' as const,
+                text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
+                //text: 'Rate each `message`: will the `type: tool_result` be required in the future beyond an immediate response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
+                cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+              }],
+              //...(tools.length > 0 && {
+              //  tools: tools
+              //})
             });
-            console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}`);
-            if (keepToolResponse.content[0].type === 'text' && keepToolResponse.content[0].text === 'Yes') {
-              const content = apiMessagesToUpdateSavedResults[apiMessagesToUpdateSavedResults.length - 1].content[0];
-              if (content.type === 'tool_result') {
-                savedToolResults.add(content.tool_use_id as string);
-                console.log(`added ${content.tool_use_id}`);
+
+            // Split the input string into lines
+            if (keepToolResponse.content[0].type === 'text') {
+              console.log('a');
+              const lines = keepToolResponse.content[0].text.split('\n');
+
+              // Process each line
+              for (const line of lines) {
+                // Split each line into key and value
+                const [key, value] = line.split(': ');
+
+                if (value.trim() === 'Yes') {
+                  console.log('b');
+                  savedToolResults.add(key);
+                } else if (value.trim() === 'No') {
+                  console.log('c');
+                  savedToolResults.delete(key);
+                }
               }
             }
+            console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}\n${JSON.stringify(savedToolResults)}`);
+
+            //if (keepToolResponse.content[0].type === 'text' && keepToolResponse.content[0].text === 'Yes') {
+            //  const content = apiMessages[apiMessages.length - 1].content[0];
+            //  if (content.type === 'tool_result') {
+            //    savedToolResults.add(content.tool_use_id as string);
+            //    console.log(`added ${content.tool_use_id}`);
+            //  }
+            //}
           }
         }
 
