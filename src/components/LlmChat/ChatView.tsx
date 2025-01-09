@@ -5,7 +5,7 @@ import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
-import { Message, MessageContent } from './types';
+import { Message, MessageContent, TokenUsage } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
@@ -13,6 +13,19 @@ import { useFocusControl } from './context/useFocusControl';
 import { useMcp } from './context/McpContext';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+
+// Helper function to calculate total token usage
+const calculateTotalTokenUsage = (messages: Message[]): TokenUsage => {
+  return messages.reduce((total, message) => {
+    if (!message.tokenUsage) return total;
+    return {
+      input_tokens: (total.input_tokens || 0) + (message.tokenUsage.input_tokens || 0),
+      output_tokens: (total.output_tokens || 0) + (message.tokenUsage.output_tokens || 0),
+      cache_read_input_tokens: (total.cache_read_input_tokens || 0) + (message.tokenUsage.cache_read_input_tokens || 0),
+      cache_creation_input_tokens: (total.cache_creation_input_tokens || 0) + (message.tokenUsage.cache_creation_input_tokens || 0),
+    };
+  }, { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 });
+};
 
 export const ChatView: React.FC = () => {
   const {
@@ -27,6 +40,8 @@ export const ChatView: React.FC = () => {
   const activeConversation = activeProject?.conversations.find(
     c => c.id === activeConversationId
   );
+
+  const totalTokens = activeConversation ? calculateTotalTokenUsage(activeConversation.messages) : null;
 
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -267,10 +282,22 @@ export const ChatView: React.FC = () => {
         // Process each type of content in the response
         for (const content of response.content) {
           if (content.type === 'text') {
+            const tokenUsage: TokenUsage = {
+              input_tokens: response.usage.input_tokens || 0,
+              output_tokens: response.usage.output_tokens || 0,
+              ...(response.usage.cache_read_input_tokens !== null && {
+                cache_read_input_tokens: response.usage.cache_read_input_tokens
+              }),
+              ...(response.usage.cache_creation_input_tokens !== null && {
+                cache_creation_input_tokens: response.usage.cache_creation_input_tokens
+              })
+            };
+
             const assistantMessage: Message = {
               role: 'assistant',
               content: content.text,
-              timestamp: new Date()
+              timestamp: new Date(),
+              tokenUsage,
             };
             currentMessages.push(assistantMessage);
             updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
@@ -453,7 +480,19 @@ export const ChatView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 relative">
+        {totalTokens && (
+          <div className="absolute top-2 right-2 text-xs text-muted-foreground bg-background/90 p-2 rounded shadow-sm">
+            <div>Input Tokens: {totalTokens.input_tokens.toLocaleString()}</div>
+            <div>Output Tokens: {totalTokens.output_tokens.toLocaleString()}</div>
+            {totalTokens.cache_read_input_tokens !== undefined && totalTokens.cache_read_input_tokens > 0 && (
+              <div>Cache Read: {totalTokens.cache_read_input_tokens.toLocaleString()}</div>
+            )}
+            {totalTokens.cache_creation_input_tokens !== undefined && totalTokens.cache_creation_input_tokens > 0 && (
+              <div>Cache Created: {totalTokens.cache_creation_input_tokens.toLocaleString()}</div>
+            )}
+          </div>
+        )}
         <div className="space-y-4">
           {activeConversation.messages.map((message, index) => (
             <div

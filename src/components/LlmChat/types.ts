@@ -19,11 +19,19 @@ export type MessageContent = {
   cache_control?: CacheControlEphemeral | null;
 };
 
+export type TokenUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number | undefined;
+  cache_creation_input_tokens?: number | undefined;
+};
+
 export type Message = {
   role: 'user' | 'assistant';
   content: MessageContent[] | string;
   timestamp: Date;
   toolInput?: Record<string, unknown>;
+  tokenUsage?: TokenUsage;
 };
 
 export type ConversationSettings = {
