@@ -42,13 +42,21 @@ export const ChatView: React.FC = () => {
     result: string | null;
   } | null>(null);
 
-  // Handle scrolling
+  // Scroll to bottom on initial load and handle scroll detection
   useEffect(() => {
     if (!chatContainerRef.current) return;
 
     const container = chatContainerRef.current;
+
+    // Initial scroll to bottom
+    messagesEndRef.current?.scrollIntoView();
+    setShouldAutoScroll(true);
+
     const handleScroll = () => {
-      const isAtBottom = Math.abs((container.scrollHeight - container.scrollTop) - container.clientHeight) < 10;
+      // Using Math.ceil to handle floating point imprecisions
+      const scrollBottom = Math.ceil(container.scrollHeight - container.scrollTop);
+      const visibleHeight = Math.ceil(container.clientHeight);
+      const isAtBottom = scrollBottom <= visibleHeight + 2; // Adding small buffer for rounding
       setShouldAutoScroll(isAtBottom);
     };
 
@@ -56,10 +64,10 @@ export const ChatView: React.FC = () => {
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Auto-scroll when messages change if shouldAutoScroll is true
+  // Auto-scroll when messages change if we were at the bottom
   useEffect(() => {
-    if (shouldAutoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (shouldAutoScroll && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [activeConversation?.messages, shouldAutoScroll]);
 
@@ -115,7 +123,7 @@ export const ChatView: React.FC = () => {
     setIsLoading(true);
     setError(null);
 
-    let isFirstRequest = true;
+    //let isFirstRequest = true;
 
     try {
       const userMessage: Message = {
@@ -317,7 +325,6 @@ export const ChatView: React.FC = () => {
           }),
           ...(tools.length > 0 && {
             tools: toolsCached
-            //tools: isFirstRequest ? toolsCached : tools
           })
         });
 
@@ -469,7 +476,7 @@ export const ChatView: React.FC = () => {
         if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
           break;
         }
-        isFirstRequest = false;
+        //isFirstRequest = false;
       }
 
     } catch (error) {
