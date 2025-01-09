@@ -76,6 +76,21 @@ export const AdminView = () => {
                 className="min-h-[100px]"
               />
             </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="elideToolResults"
+                checked={activeProject.settings.elideToolResults ?? false}
+                onChange={(e) => handleSettingsChange({
+                  elideToolResults: e.target.checked
+                })}
+                className="rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <label htmlFor="elideToolResults" className="text-sm font-medium">
+                Use Claude to elide tool results from previous messages
+              </label>
+            </div>
           </div>
         </CardContent>
       </Card>

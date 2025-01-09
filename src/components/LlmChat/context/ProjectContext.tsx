@@ -14,6 +14,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   model: 'claude-3-5-sonnet-20241022',
   systemPrompt: '',
   mcpServers: [],
+  elideToolResults: false,
 };
 
 interface ProjectUpdates {

@@ -154,59 +154,62 @@ export const ChatView: React.FC = () => {
           .map(content => content.tool_use_id)
           .pop();
 
-        const apiMessagesToUpdateSavedResults = apiMessages
-          .map(msg => {
-            // Keep non-tool-result messages
-            if (!Array.isArray(msg.content)) return msg;
+        if (activeProject.settings.elideToolResults) {
+          const apiMessagesToUpdateSavedResults = apiMessages
+            .map(msg => {
+              // Keep non-tool-result messages
+              if (!Array.isArray(msg.content)) return msg;
 
-            // Check if message contains a tool result
-            const toolResult = msg.content.find(c =>
-              c.type === 'tool_result'
-            );
-            if (!toolResult) return msg;
+              // Check if message contains a tool result
+              const toolResult = msg.content.find(c =>
+                c.type === 'tool_result'
+              );
+              if (!toolResult) return msg;
 
-            // Keep if it's the newest tool result or if it's saved
-            const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
-            return toolUseId === newestToolResultId ?
-              msg :
-              {
-                ...msg,
-                content: [{
-                  ...msg.content[0],
-                  content: 'elided',
-                }],
-              };
-          });
+              // Keep if it's the newest tool result or if it's saved
+              const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
+              return toolUseId === newestToolResultId ?
+                msg :
+                {
+                  ...msg,
+                  content: [{
+                    ...msg.content[0],
+                    content: 'elided',
+                  }],
+                };
+            });
 
-        if (apiMessagesToUpdateSavedResults[apiMessagesToUpdateSavedResults.length - 1].content[0].type === 'tool_result') {
-          const keepToolResponse = await anthropic.messages.create({
-            model: DEFAULT_MODEL,
-            max_tokens: 8192,
-            messages: [
-              ...apiMessagesToUpdateSavedResults,
-              {
-                role: 'user',
-                content: [{
-                  type: 'text' as const,
-                  text: 'Given the message history as context, will the most recent tool_result message be required in the future beyond an immediate response? Reply only with `Yes` or `No`.',
-                }],
-              },
-            ],
-            ...(tools.length > 0 && {
-              tools: tools
-            })
-          });
-          console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}`);
-          if (keepToolResponse.content[0].type === 'text' && keepToolResponse.content[0].text === 'Yes') {
-            const content = apiMessagesToUpdateSavedResults[apiMessagesToUpdateSavedResults.length - 1].content[0];
-            if (content.type === 'tool_result') {
-              savedToolResults.add(content.tool_use_id as string);
-              console.log(`added ${content.tool_use_id}`);
+          if (apiMessagesToUpdateSavedResults[apiMessagesToUpdateSavedResults.length - 1].content[0].type === 'tool_result') {
+            const keepToolResponse = await anthropic.messages.create({
+              model: DEFAULT_MODEL,
+              max_tokens: 8192,
+              messages: [
+                ...apiMessagesToUpdateSavedResults,
+                {
+                  role: 'user',
+                  content: [{
+                    type: 'text' as const,
+                    text: 'Given the message history as context, will the most recent tool_result message be required in the future beyond an immediate response? Reply only with `Yes` or `No`.',
+                  }],
+                },
+              ],
+              ...(tools.length > 0 && {
+                tools: tools
+              })
+            });
+            console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}`);
+            if (keepToolResponse.content[0].type === 'text' && keepToolResponse.content[0].text === 'Yes') {
+              const content = apiMessagesToUpdateSavedResults[apiMessagesToUpdateSavedResults.length - 1].content[0];
+              if (content.type === 'tool_result') {
+                savedToolResults.add(content.tool_use_id as string);
+                console.log(`added ${content.tool_use_id}`);
+              }
             }
           }
         }
 
-        const apiMessagesToSend = apiMessages
+        const apiMessagesToSend = !activeProject.settings.elideToolResults ? apiMessages :
+        apiMessages
           .map(msg => {
             // Keep non-tool-result messages
             if (!Array.isArray(msg.content)) return msg;
