@@ -13,7 +13,7 @@ import { useFocusControl } from './context/useFocusControl';
 import { useMcp } from './context/McpContext';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
-const HAIKU_MODEL = 'claude-3-5-haiku-20241022';
+//const HAIKU_MODEL = 'claude-3-5-haiku-20241022';
 
 export const ChatView: React.FC = () => {
   const {
@@ -44,7 +44,7 @@ export const ChatView: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConversation?.messages]);
 
-  const getUniqueTools = () => {
+  const getUniqueTools = (should_cache: boolean) => {
     if (!activeProject?.settings.mcpServers?.length) {
       return [];
     }
@@ -68,8 +68,8 @@ export const ChatView: React.FC = () => {
         }
       });
 
-    return Array.from(toolMap.values())
-      .map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: {type: 'ephemeral'} as CacheControlEphemeral});
+    const tools = Array.from(toolMap.values());
+    return !should_cache ? tools : tools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: {type: 'ephemeral'} as CacheControlEphemeral});
   };
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
@@ -96,6 +96,8 @@ export const ChatView: React.FC = () => {
     setIsLoading(true);
     setError(null);
 
+    let isFirstRequest = true;
+
     try {
       const userMessage: Message = {
         role: 'user',
@@ -115,24 +117,24 @@ export const ChatView: React.FC = () => {
       // Track which tool results are saved and shouldn't be dropped
       const savedToolResults = new Set<string>();
 
-      const tools = getUniqueTools();
+      const toolsCached = getUniqueTools(true);
+      const tools = getUniqueTools(false);
 
       const apiMessages = currentMessages.map(msg => ({
         role: msg.role,
-        content: typeof msg.content === 'string' ?
+        content: typeof msg.content !== 'string' ? msg.content :
         [{
           type: 'text' as const,
           text: msg.content,
-          cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-        }]
-        :
-        msg.content.map((c, index, array) =>
-          index !== array.length - 1 ? c :
-          {
-            ...c,
-            cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-          }
-        )
+        }] as MessageContent[]
+        //: msg
+        //msg.content.map((c, index, array) =>
+        //  index !== array.length - 1 ? c :
+        //  {
+        //    ...c,
+        //    cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+        //  }
+        //)
       }));
 
       const systemPromptContent = [
@@ -143,6 +145,21 @@ export const ChatView: React.FC = () => {
       ] as TextBlockParam[];
 
       while (true) {
+        const cachedApiMessages = apiMessages.map((m, index, array) =>
+          index < array.length - 3 ? m :
+            {
+              ...m,
+              //content: typeof (m.content as MessageContent[] | string) !== 'string' ? m.content : (m.content as MessageContent[]).map((c, index, array) =>
+              content: typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] as MessageContent[] : m.content.map((c, index, array) =>
+                index != array.length - 1 ? c :
+                {
+                  ...c,
+                  cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+                }
+              )
+            }
+        );
+
         // Get the ID of the newest tool result
         const newestToolResultId = currentMessages
           .filter((msg): msg is Message & { content: MessageContent[] } =>
@@ -156,7 +173,7 @@ export const ChatView: React.FC = () => {
           .pop();
 
         if (activeProject.settings.elideToolResults) {
-          if (apiMessages[apiMessages.length - 1].content[0].type === 'tool_result') {
+          if ((cachedApiMessages[cachedApiMessages.length - 1].content as MessageContent[])[0].type === 'tool_result') {
             // eliding seems to work well(?) with sonnet but not with haiku;
             //  however, haiku works well(?) without eliding.
             //  More testing needed
@@ -165,7 +182,7 @@ export const ChatView: React.FC = () => {
               //model: HAIKU_MODEL,
               max_tokens: 8192,
               messages: [
-                ...apiMessages.filter(msg => {
+                ...cachedApiMessages.filter(msg => {
                   if (!Array.isArray(msg.content)) return false;
 
                   // Check if message contains a tool result
@@ -247,7 +264,7 @@ export const ChatView: React.FC = () => {
           }
         }
 
-        const apiMessagesToSend = !activeProject.settings.elideToolResults ? apiMessages :
+        const apiMessagesToSend = !activeProject.settings.elideToolResults ? cachedApiMessages :
         apiMessages
           .map(msg => {
             // Keep non-tool-result messages
@@ -280,7 +297,8 @@ export const ChatView: React.FC = () => {
             system: systemPromptContent
           }),
           ...(tools.length > 0 && {
-            tools: tools
+            tools: toolsCached
+            //tools: isFirstRequest ? toolsCached : tools
           })
         });
 
@@ -432,6 +450,7 @@ export const ChatView: React.FC = () => {
         if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
           break;
         }
+        isFirstRequest = false;
       }
 
     } catch (error) {
