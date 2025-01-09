@@ -96,7 +96,7 @@ export const McpConfiguration = ({
                 )}
               </div>
               <div className="flex gap-2 ml-2">
-                {server.status === 'error' && (
+                {server.status !== 'connected' && (
                   <Button
                     variant="ghost"
                     size="sm"
