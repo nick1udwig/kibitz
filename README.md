@@ -2,6 +2,11 @@
 
 A chat client for the Anthropic LLM API that can use MCP tools over WebSockets.
 
+## Prerequisites
+
+* git
+* npm
+
 ## Installation
 
 1. Clone the repository:
@@ -24,10 +29,10 @@ npm run dev
 
 ## Configuration
 
-1. Open the settings panel in the UI
+1. Open the Settings panel in the UI
 2. Enter your Anthropic API key ([Get one here](https://console.anthropic.com/)).
-3. Configure the model (default: claude-3-5-sonnet-20241022)
-4. Optionally set a system prompt
-5. Configure MCPs by running them using https://github.com/nick1udwig/ws-mcp and then connecting to them in the Settings page
+3. Optionally set a system prompt
+4. Configure MCPs by running them using [ws-mcp](https://github.com/nick1udwig/ws-mcp) and then connecting to them in the Settings page
 
-Note configuration is PER-CHAT, but when creating a new chat, it will use the current chat's configuration.
+Note configuration is PER-PROJECT.
+When creating a new project, it will use some, but not all, of the current project's configuration: the API key, model, and system prompt will be copied over, but MCP servers will not.

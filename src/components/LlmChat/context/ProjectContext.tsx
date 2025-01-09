@@ -13,7 +13,8 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   apiKey: '',
   model: 'claude-3-5-sonnet-20241022',
   systemPrompt: '',
-  mcpServers: []
+  mcpServers: [],
+  elideToolResults: false,
 };
 
 interface ProjectUpdates {

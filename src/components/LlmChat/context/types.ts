@@ -7,6 +7,7 @@ export interface ProjectSettings {
   model: string;
   systemPrompt: string;
   mcpServers: McpServer[];
+  elideToolResults: boolean;
 }
 
 export interface ConversationBrief {
