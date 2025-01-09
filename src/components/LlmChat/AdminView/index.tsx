@@ -88,7 +88,7 @@ export const AdminView = () => {
                 className="rounded border-gray-300 text-primary focus:ring-primary"
               />
               <label htmlFor="elideToolResults" className="text-sm font-medium">
-                Elide tool results from previous messages
+                Use Claude to elide tool results from previous messages
               </label>
             </div>
           </div>
