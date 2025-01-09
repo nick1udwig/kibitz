@@ -35,41 +35,46 @@ export const ChatView: React.FC = () => {
   const { servers, executeTool } = useMcp();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const [wasAtBottom, setWasAtBottom] = useState(true);
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
     input: Record<string, unknown>;
     result: string | null;
   } | null>(null);
 
-  // Scroll to bottom on initial load and handle scroll detection
+  // Scroll handling logic
   useEffect(() => {
     if (!chatContainerRef.current) return;
 
     const container = chatContainerRef.current;
 
-    // Initial scroll to bottom
-    messagesEndRef.current?.scrollIntoView();
-    setShouldAutoScroll(true);
-
-    const handleScroll = () => {
-      // Using Math.ceil to handle floating point imprecisions
+    const isAtBottom = () => {
       const scrollBottom = Math.ceil(container.scrollHeight - container.scrollTop);
       const visibleHeight = Math.ceil(container.clientHeight);
-      const isAtBottom = scrollBottom <= visibleHeight + 2; // Adding small buffer for rounding
-      setShouldAutoScroll(isAtBottom);
+      return scrollBottom <= visibleHeight + 2; // Adding small buffer for rounding
     };
+
+    const handleScroll = () => {
+      setWasAtBottom(isAtBottom());
+    };
+
+    // Initial scroll to bottom and state update
+    container.scrollTop = container.scrollHeight;
+    setWasAtBottom(true);
 
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, []); // Only run on mount
 
-  // Auto-scroll when messages change if we were at the bottom
+  // Handle message updates
   useEffect(() => {
-    if (shouldAutoScroll && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (!chatContainerRef.current) return;
+
+    // Always scroll to bottom on initial load (when messages first populate)
+    if (activeConversation?.messages.length && wasAtBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [activeConversation?.messages, shouldAutoScroll]);
+  }, [activeConversation?.messages, wasAtBottom]);
 
   const getUniqueTools = (should_cache: boolean) => {
     if (!activeProject?.settings.mcpServers?.length) {
