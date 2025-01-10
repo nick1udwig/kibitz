@@ -462,7 +462,7 @@ export const ChatView: React.FC = () => {
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div className="relative group">
-                <div className="absolute -right-4 top-2 z-10">
+              <div className="absolute right-2 top-2 z-10">
                   <CopyButton
                     text={content.text}
                     title="Copy message"
