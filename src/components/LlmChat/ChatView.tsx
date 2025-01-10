@@ -153,7 +153,10 @@ export const ChatView: React.FC = () => {
     try {
       const userMessage: Message = {
         role: 'user',
-        content: inputMessage,
+        content: [{
+          type: 'text' as const,
+          text: inputMessage,
+        }],
         timestamp: new Date()
       };
 
@@ -172,23 +175,6 @@ export const ChatView: React.FC = () => {
       const toolsCached = getUniqueTools(true);
       const tools = getUniqueTools(false);
 
-      const apiMessages = currentMessages.map(msg => ({
-        role: msg.role,
-        content: typeof msg.content !== 'string' ? msg.content :
-        [{
-          type: 'text' as const,
-          text: msg.content,
-        }] as MessageContent[]
-        //: msg
-        //msg.content.map((c, index, array) =>
-        //  index !== array.length - 1 ? c :
-        //  {
-        //    ...c,
-        //    cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-        //  }
-        //)
-      }));
-
       const systemPromptContent = [
         {
           type: "text",
@@ -197,18 +183,25 @@ export const ChatView: React.FC = () => {
       ] as TextBlockParam[];
 
       while (true) {
-        const cachedApiMessages = apiMessages.map((m, index, array) =>
-          index < array.length - 3 ? m :
+        const cachedApiMessages = currentMessages.map((m, index, array) =>
+          index < array.length - 3 ?
             {
-              ...m,
-              //content: typeof (m.content as MessageContent[] | string) !== 'string' ? m.content : (m.content as MessageContent[]).map((c, index, array) =>
-              content: typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] as MessageContent[] : m.content.map((c, index, array) =>
-                index != array.length - 1 ? c :
-                {
-                  ...c,
-                  cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-                }
-              )
+              role: m.role,
+              content: m.content,
+              toolInput: m.toolInput ? m.toolInput : undefined,
+            } :
+            {
+              role: m.role,
+              content: (typeof m.content === 'string' ?
+                [{ type: 'text' as const, text: m.content, cache_control: {type: 'ephemeral'} as CacheControlEphemeral }]
+                : m.content.map((c, index, array) =>
+                  index != array.length - 1 ? c :
+                  {
+                    ...c,
+                    cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+                  }
+                )) as MessageContent[],
+              toolInput: m.toolInput ? m.toolInput : undefined,
             }
         );
 
@@ -243,7 +236,7 @@ export const ChatView: React.FC = () => {
                   );
                   return toolResult;
                 }).map(msg =>
-                  !msg.content.find(c => c.type === 'tool_result') ?
+                  !(msg.content as MessageContent[]).find(c => c.type === 'tool_result') ?
                   {
                     ...msg,
                     content: [
@@ -259,13 +252,13 @@ export const ChatView: React.FC = () => {
                     content: [
                       {
                         type: 'text' as const,
-                        text: `${JSON.stringify({ ...msg.content[0], content: 'elided'})}`,
+                        text: `${JSON.stringify({ ...(msg.content as MessageContent[])[0], content: 'elided'})}`,
                       },
                     ],
                   }
                 ),
                 {
-                  role: 'user',
+                  role: 'user' as const,
                   content: [{
                     type: 'text' as const,
                     text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
@@ -273,7 +266,7 @@ export const ChatView: React.FC = () => {
                     cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
                   }],
                 },
-              ],
+              ] as Message[],
               system: [{
                 type: 'text' as const,
                 text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
@@ -305,41 +298,33 @@ export const ChatView: React.FC = () => {
               }
             }
             console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}\n${JSON.stringify(savedToolResults)}`);
-
-            //if (keepToolResponse.content[0].type === 'text' && keepToolResponse.content[0].text === 'Yes') {
-            //  const content = apiMessages[apiMessages.length - 1].content[0];
-            //  if (content.type === 'tool_result') {
-            //    savedToolResults.add(content.tool_use_id as string);
-            //    console.log(`added ${content.tool_use_id}`);
-            //  }
-            //}
           }
         }
 
         const apiMessagesToSend = !activeProject.settings.elideToolResults ? cachedApiMessages :
-        apiMessages
-          .map(msg => {
-            // Keep non-tool-result messages
-            if (!Array.isArray(msg.content)) return msg;
+          cachedApiMessages
+            .map(msg => {
+              // Keep non-tool-result messages
+              if (!Array.isArray(msg.content)) return msg;
 
-            // Check if message contains a tool result
-            const toolResult = msg.content.find(c =>
-              c.type === 'tool_result'
-            );
-            if (!toolResult) return msg;
+              // Check if message contains a tool result
+              const toolResult = msg.content.find(c =>
+                c.type === 'tool_result'
+              );
+              if (!toolResult) return msg;
 
-            // Keep if it's the newest tool result or if it's saved
-            const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
-            return toolUseId === newestToolResultId || savedToolResults.has(toolUseId) ?
-              msg :
-              {
-                ...msg,
-                content: [{
-                  ...msg.content[0],
-                  content: 'elided',
-                }],
-              };
-          });
+              // Keep if it's the newest tool result or if it's saved
+              const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
+              return toolUseId === newestToolResultId || savedToolResults.has(toolUseId) ?
+                msg :
+                {
+                  ...msg,
+                  content: [{
+                    ...msg.content[0],
+                    content: 'elided',
+                  }],
+                };
+            });
 
         const response = await anthropic.messages.create({
           model: activeProject.settings.model || DEFAULT_MODEL,
@@ -370,26 +355,20 @@ export const ChatView: React.FC = () => {
           throw new Error(`Unexpected content type: ${content}`);
         });
 
-        apiMessages.push({
+        currentMessages.push({
           role: response.role,
           content: transformedContent,
+          timestamp: new Date(),
         });
+        updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
         // Process each type of content in the response
         for (const content of response.content) {
           if (content.type === 'text') {
-            const assistantMessage: Message = {
-              role: 'assistant',
-              content: content.text,
-              timestamp: new Date()
-            };
-            currentMessages.push(assistantMessage);
-            updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
             // Generate conversation name after first exchange
-            if (activeConversation && apiMessages.length === 2) {
-              const userFirstMessage = apiMessages[0].content;
-              const assistantFirstMessage = apiMessages[1].content;
+            if (activeConversation && cachedApiMessages.length === 2) {
+              const userFirstMessage = cachedApiMessages[0].content;
+              const assistantFirstMessage = cachedApiMessages[1].content;
 
               // Create a summary prompt for the model
               const summaryResponse = await anthropic.messages.create({
@@ -435,18 +414,6 @@ export const ChatView: React.FC = () => {
                 content.input as Record<string, unknown>,
               );
 
-
-              const toolUseMessage: Message = {
-                role: 'assistant',
-                content: [{
-                  type: 'tool_use',
-                  id: content.id,
-                  name: content.name,
-                  input: content.input as Record<string, unknown>,
-                }],
-                timestamp: new Date()
-              };
-
               const toolResultMessage: Message = {
                 role: 'user',
                 content: [{
@@ -457,17 +424,8 @@ export const ChatView: React.FC = () => {
                 timestamp: new Date()
               };
 
-              currentMessages.push(toolUseMessage, toolResultMessage);
+              currentMessages.push(toolResultMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-              apiMessages.push({
-                role: 'user',
-                content: [{
-                  type: 'tool_result',
-                  tool_use_id: content.id,
-                  content: result,
-                }]
-              });
 
             } catch (error) {
               const errorMessage: Message = {
@@ -483,16 +441,6 @@ export const ChatView: React.FC = () => {
 
               currentMessages.push(errorMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-              apiMessages.push({
-                role: 'user',
-                content: [{
-                  type: 'tool_result',
-                  tool_use_id: content.id,
-                  content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  is_error: true,
-                }]
-              });
             }
           }
         }
@@ -515,7 +463,26 @@ export const ChatView: React.FC = () => {
   const renderMessage = (message: Message, index: number) => {
     if (Array.isArray(message.content)) {
       return message.content.map((content, contentIndex) => {
-        if (content.type === 'tool_use') {
+        if (content.type === 'text') {
+          return (
+            <div
+              key={`${index * 100 + contentIndex + 1}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                  message.role === 'user'
+                    ? 'bg-muted text-primary-foreground'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                <ReactMarkdown className="prose dark:prose-invert max-w-none">
+                  {content.text}
+                </ReactMarkdown>
+              </div>
+            </div>
+          );
+        } else if (content.type === 'tool_use') {
           const nextMessage = activeConversation?.messages[index + 1];
           let toolResult = null;
           if (nextMessage && Array.isArray(nextMessage.content)) {
@@ -528,17 +495,30 @@ export const ChatView: React.FC = () => {
           }
 
           return (
-            <button
-              key={`${index}-${contentIndex}`}
-              onClick={() => setSelectedToolCall({
-                name: content.name,
-                input: content.input,
-                result: toolResult
-              })}
-              className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+            <div
+              key={`${index * 100 + contentIndex + 1}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              Calling tool: {content.name}
-            </button>
+              <div
+                key={`message-${index}-content-${contentIndex}`}
+                className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                  message.role === 'user'
+                    ? 'bg-muted text-primary-foreground'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                <button
+                  onClick={() => setSelectedToolCall({
+                    name: content.name,
+                    input: content.input,
+                    result: toolResult
+                  })}
+                  className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                >
+                  Calling tool: {content.name}
+                </button>
+              </div>
+            </div>
           );
         }
         return null;
@@ -546,9 +526,22 @@ export const ChatView: React.FC = () => {
     }
 
     return (
-      <ReactMarkdown className="prose dark:prose-invert max-w-none">
-        {message.content}
-      </ReactMarkdown>
+      <div
+        key={`${index * 100}`}
+        className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+      >
+        <div
+          className={`max-w-[80%] rounded-lg px-4 py-2 ${
+            message.role === 'user'
+              ? 'bg-muted text-primary-foreground'
+              : 'bg-muted text-foreground'
+          }`}
+        >
+          <ReactMarkdown className="prose dark:prose-invert max-w-none">
+            {message.content}
+          </ReactMarkdown>
+        </div>
+      </div>
     );
   };
 
@@ -568,20 +561,7 @@ export const ChatView: React.FC = () => {
     <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
           {activeConversation.messages.map((message, index) => (
-            <div
-              key={index}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-muted text-primary-foreground'
-                    : 'bg-muted text-foreground'
-                }`}
-              >
-                {renderMessage(message, index)}
-              </div>
-            </div>
+            renderMessage(message, index)
           ))}
           <div ref={messagesEndRef} />
         </div>
