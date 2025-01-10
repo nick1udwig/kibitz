@@ -470,21 +470,21 @@ export const ChatView: React.FC = () => {
               key={`${index * 100 + contentIndex + 1}`}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-muted text-primary-foreground'
-                    : 'bg-muted text-foreground'
-                }`}
-              >
-                <div className="group relative">
-                  <div className="sticky top-2 float-right ml-2 z-10">
-                    <CopyButton
-                      text={content.text}
-                      title="Copy message"
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    />
-                  </div>
+              <div className="relative group">
+                <div className="absolute -right-8 top-2 z-10">
+                  <CopyButton
+                    text={content.text}
+                    title="Copy message"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
+                </div>
+                <div
+                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                    message.role === 'user'
+                      ? 'bg-muted text-primary-foreground'
+                      : 'bg-muted text-foreground'
+                  }`}
+                >
                   <ReactMarkdown 
                     className="prose dark:prose-invert max-w-none"
                     components={{
@@ -529,7 +529,7 @@ export const ChatView: React.FC = () => {
             >
               <div
                 key={`message-${index}-content-${contentIndex}`}
-                className={`max-w-[80%] rounded-lg px-4 py-2 relative ${
+                className={`max-w-[80%] rounded-lg px-4 py-2 relative group ${
                   message.role === 'user'
                     ? 'bg-muted text-primary-foreground'
                     : 'bg-muted text-foreground'
