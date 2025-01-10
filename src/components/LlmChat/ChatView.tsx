@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Message, MessageContent } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
@@ -515,7 +516,18 @@ export const ChatView: React.FC = () => {
                           </div>
                         );
                       },
+                      a: ({href, children}) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          {children}
+                        </a>
+                      ),
                     }}
+                    remarkPlugins={[remarkGfm]}
                   >
                     {content.text}
                   </ReactMarkdown>
@@ -581,16 +593,18 @@ export const ChatView: React.FC = () => {
           <ReactMarkdown
             className="prose dark:prose-invert max-w-none"
             components={{
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              a: ({node, ...props}) => (
+              a: ({href, children}) => (
                 <a
-                  {...props}
+                  href={href}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                />
+                >
+                  {children}
+                </a>
               )
             }}
+            remarkPlugins={[remarkGfm]}
           >
             {message.content}
           </ReactMarkdown>
