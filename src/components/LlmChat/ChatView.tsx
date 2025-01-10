@@ -491,7 +491,19 @@ export const ChatView: React.FC = () => {
                     : 'bg-muted text-foreground'
                 }`}
               >
-                <ReactMarkdown className="prose dark:prose-invert max-w-none">
+                <ReactMarkdown 
+                  className="prose dark:prose-invert max-w-none"
+                  components={{
+                    a: ({node, ...props}) => (
+                      <a 
+                        {...props} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      />
+                    )
+                  }}
+                >
                   {content.text}
                 </ReactMarkdown>
                 {content.text.includes('```') && (
@@ -568,7 +580,19 @@ export const ChatView: React.FC = () => {
               : 'bg-muted text-foreground'
           }`}
         >
-          <ReactMarkdown className="prose dark:prose-invert max-w-none">
+          <ReactMarkdown 
+            className="prose dark:prose-invert max-w-none"
+            components={{
+              a: ({node, ...props}) => (
+                <a 
+                  {...props} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                />
+              )
+            }}
+          >
             {message.content}
           </ReactMarkdown>
         </div>
