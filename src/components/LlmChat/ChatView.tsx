@@ -483,44 +483,42 @@ export const ChatView: React.FC = () => {
               key={`${index * 100 + contentIndex + 1}`}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-muted text-primary-foreground'
-                    : 'bg-muted text-foreground'
-                }`}
-              >
-                <ReactMarkdown 
-                  className="prose dark:prose-invert max-w-none"
-                  components={{
-                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                    a: ({node, ...props}) => (
-                      <a 
-                        {...props} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                      />
-                    )
-                  }}
-                >
-                  {content.text}
-                </ReactMarkdown>
-                {content.text.includes('```') && (
-                  <div className="absolute top-2 right-2">
-                    <CopyButton
-                      text={content.text.match(/```[\s\S]*?```/g)?.map(block => 
-                        block.replace(/```(?:\w+\n|\n)?([^`]+)```/, '$1').trim()
-                      ).join('\n') || ''}
-                      title="Copy code"
-                    />
-                  </div>
-                )}
-                <div className="absolute top-2 left-2">
+              <div className="relative group">
+                <div className="absolute -right-4 top-2 z-10">
                   <CopyButton
                     text={content.text}
                     title="Copy message"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
                   />
+                </div>
+                <div
+                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                    message.role === 'user'
+                      ? 'bg-muted text-primary-foreground'
+                      : 'bg-muted text-foreground'
+                  }`}
+                >
+                  <ReactMarkdown
+                    className="prose dark:prose-invert max-w-none"
+                    components={{
+                      pre({ node, children, ...props }) {
+                        return (
+                          <div className="group/code relative">
+                            <div className="sticky top-2 float-right -mr-2 z-10">
+                              <CopyButton
+                                text={node?.children[0]?.children[0]?.value || ''}
+                                title="Copy code"
+                                className="opacity-0 group-hover/code:opacity-100 transition-opacity"
+                              />
+                            </div>
+                            <pre {...props}>{children}</pre>
+                          </div>
+                        );
+                      },
+                    }}
+                  >
+                    {content.text}
+                  </ReactMarkdown>
                 </div>
               </div>
             </div>
@@ -544,7 +542,7 @@ export const ChatView: React.FC = () => {
             >
               <div
                 key={`message-${index}-content-${contentIndex}`}
-                className={`max-w-[80%] rounded-lg px-4 py-2 relative ${
+                className={`max-w-[80%] rounded-lg px-4 py-2 relative group ${
                   message.role === 'user'
                     ? 'bg-muted text-primary-foreground'
                     : 'bg-muted text-foreground'
@@ -580,14 +578,14 @@ export const ChatView: React.FC = () => {
               : 'bg-muted text-foreground'
           }`}
         >
-          <ReactMarkdown 
+          <ReactMarkdown
             className="prose dark:prose-invert max-w-none"
             components={{
               // eslint-disable-next-line @typescript-eslint/no-unused-vars
               a: ({node, ...props}) => (
-                <a 
-                  {...props} 
-                  target="_blank" 
+                <a
+                  {...props}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                 />
@@ -603,12 +601,12 @@ export const ChatView: React.FC = () => {
 
   // Use the focus control hook for managing conversation focus
   useFocusControl();
-  
+
   // Focus input when opening a new chat
   useEffect(() => {
     if (
-      inputRef.current && 
-      activeConversation && 
+      inputRef.current &&
+      activeConversation &&
       (!activeConversation.messages || activeConversation.messages.length === 0)
     ) {
       inputRef.current.focus();
