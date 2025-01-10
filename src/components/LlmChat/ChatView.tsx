@@ -39,7 +39,7 @@ export const ChatView: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [wasAtBottom, setWasAtBottom] = useState(true);
+  //const [wasAtBottom, setWasAtBottom] = useState(true);
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
     input: Record<string, unknown>;
@@ -52,22 +52,8 @@ export const ChatView: React.FC = () => {
 
     const container = chatContainerRef.current;
 
-    const isAtBottom = () => {
-      const scrollBottom = Math.ceil(container.scrollHeight - container.scrollTop);
-      const visibleHeight = Math.ceil(container.clientHeight);
-      return scrollBottom <= visibleHeight + 2; // Adding small buffer for rounding
-    };
-
-    const handleScroll = () => {
-      setWasAtBottom(isAtBottom());
-    };
-
     // Initial scroll to bottom and state update
     container.scrollTop = container.scrollHeight;
-    setWasAtBottom(true);
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
   }, []); // Only run on mount
 
   // Handle message updates
@@ -75,13 +61,6 @@ export const ChatView: React.FC = () => {
     if (!chatContainerRef.current || !activeConversation?.messages.length) {
       return;
     }
-
-    const container = chatContainerRef.current;
-    const isAtBottom = () => {
-      const scrollBottom = Math.ceil(container.scrollHeight - container.scrollTop);
-      const visibleHeight = Math.ceil(container.clientHeight);
-      return scrollBottom <= visibleHeight + 2; // Adding small buffer for rounding
-    };
 
     // Get the last message
     const lastMessage = activeConversation.messages[activeConversation.messages.length - 1];
@@ -91,14 +70,12 @@ export const ChatView: React.FC = () => {
     // 1. User was already at bottom before the message came in
     // 2. Last message is from the assistant (auto-scroll for responses)
     // 3. Last message is from the user (they just sent a message)
-    if (wasAtBottom || lastMessage.role === 'assistant' || lastMessage.role === 'user') {
+    if (lastMessage.role === 'assistant' || lastMessage.role === 'user') {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        // Update wasAtBottom after scrolling
-        setWasAtBottom(isAtBottom());
       });
     }
-  }, [activeConversation?.messages, wasAtBottom, activeConversation?.lastUpdated]);
+  }, [activeConversation?.messages, activeConversation?.lastUpdated]);
 
   const getUniqueTools = (should_cache: boolean) => {
     if (!activeProject?.settings.mcpServers?.length) {
@@ -637,7 +614,7 @@ export const ChatView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full relative">
-    <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 pb-[120px]">
+    <div ref={chatContainerRef} className="h-[calc(100vh-8rem)] overflow-y-auto p-4 pb-[100px] md:pb-[120px]">
         <div className="space-y-4">
           {activeConversation.messages.map((message, index) => (
             renderMessage(message, index)
@@ -652,7 +629,7 @@ export const ChatView: React.FC = () => {
         </div>
       )}
 
-      <div className="flex gap-2 p-4 border-t bg-background absolute bottom-0 left-0 right-0">
+      <div className="flex gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)]">
           <Textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
