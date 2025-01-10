@@ -73,26 +73,32 @@ export const ConversationSidebar = ({
   };
 
   return (
-    <div className="h-screen md:relative">
-      <div className={`
-        md:w-64 md:static md:translate-x-0
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-        fixed md:sticky top-0 h-screen z-50 bg-background w-[85vw] sm:w-[50vw] md:w-[280px] border-r p-4 flex flex-col
-        transition-transform duration-200 ease-in-out shadow-lg
-        max-w-[350px] min-h-screen
-      `}>
-        {/* Mobile Menu Toggle */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="absolute -right-12 top-2 md:hidden bg-background shadow-md hover:bg-accent"
-          onClick={onMobileMenuToggle}
-        >
-          <Menu className="w-4 h-4" />
-        </Button>
+    <>
+      {/* Floating Mobile Menu Toggle */}
+      <Button
+        variant="secondary"
+        size="icon"
+        className="fixed left-4 top-4 z-50 md:hidden rounded-full shadow-lg hover:shadow-xl bg-background"
+        onClick={onMobileMenuToggle}
+      >
+        <Menu className="h-5 w-5" />
+      </Button>
 
+      {/* Sidebar */}
+      <div className={`
+        fixed inset-y-0 left-0 
+        md:sticky md:top-0 md:left-auto
+        w-[280px] max-w-[85vw]
+        bg-background border-r 
+        transition-transform duration-200 ease-in-out
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:translate-x-0
+        z-40 
+        flex flex-col
+        h-screen
+      `}>
         {/* Top buttons */}
-        <div className="flex gap-2 mb-2">
+        <div className="flex gap-2 mb-2 p-4 pt-16 md:pt-4">
           <Button
             onClick={() => {
               createProject('New Project');
@@ -114,7 +120,7 @@ export const ConversationSidebar = ({
         </div>
 
         {/* Projects and Conversations list */}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto min-h-0 px-4">
           {projects.map(project => (
             <div key={project.id} className="mb-2">
               {/* Project header */}
@@ -304,6 +310,6 @@ export const ConversationSidebar = ({
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </>
   );
 };
