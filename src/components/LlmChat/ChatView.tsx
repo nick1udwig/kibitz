@@ -614,7 +614,7 @@ export const ChatView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full relative">
-    <div ref={chatContainerRef} className="h-[calc(100vh-8rem)] overflow-y-auto p-4 pb-[100px]">
+    <div ref={chatContainerRef} className="h-[calc(100vh-8rem)] overflow-y-auto p-4 pb-[100px] md:pb-[120px]">
         <div className="space-y-4">
           {activeConversation.messages.map((message, index) => (
             renderMessage(message, index)
@@ -629,7 +629,7 @@ export const ChatView: React.FC = () => {
         </div>
       )}
 
-      <div className="flex gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px]">
+      <div className="flex gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)]">
           <Textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}

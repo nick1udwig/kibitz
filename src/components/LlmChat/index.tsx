@@ -26,7 +26,7 @@ export const ChatApp = () => {
   return (
     <ProjectProvider>
       <McpProvider>
-        <div className="min-h-screen bg-background text-foreground flex relative">
+        <div className="min-h-screen bg-background text-foreground flex relative overflow-x-hidden">
           {/* Mobile menu overlay */}
           {isMobileMenuOpen && (
             <div
@@ -55,14 +55,16 @@ export const ChatApp = () => {
           <div className="flex-1">
             <div className="flex flex-col h-full">
               <div className="sticky top-0 z-50 bg-background">
-                <div className="p-4 flex justify-between items-center">
-                  <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')}>
-                    <TabsList>
-                      <TabsTrigger value="chat">Chat</TabsTrigger>
-                      <TabsTrigger value="settings">Settings</TabsTrigger>
-                    </TabsList>
+                <div className="flex justify-between items-center">
+                  <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')} className="px-4 py-3">
+                    <div className="flex items-center gap-4">
+                      <TabsList>
+                        <TabsTrigger value="chat">Chat</TabsTrigger>
+                        <TabsTrigger value="settings">Settings</TabsTrigger>
+                      </TabsList>
+                      <ThemeToggle />
+                    </div>
                   </Tabs>
-                  <ThemeToggle />
                 </div>
               </div>
               
