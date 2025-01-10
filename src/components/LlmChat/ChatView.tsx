@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
-import { Send } from 'lucide-react';
+import { Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
@@ -33,6 +33,7 @@ export const ChatView: React.FC = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const { servers, executeTool } = useMcp();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -139,7 +140,18 @@ export const ChatView: React.FC = () => {
     });
   };
 
+  const cancelCurrentCall = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+      setError('Operation cancelled');
+    }
+  }, []);
+
   const handleSendMessage = async () => {
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
     if (!inputMessage.trim() || !activeProject || !activeConversationId) return;
     if (!activeProject.settings.apiKey) {
       setError('Please set your API key in settings');
@@ -336,7 +348,8 @@ export const ChatView: React.FC = () => {
           }),
           ...(tools.length > 0 && {
             tools: toolsCached
-          })
+          }),
+          signals: [abortControllerRef.current?.signal].filter(Boolean)
         });
 
         const transformedContent = response.content.map(content => {
@@ -591,7 +604,18 @@ export const ChatView: React.FC = () => {
       )}
 
       <div className="flex gap-2 p-4 border-t bg-background absolute bottom-0 left-0 right-0">
-        <Textarea
+          {isLoading && (
+            <Button
+              onClick={cancelCurrentCall}
+              variant="outline"
+              className="absolute z-10 right-20 bottom-6"
+              size="sm"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Cancel
+            </Button>
+          )}
+          <Textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           placeholder="Type your message... (Markdown supported)"
