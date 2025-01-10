@@ -55,7 +55,7 @@ export const ChatApp = () => {
           <div className="flex-1">
             <div className="flex flex-col h-full">
               <div className="sticky top-0 z-50 bg-background">
-                <div className="flex justify-between items-center">
+                <div className={`flex justify-between items-center ${!isMobileMenuOpen ? 'md:flex hidden' : 'flex'}`}>
                   <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')} className="px-4 py-3">
                     <div className="flex items-center gap-4">
                       <TabsList>

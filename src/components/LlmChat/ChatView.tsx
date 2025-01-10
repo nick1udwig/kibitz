@@ -633,7 +633,7 @@ export const ChatView: React.FC = () => {
           <Textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          placeholder="Type your message... (Markdown supported)"
+          placeholder="Type your message"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
               e.preventDefault();
