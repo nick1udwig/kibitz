@@ -449,6 +449,11 @@ export const ChatView: React.FC = () => {
     } finally {
       shouldCancelRef.current = false;
       setIsLoading(false);
+
+      // Focus the input field after the LLM finishes talking
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
     }
   };
 
@@ -594,12 +599,9 @@ export const ChatView: React.FC = () => {
   useFocusControl();
 
   // Focus input when opening a new chat
+  // Focus input when opening a new chat or when a chat is selected
   useEffect(() => {
-    if (
-      inputRef.current &&
-      activeConversation &&
-      (!activeConversation.messages || activeConversation.messages.length === 0)
-    ) {
+    if (inputRef.current && activeConversation) {
       inputRef.current.focus();
     }
   }, [activeConversation]);
