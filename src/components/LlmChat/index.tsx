@@ -56,8 +56,8 @@ export const ChatApp = () => {
             <div className="flex flex-col h-full">
               <div className="sticky top-0 z-50 bg-background">
                 <div className={`flex justify-between items-center ${!isMobileMenuOpen ? 'md:flex hidden' : 'flex'}`}>
-                  <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')} className="px-4 py-3">
-                    <div className="flex items-center gap-4">
+                  <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')} className="w-full px-4 py-3">
+                    <div className="flex items-center gap-4 md:pl-0 pl-10">
                       <TabsList>
                         <TabsTrigger value="chat">Chat</TabsTrigger>
                         <TabsTrigger value="settings">Settings</TabsTrigger>
