@@ -194,6 +194,14 @@ export const ConversationSidebar = ({
                       const chatTab = tabsList?.querySelector('[value="chat"]') as HTMLButtonElement;
                       if (chatTab) {
                         chatTab.click();
+                        // Force a repaint to ensure the tab switch takes effect
+                        requestAnimationFrame(() => {
+                          chatTab.dispatchEvent(new MouseEvent('click', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window
+                          }));
+                        });
                       }
                     }}
                   >
