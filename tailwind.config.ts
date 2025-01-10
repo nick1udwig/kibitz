@@ -50,6 +50,23 @@ module.exports = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        kinode: {
+          orange: "hsl(var(--orange))",
+          'dark-orange': "hsl(var(--dark-orange))",
+          blue: "hsl(var(--blue))",
+          'off-white': "hsl(var(--off-white))",
+          white: "hsl(var(--white))",
+          'off-black': "hsl(var(--off-black))",
+          black: "hsl(var(--black))",
+          tan: "hsl(var(--tan))",
+          'ansi-red': "hsl(var(--ansi-red))",
+          maroon: "hsl(var(--maroon))",
+          gray: "hsl(var(--gray))",
+          'tasteful-dark': "hsl(var(--tasteful-dark))",
+        }
+      },
+      fontFamily: {
+        'kode': ['Kode Mono', 'monospace'],
       },
       borderRadius: {
         lg: "var(--radius)",
