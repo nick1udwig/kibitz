@@ -3,6 +3,7 @@ import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import { Message, MessageContent } from './types';
@@ -479,6 +480,22 @@ export const ChatView: React.FC = () => {
                 <ReactMarkdown className="prose dark:prose-invert max-w-none">
                   {content.text}
                 </ReactMarkdown>
+                {content.text.includes('```') && (
+                  <div className="absolute top-2 right-2">
+                    <CopyButton
+                      text={content.text.match(/```[\s\S]*?```/g)?.map(block => 
+                        block.replace(/```(?:\w+\n|\n)?([^`]+)```/, '$1').trim()
+                      ).join('\n') || ''}
+                      title="Copy code"
+                    />
+                  </div>
+                )}
+                <div className="absolute top-2 left-2">
+                  <CopyButton
+                    text={content.text}
+                    title="Copy message"
+                  />
+                </div>
               </div>
             </div>
           );
@@ -501,7 +518,7 @@ export const ChatView: React.FC = () => {
             >
               <div
                 key={`message-${index}-content-${contentIndex}`}
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                className={`max-w-[80%] rounded-lg px-4 py-2 relative ${
                   message.role === 'user'
                     ? 'bg-muted text-primary-foreground'
                     : 'bg-muted text-foreground'
