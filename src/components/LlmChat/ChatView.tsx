@@ -606,10 +606,14 @@ export const ChatView: React.FC = () => {
   
   // Focus input when opening a new chat
   useEffect(() => {
-    if (inputRef.current && (!activeConversation.messages || activeConversation.messages.length === 0)) {
+    if (
+      inputRef.current && 
+      activeConversation && 
+      (!activeConversation.messages || activeConversation.messages.length === 0)
+    ) {
       inputRef.current.focus();
     }
-  }, [activeConversation.id, activeConversation.messages]);
+  }, [activeConversation?.id, activeConversation?.messages]);
 
   if (!activeConversation) {
     return (
