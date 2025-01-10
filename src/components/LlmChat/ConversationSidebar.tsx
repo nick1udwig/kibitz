@@ -13,12 +13,14 @@ interface ConversationSidebarProps {
   onExportConversation: (projectId: string, conversationId?: string) => void;
   isMobileMenuOpen?: boolean;
   onMobileMenuToggle?: () => void;
+  onConversationSelect?: () => void;
 }
 
 export const ConversationSidebar = ({
   onExportConversation,
   isMobileMenuOpen = true,
-  onMobileMenuToggle
+  onMobileMenuToggle,
+  onConversationSelect
 }: ConversationSidebarProps) => {
   const {
     projects,
@@ -76,9 +78,9 @@ export const ConversationSidebar = ({
     <div className={`
       md:w-64 md:static md:translate-x-0
       ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-      absolute z-50 bg-background w-[85vw] sm:w-[50vw] md:w-64 border-r p-4 flex flex-col h-full
+      absolute z-50 bg-background w-[85vw] sm:w-[50vw] md:w-64 border-r p-2 flex flex-col
       transition-transform duration-200 ease-in-out shadow-lg
-      max-w-[350px]
+      max-w-[350px] max-h-screen overflow-hidden
     `}>
       {/* Mobile Menu Toggle */}
       <Button
@@ -90,7 +92,7 @@ export const ConversationSidebar = ({
         <Menu className="w-4 h-4" />
       </Button>
       {/* Top buttons */}
-      <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-2">
         <Button
           onClick={() => {
             createProject('New Project');
@@ -118,7 +120,8 @@ export const ConversationSidebar = ({
             {/* Project header */}
             <div
               className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
-                ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
+      ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
+      text-sm`}
               onClick={() => {
                 setActiveProject(project.id);
                 setActiveConversation(null); // Clear active conversation to trigger auto-creation in ChatView
@@ -172,7 +175,7 @@ export const ConversationSidebar = ({
 
             {/* Conversations under project */}
             {expandedProjects.has(project.id) && (
-              <div className="ml-6 mt-1 space-y-1">
+              <div className="ml-4 mt-1 space-y-1">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -186,15 +189,12 @@ export const ConversationSidebar = ({
                   <div
                     key={convo.id}
                     className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
-                      ${convo.id === activeConversationId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
+      ${convo.id === activeConversationId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
+      text-sm truncate max-w-[250px]`}
                     onClick={() => {
                       setActiveProject(project.id);
                       setActiveConversation(convo.id);
-                      const tabsList = document.querySelector('[role="tablist"]');
-                      const chatTab = tabsList?.querySelector('[value="chat"]') as HTMLButtonElement;
-                      if (chatTab) {
-                        chatTab.click();
-                      }
+                      onConversationSelect?.();
                     }}
                   >
                     <span className="truncate flex-1" title={convo.name}>{convo.name}</span>

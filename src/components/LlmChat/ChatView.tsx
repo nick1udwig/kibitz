@@ -1,11 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
-import { Send } from 'lucide-react';
+import { Send, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Message, MessageContent } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
@@ -33,9 +34,11 @@ export const ChatView: React.FC = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const shouldCancelRef = useRef<boolean>(false);
   const { servers, executeTool } = useMcp();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [wasAtBottom, setWasAtBottom] = useState(true);
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
@@ -139,7 +142,15 @@ export const ChatView: React.FC = () => {
     });
   };
 
+  const cancelCurrentCall = useCallback(() => {
+    shouldCancelRef.current = true;
+    setIsLoading(false);
+    setError('Operation cancelled');
+  }, []);
+
   const handleSendMessage = async () => {
+    // Reset cancel flag
+    shouldCancelRef.current = false;
     if (!inputMessage.trim() || !activeProject || !activeConversationId) return;
     if (!activeProject.settings.apiKey) {
       setError('Please set your API key in settings');
@@ -446,8 +457,8 @@ export const ChatView: React.FC = () => {
           }
         }
 
-        // Break if no tool use or if response is complete
-        if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
+        // Break if cancelled or if no tool use or if response is complete
+        if (shouldCancelRef.current || !response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
           break;
         }
         //isFirstRequest = false;
@@ -455,8 +466,11 @@ export const ChatView: React.FC = () => {
 
     } catch (error) {
       console.error('Failed to send message:', error);
-      setError(error instanceof Error ? error.message : 'An error occurred');
+      if (!shouldCancelRef.current) {
+        setError(error instanceof Error ? error.message : 'An error occurred');
+      }
     } finally {
+      shouldCancelRef.current = false;
       setIsLoading(false);
     }
   };
@@ -485,7 +499,7 @@ export const ChatView: React.FC = () => {
                       : 'bg-muted text-foreground'
                   }`}
                 >
-                  <ReactMarkdown 
+                  <ReactMarkdown
                     className="prose dark:prose-invert max-w-none"
                     components={{
                       pre({ node, children, ...props }) {
@@ -502,7 +516,18 @@ export const ChatView: React.FC = () => {
                           </div>
                         );
                       },
+                      a: ({href, children}) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          {children}
+                        </a>
+                      ),
                     }}
+                    remarkPlugins={[remarkGfm]}
                   >
                     {content.text}
                   </ReactMarkdown>
@@ -565,7 +590,22 @@ export const ChatView: React.FC = () => {
               : 'bg-muted text-foreground'
           }`}
         >
-          <ReactMarkdown className="prose dark:prose-invert max-w-none">
+          <ReactMarkdown
+            className="prose dark:prose-invert max-w-none"
+            components={{
+              a: ({href, children}) => (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  {children}
+                </a>
+              )
+            }}
+            remarkPlugins={[remarkGfm]}
+          >
             {message.content}
           </ReactMarkdown>
         </div>
@@ -575,6 +615,17 @@ export const ChatView: React.FC = () => {
 
   // Use the focus control hook for managing conversation focus
   useFocusControl();
+
+  // Focus input when opening a new chat
+  useEffect(() => {
+    if (
+      inputRef.current &&
+      activeConversation &&
+      (!activeConversation.messages || activeConversation.messages.length === 0)
+    ) {
+      inputRef.current.focus();
+    }
+  }, [activeConversation]);
 
   if (!activeConversation) {
     return (
@@ -602,7 +653,7 @@ export const ChatView: React.FC = () => {
       )}
 
       <div className="flex gap-2 p-4 border-t bg-background absolute bottom-0 left-0 right-0">
-        <Textarea
+          <Textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           placeholder="Type your message... (Markdown supported)"
@@ -612,17 +663,18 @@ export const ChatView: React.FC = () => {
               handleSendMessage();
             }
           }}
-          className="flex-1"
+            ref={inputRef}
+            className="flex-1"
           maxRows={8}
           disabled={isLoading}
         />
         <Button
-          onClick={handleSendMessage}
-          disabled={isLoading || !activeProjectId || !activeConversationId}
+          onClick={isLoading ? cancelCurrentCall : handleSendMessage}
+          disabled={!activeProjectId || !activeConversationId}
           className="self-end relative"
         >
           {isLoading ? (
-            <Spinner />
+            <Square className="w-4 h-4" />
           ) : (
             <Send className="w-4 h-4" />
           )}
