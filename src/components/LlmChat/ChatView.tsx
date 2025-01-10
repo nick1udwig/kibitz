@@ -545,7 +545,7 @@ export const ChatView: React.FC = () => {
                   })}
                   className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
                 >
-                  Calling tool: {content.name}
+                  Use tool: {content.name}
                 </button>
               </div>
             </div>
