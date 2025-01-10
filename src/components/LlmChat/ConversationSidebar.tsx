@@ -78,8 +78,9 @@ export const ConversationSidebar = ({
       <Button
         variant="secondary"
         size="icon"
-        className="fixed left-4 top-4 z-50 md:hidden rounded-full shadow-lg hover:shadow-xl bg-background"
+        className="fixed left-4 top-4 z-[100] md:hidden rounded-full shadow-lg hover:shadow-xl bg-background"
         onClick={onMobileMenuToggle}
+        aria-label="Toggle mobile menu"
       >
         <Menu className="h-5 w-5" />
       </Button>
