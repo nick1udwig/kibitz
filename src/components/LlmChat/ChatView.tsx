@@ -458,7 +458,7 @@ export const ChatView: React.FC = () => {
         if (content.type === 'text') {
           return (
             <div
-              key={`${index * 100 + contentIndex + 1}`}
+              key={`text-${index}-${contentIndex}`}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div className="relative group">
@@ -526,7 +526,7 @@ export const ChatView: React.FC = () => {
 
           return (
             <div
-              key={`${index * 100 + contentIndex + 1}`}
+              key={`tool_use-${index}-${contentIndex}`}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
@@ -557,7 +557,7 @@ export const ChatView: React.FC = () => {
 
     return (
       <div
-        key={`${index * 100}`}
+        key={`string-${index}`}
         className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
       >
         <div
