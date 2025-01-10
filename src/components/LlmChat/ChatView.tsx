@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
-import { Send, X } from 'lucide-react';
+import { Send, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
@@ -639,17 +639,6 @@ export const ChatView: React.FC = () => {
       )}
 
       <div className="flex gap-2 p-4 border-t bg-background absolute bottom-0 left-0 right-0">
-          {isLoading && (
-            <Button
-              onClick={cancelCurrentCall}
-              variant="outline"
-              className="absolute z-10 right-20 bottom-6"
-              size="sm"
-            >
-              <X className="w-4 h-4 mr-2" />
-              Cancel
-            </Button>
-          )}
           <Textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
@@ -666,12 +655,12 @@ export const ChatView: React.FC = () => {
           disabled={isLoading}
         />
         <Button
-          onClick={handleSendMessage}
-          disabled={isLoading || !activeProjectId || !activeConversationId}
+          onClick={isLoading ? cancelCurrentCall : handleSendMessage}
+          disabled={!activeProjectId || !activeConversationId}
           className="self-end relative"
         >
           {isLoading ? (
-            <Spinner />
+            <Square className="w-4 h-4" />
           ) : (
             <Send className="w-4 h-4" />
           )}
