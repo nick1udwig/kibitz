@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square } from 'lucide-react';
@@ -15,9 +15,12 @@ import { useFocusControl } from './context/useFocusControl';
 import { useMcp } from './context/McpContext';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
-//const HAIKU_MODEL = 'claude-3-5-haiku-20241022';
 
-export const ChatView: React.FC = () => {
+export interface ChatViewRef {
+  focus: () => void;
+}
+
+const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const {
     projects,
     activeProjectId,
@@ -39,22 +42,41 @@ export const ChatView: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  //const [wasAtBottom, setWasAtBottom] = useState(true);
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
     input: Record<string, unknown>;
     result: string | null;
   } | null>(null);
 
+  // Use the focus control hook for managing conversation focus
+  useFocusControl();
+
+  // Expose the focus method to parent components
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      },
+    }),
+    []
+  );
+
+  // Focus input when opening a new chat or when a chat is selected
+  useEffect(() => {
+    if (inputRef.current && activeConversation) {
+      inputRef.current.focus();
+    }
+  }, [activeConversation]);
+
   // Scroll handling logic
   useEffect(() => {
     if (!chatContainerRef.current) return;
-
     const container = chatContainerRef.current;
-
-    // Initial scroll to bottom and state update
     container.scrollTop = container.scrollHeight;
-  }, []); // Only run on mount
+  }, []); 
 
   // Handle message updates
   useEffect(() => {
@@ -62,14 +84,8 @@ export const ChatView: React.FC = () => {
       return;
     }
 
-    // Get the last message
     const lastMessage = activeConversation.messages[activeConversation.messages.length - 1];
-    // We don't need to use lastMessageTimestamp directly as we have lastUpdated from the conversation
 
-    // Scroll if:
-    // 1. User was already at bottom before the message came in
-    // 2. Last message is from the assistant (auto-scroll for responses)
-    // 3. Last message is from the user (they just sent a message)
     if (lastMessage.role === 'assistant' || lastMessage.role === 'user') {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -126,7 +142,6 @@ export const ChatView: React.FC = () => {
   }, []);
 
   const handleSendMessage = async () => {
-    // Reset cancel flag
     shouldCancelRef.current = false;
     if (!inputMessage.trim() || !activeProject || !activeConversationId) return;
     if (!activeProject.settings.apiKey) {
@@ -136,8 +151,6 @@ export const ChatView: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
-
-    //let isFirstRequest = true;
 
     try {
       const userMessage: Message = {
@@ -158,7 +171,6 @@ export const ChatView: React.FC = () => {
         dangerouslyAllowBrowser: true
       });
 
-      // Track which tool results are saved and shouldn't be dropped
       const savedToolResults = new Set<string>();
 
       const toolsCached = getUniqueTools(true);
@@ -194,7 +206,6 @@ export const ChatView: React.FC = () => {
             }
         );
 
-        // Get the ID of the newest tool result
         const newestToolResultId = currentMessages
           .filter((msg): msg is Message & { content: MessageContent[] } =>
             Array.isArray(msg.content)
@@ -208,18 +219,12 @@ export const ChatView: React.FC = () => {
 
         if (activeProject.settings.elideToolResults) {
           if ((cachedApiMessages[cachedApiMessages.length - 1].content as MessageContent[])[0].type === 'tool_result') {
-            // eliding seems to work well(?) with sonnet but not with haiku;
-            //  however, haiku works well(?) without eliding.
-            //  More testing needed
             const keepToolResponse = await anthropic.messages.create({
               model: DEFAULT_MODEL,
-              //model: HAIKU_MODEL,
               max_tokens: 8192,
               messages: [
                 ...cachedApiMessages.filter(msg => {
                   if (!Array.isArray(msg.content)) return false;
-
-                  // Check if message contains a tool result
                   const toolResult = msg.content.find(c =>
                     c.type === 'tool_use' || c.type === 'tool_result'
                   );
@@ -251,7 +256,6 @@ export const ChatView: React.FC = () => {
                   content: [{
                     type: 'text' as const,
                     text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
-                    //text: 'Rate each `message`: will the `type: tool_result` be required in the future beyond an immediate response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
                     cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
                   }],
                 },
@@ -259,22 +263,15 @@ export const ChatView: React.FC = () => {
               system: [{
                 type: 'text' as const,
                 text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
-                //text: 'Rate each `message`: will the `type: tool_result` be required in the future beyond an immediate response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
                 cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
               }],
-              //...(tools.length > 0 && {
-              //  tools: tools
-              //})
             });
 
-            // Split the input string into lines
             if (keepToolResponse.content[0].type === 'text') {
               console.log('a');
               const lines = keepToolResponse.content[0].text.split('\n');
 
-              // Process each line
               for (const line of lines) {
-                // Split each line into key and value
                 const [key, value] = line.split(': ');
 
                 if (value.trim() === 'Yes') {
@@ -293,16 +290,13 @@ export const ChatView: React.FC = () => {
         const apiMessagesToSend = !activeProject.settings.elideToolResults ? cachedApiMessages :
           cachedApiMessages
             .map(msg => {
-              // Keep non-tool-result messages
               if (!Array.isArray(msg.content)) return msg;
 
-              // Check if message contains a tool result
               const toolResult = msg.content.find(c =>
                 c.type === 'tool_result'
               );
               if (!toolResult) return msg;
 
-              // Keep if it's the newest tool result or if it's saved
               const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
               return toolUseId === newestToolResultId || savedToolResults.has(toolUseId) ?
                 msg :
@@ -351,15 +345,12 @@ export const ChatView: React.FC = () => {
         });
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-        // Process each type of content in the response
         for (const content of response.content) {
           if (content.type === 'text') {
-            // Generate conversation name after first exchange
             if (activeConversation && cachedApiMessages.length === 2) {
               const userFirstMessage = cachedApiMessages[0].content;
               const assistantFirstMessage = cachedApiMessages[1].content;
 
-              // Create a summary prompt for the model
               const summaryResponse = await anthropic.messages.create({
                 model: activeProject.settings.model || DEFAULT_MODEL,
                 max_tokens: 20,
@@ -434,11 +425,9 @@ export const ChatView: React.FC = () => {
           }
         }
 
-        // Break if cancelled or if no tool use or if response is complete
         if (shouldCancelRef.current || !response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
           break;
         }
-        //isFirstRequest = false;
       }
 
     } catch (error) {
@@ -595,17 +584,6 @@ export const ChatView: React.FC = () => {
     );
   };
 
-  // Use the focus control hook for managing conversation focus
-  useFocusControl();
-
-  // Focus input when opening a new chat
-  // Focus input when opening a new chat or when a chat is selected
-  useEffect(() => {
-    if (inputRef.current && activeConversation) {
-      inputRef.current.focus();
-    }
-  }, [activeConversation]);
-
   if (!activeConversation) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -668,4 +646,10 @@ export const ChatView: React.FC = () => {
       )}
     </div>
   );
-};
+});
+
+// Display name for debugging purposes
+ChatViewComponent.displayName = 'ChatView';
+
+// Export a memo'd version for better performance
+export const ChatView = React.memo(ChatViewComponent);
