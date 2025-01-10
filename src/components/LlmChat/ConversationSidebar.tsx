@@ -78,9 +78,9 @@ export const ConversationSidebar = ({
     <div className={`
       md:w-64 md:static md:translate-x-0
       ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-      absolute z-50 bg-background w-[85vw] sm:w-[50vw] md:w-64 border-r p-2 flex flex-col
+      fixed md:sticky top-0 h-screen z-50 bg-background w-[85vw] sm:w-[50vw] md:w-64 border-r p-2 flex flex-col
       transition-transform duration-200 ease-in-out shadow-lg
-      max-w-[350px] max-h-screen overflow-hidden
+      max-w-[350px]
     `}>
       {/* Mobile Menu Toggle */}
       <Button

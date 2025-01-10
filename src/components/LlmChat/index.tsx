@@ -54,30 +54,36 @@ export const ChatApp = () => {
 
           <div className="flex-1">
             <div className="flex flex-col h-full">
-              <div className="p-4 flex justify-between items-center">
-                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')}>
-                  <TabsList>
-                    <TabsTrigger value="chat">Chat</TabsTrigger>
-                    <TabsTrigger value="settings">Settings</TabsTrigger>
-                  </TabsList>
-                  
-                  <div className="h-[calc(100vh-5rem)]">
-                    {/* Keep the ChatView always mounted to preserve conversation state */}
-                    <div className={activeTab === 'settings' ? 'hidden' : ''}>
-                      <TabsContent value="chat" forceMount>
-                        <ChatView />
-                      </TabsContent>
-                    </div>
+              <div className="sticky top-0 z-50 bg-background">
+                <div className="p-4 flex justify-between items-center">
+                  <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')}>
+                    <TabsList>
+                      <TabsTrigger value="chat">Chat</TabsTrigger>
+                      <TabsTrigger value="settings">Settings</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <ThemeToggle />
+                </div>
+              </div>
+              
+              <div className="flex-1">
+                {/* Keep the ChatView always mounted to preserve conversation state */}
+                <div className={activeTab === 'settings' ? 'hidden' : ''}>
+                  <Tabs value={activeTab}>
+                    <TabsContent value="chat" forceMount>
+                      <ChatView />
+                    </TabsContent>
+                  </Tabs>
+                </div>
 
-                    {/* Show AdminView only when settings tab is active */}
-                    <div className={activeTab === 'chat' ? 'hidden' : ''}>
-                      <TabsContent value="settings" forceMount>
-                        <AdminView />
-                      </TabsContent>
-                    </div>
-                  </div>
-                </Tabs>
-                <ThemeToggle />
+                {/* Show AdminView only when settings tab is active */}
+                <div className={activeTab === 'chat' ? 'hidden' : ''}>
+                  <Tabs value={activeTab}>
+                    <TabsContent value="settings" forceMount>
+                      <AdminView />
+                    </TabsContent>
+                  </Tabs>
+                </div>
               </div>
             </div>
           </div>

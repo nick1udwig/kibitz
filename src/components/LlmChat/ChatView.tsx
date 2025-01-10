@@ -637,7 +637,7 @@ export const ChatView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full relative">
-    <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 pb-[100px]">
+    <div ref={chatContainerRef} className="h-[calc(100vh-8rem)] overflow-y-auto p-4 pb-[100px]">
         <div className="space-y-4">
           {activeConversation.messages.map((message, index) => (
             renderMessage(message, index)
