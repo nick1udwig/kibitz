@@ -309,7 +309,19 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                 };
             });
 
-        const response = await anthropic.messages.create({
+        const currentStreamMessage = {
+          role: 'assistant' as const,
+          content: [] as MessageContent[],
+          timestamp: new Date(),
+        };
+
+        const textContent: MessageContent = {
+          type: 'text',
+          text: '',
+        };
+        currentStreamMessage.content.push(textContent);
+
+        const stream = await anthropic.messages.stream({
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
           messages: apiMessagesToSend,
@@ -319,113 +331,99 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           ...(tools.length > 0 && {
             tools: toolsCached
           })
+        }).on('text', (text) => {
+          textContent.text += text;
+          // Update conversation with streaming message
+          const updatedMessages = [...currentMessages, currentStreamMessage];
+          updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
         });
 
-        const transformedContent = response.content.map(content => {
-          if (content.type === 'text') {
-            return {
-              type: 'text' as const,
-              text: content.text,
-            };
-          } else if (content.type === 'tool_use') {
-            return {
-              type: 'tool_use' as const,
-              id: content.id,
-              name: content.name,
-              input: content.input as Record<string, unknown>,
-            };
-          }
-          throw new Error(`Unexpected content type: ${content}`);
-        });
+        // Handle tool use in the final response if any
+        const finalResponse = await stream.finalMessage();
+        
+        // If this is a new conversation, generate a title
+        if (activeConversation && cachedApiMessages.length === 2) {
+          const userFirstMessage = cachedApiMessages[0].content;
+          const assistantFirstMessage = cachedApiMessages[1].content;
 
-        currentMessages.push({
-          role: response.role,
-          content: transformedContent,
-          timestamp: new Date(),
-        });
-        updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+          const summaryResponse = await anthropic.messages.create({
+            model: activeProject.settings.model || DEFAULT_MODEL,
+            max_tokens: 20,
+            messages: [{
+              role: "user",
+              content: `User: ${JSON.stringify(userFirstMessage)}\nAssistant: ${Array.isArray(assistantFirstMessage)
+                ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
+            }]
+          });
 
-        for (const content of response.content) {
-          if (content.type === 'text') {
-            if (activeConversation && cachedApiMessages.length === 2) {
-              const userFirstMessage = cachedApiMessages[0].content;
-              const assistantFirstMessage = cachedApiMessages[1].content;
-
-              const summaryResponse = await anthropic.messages.create({
-                model: activeProject.settings.model || DEFAULT_MODEL,
-                max_tokens: 20,
-                messages: [{
-                  role: "user",
-                  content: `User: ${JSON.stringify(userFirstMessage)}\nAssistant: ${Array.isArray(assistantFirstMessage)
-                    ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-                    : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
-                }]
-              });
-
-              const type = summaryResponse.content[0].type;
-              if (type == 'text') {
-                const suggestedTitle = summaryResponse.content[0].text
-                  .replace(/["']/g, '')
-                  .replace('title:', '')
-                  .replace('Title:', '')
-                  .replace('title', '')
-                  .replace('Title', '')
-                  .trim();
-                if (suggestedTitle) {
-                  renameConversation(activeProject.id, activeConversationId, suggestedTitle);
-                }
-              } else {
-                console.log(`Failed to rename conversation. Got back: ${summaryResponse}`);
-              }
-            }
-          } else if (content.type === 'tool_use') {
-            try {
-              const serverWithTool = servers.find(s =>
-                s.tools?.some(t => t.name === content.name)
-              );
-
-              if (!serverWithTool) {
-                throw new Error(`No server found for tool ${content.name}`);
-              }
-
-              const result = await executeTool(
-                serverWithTool.id,
-                content.name,
-                content.input as Record<string, unknown>,
-              );
-
-              const toolResultMessage: Message = {
-                role: 'user',
-                content: [{
-                  type: 'tool_result',
-                  tool_use_id: content.id,
-                  content: result,
-                }],
-                timestamp: new Date()
-              };
-
-              currentMessages.push(toolResultMessage);
-              updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-            } catch (error) {
-              const errorMessage: Message = {
-                role: 'user',
-                content: [{
-                  type: 'tool_result',
-                  tool_use_id: content.id,
-                  content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                  is_error: true,
-                }],
-                timestamp: new Date()
-              };
-
-              currentMessages.push(errorMessage);
-              updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+          const type = summaryResponse.content[0].type;
+          if (type == 'text') {
+            const suggestedTitle = summaryResponse.content[0].text
+              .replace(/["']/g, '')
+              .replace('title:', '')
+              .replace('Title:', '')
+              .replace('title', '')
+              .replace('Title', '')
+              .trim();
+            if (suggestedTitle) {
+              renameConversation(activeProject.id, activeConversationId, suggestedTitle);
             }
           }
         }
 
-        if (shouldCancelRef.current || !response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
+        // Check for and handle tool use
+        const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
+        if (toolUseContent && toolUseContent.type === 'tool_use') {
+          try {
+            const serverWithTool = servers.find(s =>
+              s.tools?.some(t => t.name === toolUseContent.name)
+            );
+
+            if (!serverWithTool) {
+              throw new Error(`No server found for tool ${toolUseContent.name}`);
+            }
+
+            const result = await executeTool(
+              serverWithTool.id,
+              toolUseContent.name,
+              toolUseContent.input as Record<string, unknown>,
+            );
+
+            const toolResultMessage: Message = {
+              role: 'user',
+              content: [{
+                type: 'tool_result',
+                tool_use_id: toolUseContent.id,
+                content: result,
+              }],
+              timestamp: new Date()
+            };
+
+            currentMessages.push(toolResultMessage);
+            updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+
+            // Continue the conversation with the tool result
+            continue;
+          } catch (error) {
+            const errorMessage: Message = {
+              role: 'user',
+              content: [{
+                type: 'tool_result',
+                tool_use_id: toolUseContent.id,
+                content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                is_error: true,
+              }],
+              timestamp: new Date()
+            };
+
+            currentMessages.push(errorMessage);
+            updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+          }
+        }
+
+        // Break the loop if no tool use or should cancel
+        if (shouldCancelRef.current || !toolUseContent) {
           break;
         }
       }
