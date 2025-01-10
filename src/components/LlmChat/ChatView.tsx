@@ -477,24 +477,35 @@ export const ChatView: React.FC = () => {
                     : 'bg-muted text-foreground'
                 }`}
               >
-                <ReactMarkdown className="prose dark:prose-invert max-w-none">
-                  {content.text}
-                </ReactMarkdown>
-                {content.text.includes('```') && (
-                  <div className="absolute top-2 right-2">
+                <div className="group relative">
+                  <div className="sticky top-2 float-right ml-2 z-10">
                     <CopyButton
-                      text={content.text.match(/```[\s\S]*?```/g)?.map(block => 
-                        block.replace(/```(?:\w+\n|\n)?([^`]+)```/, '$1').trim()
-                      ).join('\n') || ''}
-                      title="Copy code"
+                      text={content.text}
+                      title="Copy message"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
                     />
                   </div>
-                )}
-                <div className="absolute top-2 left-2">
-                  <CopyButton
-                    text={content.text}
-                    title="Copy message"
-                  />
+                  <ReactMarkdown 
+                    className="prose dark:prose-invert max-w-none"
+                    components={{
+                      pre({ node, children, ...props }) {
+                        return (
+                          <div className="group/code relative">
+                            <div className="sticky top-2 float-right -mr-2 z-10">
+                              <CopyButton
+                                text={node?.children[0]?.children[0]?.value || ''}
+                                title="Copy code"
+                                className="opacity-0 group-hover/code:opacity-100 transition-opacity"
+                              />
+                            </div>
+                            <pre {...props}>{children}</pre>
+                          </div>
+                        );
+                      },
+                    }}
+                  >
+                    {content.text}
+                  </ReactMarkdown>
                 </div>
               </div>
             </div>
