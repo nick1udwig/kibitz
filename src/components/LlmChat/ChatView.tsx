@@ -613,7 +613,7 @@ export const ChatView: React.FC = () => {
     ) {
       inputRef.current.focus();
     }
-  }, [activeConversation?.id, activeConversation?.messages]);
+  }, [activeConversation]);
 
   if (!activeConversation) {
     return (
