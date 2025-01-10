@@ -76,7 +76,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     if (!chatContainerRef.current) return;
     const container = chatContainerRef.current;
     container.scrollTop = container.scrollHeight;
-  }, []); 
+  }, []);
 
   // Handle message updates
   useEffect(() => {
@@ -340,7 +340,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
         // Handle tool use in the final response if any
         const finalResponse = await stream.finalMessage();
-        
+        currentMessages.push(finalResponse);
+        updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+
         // If this is a new conversation, generate a title
         if (activeConversation && cachedApiMessages.length === 2) {
           const userFirstMessage = cachedApiMessages[0].content;
