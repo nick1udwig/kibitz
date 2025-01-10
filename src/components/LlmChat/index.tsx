@@ -58,7 +58,7 @@ export const ChatApp = () => {
             </div>
 
             <div className="p-4">
-              <Tabs defaultValue="chat" className="max-w-4xl mx-auto" onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')}>
+              <Tabs value={activeTab} className="max-w-4xl mx-auto" onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')}>
                 <TabsList className="mb-4">
                   <TabsTrigger value="chat">Chat</TabsTrigger>
                   <TabsTrigger value="settings">Settings</TabsTrigger>
