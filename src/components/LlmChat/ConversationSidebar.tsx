@@ -13,12 +13,14 @@ interface ConversationSidebarProps {
   onExportConversation: (projectId: string, conversationId?: string) => void;
   isMobileMenuOpen?: boolean;
   onMobileMenuToggle?: () => void;
+  onConversationSelect?: () => void;
 }
 
 export const ConversationSidebar = ({
   onExportConversation,
   isMobileMenuOpen = true,
-  onMobileMenuToggle
+  onMobileMenuToggle,
+  onConversationSelect
 }: ConversationSidebarProps) => {
   const {
     projects,
@@ -192,19 +194,7 @@ export const ConversationSidebar = ({
                     onClick={() => {
                       setActiveProject(project.id);
                       setActiveConversation(convo.id);
-                      const tabsList = document.querySelector('[role="tablist"]');
-                      const chatTab = tabsList?.querySelector('[value="chat"]') as HTMLButtonElement;
-                      if (chatTab) {
-                        chatTab.click();
-                        // Force a repaint to ensure the tab switch takes effect
-                        requestAnimationFrame(() => {
-                          chatTab.dispatchEvent(new MouseEvent('click', {
-                            bubbles: true,
-                            cancelable: true,
-                            view: window
-                          }));
-                        });
-                      }
+                      onConversationSelect?.();
                     }}
                   >
                     <span className="truncate flex-1" title={convo.name}>{convo.name}</span>
