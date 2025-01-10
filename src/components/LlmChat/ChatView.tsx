@@ -33,7 +33,7 @@ export const ChatView: React.FC = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const shouldCancelRef = useRef<boolean>(false);
   const { servers, executeTool } = useMcp();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -142,17 +142,15 @@ export const ChatView: React.FC = () => {
   };
 
   const cancelCurrentCall = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-      setIsLoading(false);
-      setError('Operation cancelled');
+    shouldCancelRef.current = true;
+    setIsLoading(false);
+    setError('Operation cancelled');
     }
   }, []);
 
   const handleSendMessage = async () => {
-    // Create new AbortController for this request
-    abortControllerRef.current = new AbortController();
+    // Reset cancel flag
+    shouldCancelRef.current = false;
     if (!inputMessage.trim() || !activeProject || !activeConversationId) return;
     if (!activeProject.settings.apiKey) {
       setError('Please set your API key in settings');
@@ -349,8 +347,7 @@ export const ChatView: React.FC = () => {
           }),
           ...(tools.length > 0 && {
             tools: toolsCached
-          }),
-          signals: [abortControllerRef.current?.signal].filter(Boolean)
+          })
         });
 
         const transformedContent = response.content.map(content => {
@@ -460,8 +457,8 @@ export const ChatView: React.FC = () => {
           }
         }
 
-        // Break if no tool use or if response is complete
-        if (!response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
+        // Break if cancelled or if no tool use or if response is complete
+        if (shouldCancelRef.current || !response.content.some(c => c.type === 'tool_use') || response.stop_reason !== 'tool_use') {
           break;
         }
         //isFirstRequest = false;
@@ -469,8 +466,11 @@ export const ChatView: React.FC = () => {
 
     } catch (error) {
       console.error('Failed to send message:', error);
-      setError(error instanceof Error ? error.message : 'An error occurred');
+      if (!shouldCancelRef.current) {
+        setError(error instanceof Error ? error.message : 'An error occurred');
+      }
     } finally {
+      shouldCancelRef.current = false;
       setIsLoading(false);
     }
   };
