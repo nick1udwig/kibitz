@@ -145,7 +145,6 @@ export const ChatView: React.FC = () => {
     shouldCancelRef.current = true;
     setIsLoading(false);
     setError('Operation cancelled');
-    }
   }, []);
 
   const handleSendMessage = async () => {
