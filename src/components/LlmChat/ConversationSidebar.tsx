@@ -86,7 +86,7 @@ export const ConversationSidebar = ({
       <Button
         variant="ghost"
         size="sm"
-        className="absolute right-0 -translate-x-1/2 top-2 md:hidden"
+        className="absolute right-2 top-2 md:hidden"
         onClick={onMobileMenuToggle}
       >
         <Menu className="w-4 h-4" />
