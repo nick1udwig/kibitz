@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Message, MessageContent } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
@@ -591,6 +592,7 @@ export const ChatView: React.FC = () => {
                 />
               )
             }}
+            remarkPlugins={[remarkGfm]}
           >
             {message.content}
           </ReactMarkdown>
