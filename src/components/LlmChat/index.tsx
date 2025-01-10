@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { McpProvider } from './context/McpContext';
 import { ProjectProvider } from './context/ProjectContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -14,6 +14,18 @@ import { ConversationSidebar } from './ConversationSidebar';
 export const ChatApp = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat');
+  const chatViewRef = useRef<import('./ChatView').ChatViewRef>(null);
+
+  const handleTabChange = (value: string) => {
+    const newTab = value as 'chat' | 'settings';
+    setActiveTab(newTab);
+    if (newTab === 'chat') {
+      // Focus the input when switching to chat view
+      setTimeout(() => {
+        chatViewRef.current?.focus();
+      }, 0);
+    }
+  };
 
   // Handle initial mobile state
   React.useEffect(() => {
@@ -56,7 +68,7 @@ export const ChatApp = () => {
             <div className="flex flex-col h-full">
               <div className="sticky top-0 z-50 bg-background">
                 <div className={`flex justify-between items-center ${!isMobileMenuOpen ? 'md:flex hidden' : 'flex'}`}>
-                  <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')} className="w-full px-4 py-3">
+                  <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full px-4 py-3">
                     <div className="flex items-center gap-4 md:pl-0 pl-10">
                       <TabsList>
                         <TabsTrigger value="chat">Chat</TabsTrigger>
@@ -73,7 +85,7 @@ export const ChatApp = () => {
                 <div className={activeTab === 'settings' ? 'hidden' : ''}>
                   <Tabs value={activeTab}>
                     <TabsContent value="chat" forceMount>
-                      <ChatView />
+                      <ChatView ref={chatViewRef} />
                     </TabsContent>
                   </Tabs>
                 </div>
