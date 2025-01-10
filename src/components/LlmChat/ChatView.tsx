@@ -37,6 +37,7 @@ export const ChatView: React.FC = () => {
   const { servers, executeTool } = useMcp();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [wasAtBottom, setWasAtBottom] = useState(true);
   const [selectedToolCall, setSelectedToolCall] = useState<{
     name: string;
@@ -577,6 +578,13 @@ export const ChatView: React.FC = () => {
 
   // Use the focus control hook for managing conversation focus
   useFocusControl();
+  
+  // Focus input when opening a new chat
+  useEffect(() => {
+    if (inputRef.current && (!activeConversation.messages || activeConversation.messages.length === 0)) {
+      inputRef.current.focus();
+    }
+  }, [activeConversation.id, activeConversation.messages]);
 
   if (!activeConversation) {
     return (
@@ -625,7 +633,8 @@ export const ChatView: React.FC = () => {
               handleSendMessage();
             }
           }}
-          className="flex-1"
+            ref={inputRef}
+            className="flex-1"
           maxRows={8}
           disabled={isLoading}
         />
