@@ -13,7 +13,7 @@ import { ConversationSidebar } from './ConversationSidebar';
 
 export const ChatApp = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat');
 
   // Handle initial mobile state
   React.useEffect(() => {
@@ -39,6 +39,7 @@ export const ChatApp = () => {
             onExportConversation={handleExportConversation}
             isMobileMenuOpen={isMobileMenuOpen}
             onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            onConversationSelect={() => setActiveTab('chat')}
           />
 
           {/* Floating menu button when sidebar is hidden */}
@@ -57,7 +58,7 @@ export const ChatApp = () => {
             </div>
 
             <div className="p-4">
-              <Tabs defaultValue="chat" className="max-w-4xl mx-auto" onValueChange={setActiveTab}>
+              <Tabs defaultValue="chat" className="max-w-4xl mx-auto" onValueChange={(value) => setActiveTab(value as 'chat' | 'settings')}>
                 <TabsList className="mb-4">
                   <TabsTrigger value="chat">Chat</TabsTrigger>
                   <TabsTrigger value="settings">Settings</TabsTrigger>
