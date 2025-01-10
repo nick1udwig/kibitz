@@ -494,6 +494,7 @@ export const ChatView: React.FC = () => {
                 <ReactMarkdown 
                   className="prose dark:prose-invert max-w-none"
                   components={{
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     a: ({node, ...props}) => (
                       <a 
                         {...props} 
@@ -583,6 +584,7 @@ export const ChatView: React.FC = () => {
           <ReactMarkdown 
             className="prose dark:prose-invert max-w-none"
             components={{
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               a: ({node, ...props}) => (
                 <a 
                   {...props} 
