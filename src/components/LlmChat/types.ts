@@ -8,6 +8,7 @@ export type ImageMessageContent = {
     media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
     data: string;
   };
+  fileName?: string;
   cache_control?: CacheControlEphemeral | null;
 };
 
@@ -18,6 +19,7 @@ export type DocumentMessageContent = {
     media_type: 'application/pdf';
     data: string;
   };
+  fileName?: string;
   cache_control?: CacheControlEphemeral | null;
 };
 

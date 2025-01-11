@@ -1,13 +1,13 @@
 import React, { useRef, useCallback } from 'react';
 import { UploadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ImageMessageContent, DocumentMessageContent } from '../types';
+import { MessageContent } from '../types';
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const ACCEPTED_DOCUMENT_TYPES = ['application/pdf'];
+const ACCEPTED_DOCUMENT_TYPES = ['application/pdf', 'text/plain'];
 
 interface FileUploadProps {
-  onFileSelect: (content: ImageMessageContent | DocumentMessageContent) => void;
+  onFileSelect: (content: MessageContent) => void;
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
@@ -21,8 +21,16 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
 
     const reader = new FileReader();
     reader.onload = async () => {
+      if (file.type === 'text/plain') {
+        const text = reader.result as string;
+        onFileSelect({
+          type: 'text',
+          text: text,
+        });
+        return;
+      }
+
       const base64Data = (reader.result as string).split(',')[1];
-      
       if (ACCEPTED_IMAGE_TYPES.includes(file.type)) {
         onFileSelect({
           type: 'image',
@@ -31,8 +39,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
             media_type: file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
             data: base64Data,
           },
+          fileName: file.name,
         });
-      } else if (ACCEPTED_DOCUMENT_TYPES.includes(file.type)) {
+      } else if (file.type === 'application/pdf') {
         onFileSelect({
           type: 'document',
           source: {
@@ -40,6 +49,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
             media_type: 'application/pdf',
             data: base64Data,
           },
+          fileName: file.name,
         });
       }
     };
