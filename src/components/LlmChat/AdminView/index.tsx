@@ -1,17 +1,32 @@
 "use client";
 
+import { useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useProjects } from '../context/ProjectContext';
 import { ProjectSettings } from '../context/types';
+import { McpServer } from '../types/mcp';
 import { McpConfiguration } from './McpConfiguration';
 import { ThemeToggle } from '../ThemeToggle';
+import { useMcp } from '../context/McpContext';
 
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings } = useProjects();
+  const { servers } = useMcp();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
+
+  useEffect(() => {
+    if (!activeProject) return;
+    handleSettingsChange({
+      mcpServers: servers.filter(s => (
+        activeProject.settings.mcpServers.find(mcpS => mcpS.id === s.id)
+      )) as McpServer[]
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, servers]);
+
 
   if (!activeProject) {
     return (
