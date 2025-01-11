@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useProjects } from '../context/ProjectContext';
 import { ProjectSettings } from '../context/types';
 import { McpConfiguration } from './McpConfiguration';
+import { ThemeToggle } from '../ThemeToggle';
 
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings } = useProjects();
@@ -32,6 +33,15 @@ export const AdminView = () => {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-medium">Theme</h3>
+            <ThemeToggle />
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-6">
           <h3 className="text-lg font-medium mb-4">API Settings</h3>

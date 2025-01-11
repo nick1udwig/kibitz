@@ -6,7 +6,6 @@ import { ProjectProvider } from './context/ProjectContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ThemeToggle } from './ThemeToggle';
 import { ChatView } from './ChatView';
 import { AdminView } from './AdminView';
 import { ConversationSidebar } from './ConversationSidebar';
@@ -74,7 +73,6 @@ export const ChatApp = () => {
                     <TabsTrigger value="chat">Chat</TabsTrigger>
                     <TabsTrigger value="settings">Settings</TabsTrigger>
                   </TabsList>
-                  <ThemeToggle />
                 </div>
               </Tabs>
             </div>
