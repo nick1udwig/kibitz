@@ -456,7 +456,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               key={`text-${index}-${contentIndex}`}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className="relative group">
+              <div className="relative group w-full">
               <div className="absolute right-2 top-2 z-10">
                   <CopyButton
                     text={content.text}
@@ -465,9 +465,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                   />
                 </div>
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                  className={`w-full rounded-lg px-4 py-2 ${
                     message.role === 'user'
-                      ? 'bg-muted text-primary-foreground'
+                      ? 'bg-accent text-accent-foreground'
                       : 'bg-muted text-foreground'
                   }`}
                 >
@@ -526,9 +526,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             >
               <div
                 key={`message-${index}-content-${contentIndex}`}
-                className={`max-w-[80%] rounded-lg px-4 py-2 relative group ${
+              className={`w-full rounded-lg px-4 py-2 relative group ${
                   message.role === 'user'
-                    ? 'bg-muted text-primary-foreground'
+                    ? 'bg-accent text-accent-foreground'
                     : 'bg-muted text-foreground'
                 }`}
               >
@@ -556,9 +556,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
       >
         <div
-          className={`max-w-[80%] rounded-lg px-4 py-2 ${
+          className={`w-full rounded-lg px-4 py-2 ${
             message.role === 'user'
-              ? 'bg-muted text-primary-foreground'
+              ? 'bg-accent text-accent-foreground'
               : 'bg-muted text-foreground'
           }`}
         >
