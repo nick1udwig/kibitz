@@ -6,7 +6,6 @@ import { ProjectProvider } from './context/ProjectContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ThemeToggle } from './ThemeToggle';
 import { ChatView } from './ChatView';
 import { AdminView } from './AdminView';
 import { ConversationSidebar } from './ConversationSidebar';
@@ -64,22 +63,21 @@ export const ChatApp = () => {
             <Menu className="w-4 h-4" />
           </Button>
 
-          <div className="flex-1">
-            <div className="flex flex-col h-full">
-              <div className="sticky top-0 z-50 bg-background">
-                <div className={`flex justify-between items-center ${!isMobileMenuOpen ? 'md:flex hidden' : 'flex'}`}>
-                  <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full px-4 py-3">
-                    <div className="flex items-center gap-4 md:pl-0 pl-10">
-                      <TabsList>
-                        <TabsTrigger value="chat">Chat</TabsTrigger>
-                        <TabsTrigger value="settings">Settings</TabsTrigger>
-                      </TabsList>
-                      <ThemeToggle />
-                    </div>
-                  </Tabs>
+          <div className="flex-1 relative">
+            {/* Floating navigation - only visible on desktop or when mobile menu is open */}
+            <div className={`absolute right-4 top-4 z-50 flex items-center gap-4 transition-opacity duration-200
+              ${!isMobileMenuOpen ? 'md:opacity-100 opacity-0 pointer-events-none' : 'opacity-100'}`}>
+              <Tabs value={activeTab} onValueChange={handleTabChange}>
+                <div className="flex items-center gap-4 bg-background/80 backdrop-blur-sm rounded-lg shadow-lg p-1">
+                  <TabsList className="bg-transparent">
+                    <TabsTrigger value="chat">Chat</TabsTrigger>
+                    <TabsTrigger value="settings">Settings</TabsTrigger>
+                  </TabsList>
                 </div>
-              </div>
-              
+              </Tabs>
+            </div>
+
+            <div className="flex flex-col h-full">
               <div className="flex-1">
                 {/* Keep the ChatView always mounted to preserve conversation state */}
                 <div className={activeTab === 'settings' ? 'hidden' : ''}>
