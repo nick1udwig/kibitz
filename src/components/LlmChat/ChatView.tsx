@@ -156,6 +156,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       return;
     }
 
+    // Reset the textarea height immediately after sending
+    if (inputRef.current) {
+      inputRef.current.style.height = '2.5em';
+    }
     setIsLoading(true);
     setError(null);
 
