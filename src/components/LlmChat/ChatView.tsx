@@ -369,6 +369,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
         // Process content to handle empty text blocks
         const processedContent = finalResponse.content.map((content: MessageContent) => {
+          if (!content['type']) {
+            return content;
+          }
           // Keep non-text content
           if (content.type !== 'text') {
             return content;
@@ -379,11 +382,17 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
           // If there's only one content block and it's whitespace, replace with "empty"
           if (isWhitespace && finalResponse.content.length === 1) {
-            content.text = 'empty';
-            return content;
+            return {
+              ...content,
+              text: 'empty',
+            } as MessageContent;
           }
+          return content;
         })
         .filter((content: MessageContent) => {
+          if (!content['type']) {
+            return true;
+          }
           // Keep non-text content
           if (content.type !== 'text') {
             return true;
