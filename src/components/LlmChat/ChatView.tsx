@@ -439,9 +439,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       }
 
     } catch (error) {
-      console.error('Failed to send message:', error);
-      if (!shouldCancelRef.current) {
-        setError(error instanceof Error ? error.message : 'An error occurred');
+      if (error && typeof error === 'object' && 'message' in error && error.message === 'Request was aborted.') {
+        console.log('Request was cancelled by user');
+      } else {
+        console.error('Failed to send message:', error);
+        if (!shouldCancelRef.current) {
+          setError(error instanceof Error ? error.message : 'An error occurred');
+        }
       }
     } finally {
       shouldCancelRef.current = false;
