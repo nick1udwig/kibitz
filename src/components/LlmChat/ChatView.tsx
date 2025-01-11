@@ -357,28 +357,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
         stream.on('text', (text) => {
           textContent.text += text;
-          
-          // During streaming, we'll add the content if it's not purely whitespace
-          // or if it's the only content and contains at least one character
-          const updatedContent = currentStreamMessage.content.filter((content: MessageContent) => {
-            if (content.type !== 'text') {
-              return true;
-            }
-            
-            const isWhitespace = content.text.trim().length === 0;
-            
-            // If it's the only content block and whitespace, keep it with 'empty' text
-            if (isWhitespace && currentStreamMessage.content.length === 1) {
-              content.text = 'empty';
-              return true;
-            }
-            
-            // For multiple content blocks, drop purely whitespace ones
-            return !isWhitespace;
-          });
-          
-          currentStreamMessage.content = updatedContent;
-          
+
           // Update conversation with streaming message
           const updatedMessages = [...currentMessages, currentStreamMessage];
           updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
@@ -387,23 +366,39 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         // Handle tool use in the final response if any
         // Filter and validate text content in the final response
         const finalResponse = await stream.finalMessage();
-        
+
         // Process content to handle empty text blocks
-        const processedContent = finalResponse.content.filter((content: MessageContent) => {
+        const processedContent = finalResponse.content.map((content: MessageContent) => {
+          // Keep non-text content
+          if (content.type !== 'text') {
+            return content;
+          }
+
+          // Check if text content is purely whitespace
+          const isWhitespace = content.text.trim().length === 0;
+
+          // If there's only one content block and it's whitespace, replace with "empty"
+          if (isWhitespace && finalResponse.content.length === 1) {
+            content.text = 'empty';
+            return content;
+          }
+        })
+        .filter((content: MessageContent) => {
           // Keep non-text content
           if (content.type !== 'text') {
             return true;
           }
-          
+
           // Check if text content is purely whitespace
           const isWhitespace = content.text.trim().length === 0;
-          
+
           // If there's only one content block and it's whitespace, replace with "empty"
           if (isWhitespace && finalResponse.content.length === 1) {
+            console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
             content.text = 'empty';
             return true;
           }
-          
+
           // For multiple content blocks, drop purely whitespace ones
           return !isWhitespace;
         });
