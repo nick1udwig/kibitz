@@ -496,12 +496,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                 <div
                   className={`w-full rounded-lg px-4 py-2 ${
                     message.role === 'user'
-                      ? 'bg-accent text-accent-foreground'
+                      ? 'bg-accent !text-accent-foreground not-prose'
                       : 'bg-muted text-foreground'
                   }`}
                 >
                   <ReactMarkdown
-                    className="prose dark:prose-invert max-w-none"
+                    className={`prose dark:prose-invert max-w-none ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''}`}
                     components={{
                       pre({ node, children, ...props }) {
                         return (
