@@ -33,14 +33,10 @@ export const AdminView = () => {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium">Theme</h3>
-            <ThemeToggle />
-          </div>
-        </CardContent>
-      </Card>
+      {/* Floating theme toggle */}
+      <div className="fixed right-4 bottom-4 z-50">
+        <ThemeToggle />
+      </div>
 
       <Card>
         <CardContent className="p-6">
