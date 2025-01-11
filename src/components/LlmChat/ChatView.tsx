@@ -160,9 +160,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError(null);
 
     try {
-      const userMessageContent: MessageContent[] = [
-        ...currentFileContent,
-      ];
+      const userMessageContent: MessageContent[] = currentFileContent.map(c =>
+        c.type === 'image' ? { ...c, fileName: undefined } : { ...c, fileName: undefined }
+      );
 
       if (inputMessage.trim()) {
         userMessageContent.push({
@@ -545,7 +545,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                     : 'bg-muted text-foreground'
                 }`}
               >
-                <Image 
+                <Image
                   src={`data:${content.source.media_type};base64,${content.source.data}`}
                   alt="User uploaded image"
                   className="max-w-full h-auto rounded"
@@ -704,10 +704,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         )}
         <div className="flex gap-2">
           <div className="flex items-end">
-            <FileUpload 
+            <FileUpload
               onFileSelect={(content) => {
                 setCurrentFileContent(prev => [...prev, { ...content }]);
-              }} 
+              }}
             />
           </div>
           <Textarea
