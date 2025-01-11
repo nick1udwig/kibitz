@@ -65,8 +65,9 @@ export const ChatApp = () => {
           </Button>
 
           <div className="flex-1 relative">
-            {/* Floating navigation */}
-            <div className="absolute right-4 top-4 z-50 flex items-center gap-4">
+            {/* Floating navigation - only visible on desktop or when mobile menu is open */}
+            <div className={`absolute right-4 top-4 z-50 flex items-center gap-4 transition-opacity duration-200
+              ${!isMobileMenuOpen ? 'md:opacity-100 opacity-0 pointer-events-none' : 'opacity-100'}`}>
               <Tabs value={activeTab} onValueChange={handleTabChange}>
                 <div className="flex items-center gap-4 bg-background/80 backdrop-blur-sm rounded-lg shadow-lg p-1">
                   <TabsList className="bg-transparent">
