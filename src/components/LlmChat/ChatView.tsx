@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
+import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square } from 'lucide-react';
+import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
@@ -21,6 +23,7 @@ export interface ChatViewRef {
 }
 
 const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
+  const [currentFileContent, setCurrentFileContent] = useState<MessageContent[]>([]);
   const {
     projects,
     activeProjectId,
@@ -147,7 +150,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   const handleSendMessage = async () => {
     shouldCancelRef.current = false;
-    if (!inputMessage.trim() || !activeProject || !activeConversationId) return;
+    if ((!inputMessage.trim() && currentFileContent.length === 0) || !activeProject || !activeConversationId) return;
     if (!activeProject.settings.apiKey) {
       setError('Please set your API key in settings');
       return;
@@ -157,18 +160,27 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError(null);
 
     try {
-      const userMessage: Message = {
-        role: 'user',
-        content: [{
+      const userMessageContent: MessageContent[] = [
+        ...currentFileContent,
+      ];
+
+      if (inputMessage.trim()) {
+        userMessageContent.push({
           type: 'text' as const,
           text: inputMessage,
-        }],
+        });
+      }
+
+      const userMessage: Message = {
+        role: 'user',
+        content: userMessageContent,
         timestamp: new Date()
       };
 
       const currentMessages = [...(activeConversation?.messages || []), userMessage];
       updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
       setInputMessage('');
+      setCurrentFileContent([]);
 
       const anthropic = new Anthropic({
         apiKey: activeProject.settings.apiKey,
@@ -464,11 +476,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     if (Array.isArray(message.content)) {
       return message.content.map((content, contentIndex) => {
         if (content.type === 'text') {
-          return (
-            <div
-              key={`text-${index}-${contentIndex}`}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+            return (
+              <div
+                key={`text-${index}-${contentIndex}`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
               <div className="relative group w-full">
               <div className="absolute right-2 top-2 z-10">
                   <CopyButton
@@ -517,6 +529,52 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                     {content.text}
                   </ReactMarkdown>
                 </div>
+              </div>
+            </div>
+          );
+        } else if (content.type === 'image') {
+          return (
+            <div
+              key={`image-${index}-${contentIndex}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`w-full rounded-lg px-4 py-2 ${
+                  message.role === 'user'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                <Image 
+                  src={`data:${content.source.media_type};base64,${content.source.data}`}
+                  alt="User uploaded image"
+                  className="max-w-full h-auto rounded"
+                  width={800}
+                  height={600}
+                />
+              </div>
+            </div>
+          );
+        } else if (content.type === 'document') {
+          return (
+            <div
+              key={`document-${index}-${contentIndex}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`w-full rounded-lg px-4 py-2 ${
+                  message.role === 'user'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                <embed
+                  src={`data:${content.source.media_type};base64,${content.source.data}`}
+                  type={content.source.media_type}
+                  width="100%"
+                  height="600px"
+                  className="rounded"
+                />
               </div>
             </div>
           );
@@ -624,6 +682,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       )}
 
       <div className="flex gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)]">
+          <div className="flex items-end">
+            <FileUpload 
+              onFileSelect={(content) => {
+                setCurrentFileContent(prev => [...prev, { ...content }]);
+              }} 
+            />
+          </div>
           <Textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}

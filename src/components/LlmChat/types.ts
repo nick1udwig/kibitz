@@ -1,6 +1,26 @@
 import { McpServer } from './types/mcp';
 import { Tool, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
 
+export type ImageMessageContent = {
+  type: 'image';
+  source: {
+    type: 'base64';
+    media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+    data: string;
+  };
+  cache_control?: CacheControlEphemeral | null;
+};
+
+export type DocumentMessageContent = {
+  type: 'document';
+  source: {
+    type: 'base64';
+    media_type: 'application/pdf';
+    data: string;
+  };
+  cache_control?: CacheControlEphemeral | null;
+};
+
 export type MessageContent = {
   type: 'text';
   text: string;
@@ -17,7 +37,7 @@ export type MessageContent = {
   content: string;
   is_error?: boolean,
   cache_control?: CacheControlEphemeral | null;
-};
+} | ImageMessageContent | DocumentMessageContent;
 
 export type Message = {
   role: 'user' | 'assistant';
