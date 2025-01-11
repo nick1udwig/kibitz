@@ -38,6 +38,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const shouldCancelRef = useRef<boolean>(false);
+  const streamRef = useRef<{ abort: () => void } | null>(null);
   const { servers, executeTool } = useMcp();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -137,6 +138,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   const cancelCurrentCall = useCallback(() => {
     shouldCancelRef.current = true;
+    if (streamRef.current) {
+      streamRef.current.abort();
+    }
     setIsLoading(false);
     setError('Operation cancelled');
   }, []);
@@ -331,7 +335,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           ...(tools.length > 0 && {
             tools: toolsCached
           })
-        }).on('text', (text) => {
+        });
+
+        streamRef.current = stream;
+
+        stream.on('text', (text) => {
           textContent.text += text;
           // Update conversation with streaming message
           const updatedMessages = [...currentMessages, currentStreamMessage];
@@ -431,13 +439,18 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       }
 
     } catch (error) {
-      console.error('Failed to send message:', error);
-      if (!shouldCancelRef.current) {
-        setError(error instanceof Error ? error.message : 'An error occurred');
+      if (error && typeof error === 'object' && 'message' in error && error.message === 'Request was aborted.') {
+        console.log('Request was cancelled by user');
+      } else {
+        console.error('Failed to send message:', error);
+        if (!shouldCancelRef.current) {
+          setError(error instanceof Error ? error.message : 'An error occurred');
+        }
       }
     } finally {
       shouldCancelRef.current = false;
       setIsLoading(false);
+      streamRef.current = null;
 
       // Focus the input field and reset height after the LLM finishes talking
       if (inputRef.current) {
