@@ -357,14 +357,67 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
         stream.on('text', (text) => {
           textContent.text += text;
+
           // Update conversation with streaming message
           const updatedMessages = [...currentMessages, currentStreamMessage];
           updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
         });
 
         // Handle tool use in the final response if any
+        // Filter and validate text content in the final response
         const finalResponse = await stream.finalMessage();
-        currentMessages.push(finalResponse);
+
+        // Process content to handle empty text blocks
+        const processedContent = finalResponse.content.map((content: MessageContent) => {
+          if (!content['type']) {
+            return content;
+          }
+          // Keep non-text content
+          if (content.type !== 'text') {
+            return content;
+          }
+
+          // Check if text content is purely whitespace
+          const isWhitespace = content.text.trim().length === 0;
+
+          // If there's only one content block and it's whitespace, replace with "empty"
+          if (isWhitespace && finalResponse.content.length === 1) {
+            return {
+              ...content,
+              text: 'empty',
+            } as MessageContent;
+          }
+          return content;
+        })
+        .filter((content: MessageContent) => {
+          if (!content['type']) {
+            return true;
+          }
+          // Keep non-text content
+          if (content.type !== 'text') {
+            return true;
+          }
+
+          // Check if text content is purely whitespace
+          const isWhitespace = content.text.trim().length === 0;
+
+          // If there's only one content block and it's whitespace, replace with "empty"
+          if (isWhitespace && finalResponse.content.length === 1) {
+            console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
+            content.text = 'empty';
+            return true;
+          }
+
+          // For multiple content blocks, drop purely whitespace ones
+          return !isWhitespace;
+        });
+
+        const processedResponse = {
+          ...finalResponse,
+          content: processedContent
+        };
+
+        currentMessages.push(processedResponse);
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
         // If this is a new conversation, generate a title
