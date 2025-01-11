@@ -439,9 +439,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       shouldCancelRef.current = false;
       setIsLoading(false);
 
-      // Focus the input field after the LLM finishes talking
+      // Focus the input field and reset height after the LLM finishes talking
       if (inputRef.current) {
         inputRef.current.focus();
+        inputRef.current.style.height = '2.5em';
       }
     }
   };
