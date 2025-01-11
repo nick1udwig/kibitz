@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
+import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
-import { Send, Square } from 'lucide-react';
+import { Send, Square, X } from 'lucide-react';
+import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Message, MessageContent } from './types';
+import { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from './types';
 import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
@@ -21,6 +23,7 @@ export interface ChatViewRef {
 }
 
 const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
+  const [currentFileContent, setCurrentFileContent] = useState<MessageContent[]>([]);
   const {
     projects,
     activeProjectId,
@@ -147,7 +150,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   const handleSendMessage = async () => {
     shouldCancelRef.current = false;
-    if (!inputMessage.trim() || !activeProject || !activeConversationId) return;
+    if ((!inputMessage.trim() && currentFileContent.length === 0) || !activeProject || !activeConversationId) return;
     if (!activeProject.settings.apiKey) {
       setError('Please set your API key in settings');
       return;
@@ -157,18 +160,27 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError(null);
 
     try {
-      const userMessage: Message = {
-        role: 'user',
-        content: [{
+      const userMessageContent: MessageContent[] = currentFileContent.map(c =>
+        c.type === 'image' ? { ...c, fileName: undefined } : { ...c, fileName: undefined }
+      );
+
+      if (inputMessage.trim()) {
+        userMessageContent.push({
           type: 'text' as const,
           text: inputMessage,
-        }],
+        });
+      }
+
+      const userMessage: Message = {
+        role: 'user',
+        content: userMessageContent,
         timestamp: new Date()
       };
 
       const currentMessages = [...(activeConversation?.messages || []), userMessage];
       updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
       setInputMessage('');
+      setCurrentFileContent([]);
 
       const anthropic = new Anthropic({
         apiKey: activeProject.settings.apiKey,
@@ -464,11 +476,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     if (Array.isArray(message.content)) {
       return message.content.map((content, contentIndex) => {
         if (content.type === 'text') {
-          return (
-            <div
-              key={`text-${index}-${contentIndex}`}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+            return (
+              <div
+                key={`text-${index}-${contentIndex}`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
               <div className="relative group w-full">
               <div className="absolute right-2 top-2 z-10">
                   <CopyButton
@@ -517,6 +529,52 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                     {content.text}
                   </ReactMarkdown>
                 </div>
+              </div>
+            </div>
+          );
+        } else if (content.type === 'image') {
+          return (
+            <div
+              key={`image-${index}-${contentIndex}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`w-full rounded-lg px-4 py-2 ${
+                  message.role === 'user'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                <Image
+                  src={`data:${content.source.media_type};base64,${content.source.data}`}
+                  alt="User uploaded image"
+                  className="max-w-full h-auto rounded"
+                  width={800}
+                  height={600}
+                />
+              </div>
+            </div>
+          );
+        } else if (content.type === 'document') {
+          return (
+            <div
+              key={`document-${index}-${contentIndex}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`w-full rounded-lg px-4 py-2 ${
+                  message.role === 'user'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                <embed
+                  src={`data:${content.source.media_type};base64,${content.source.data}`}
+                  type={content.source.media_type}
+                  width="100%"
+                  height="600px"
+                  className="rounded"
+                />
               </div>
             </div>
           );
@@ -623,33 +681,62 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         </div>
       )}
 
-      <div className="flex gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)]">
+      <div className="flex flex-col gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)]">
+        {currentFileContent.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {currentFileContent.map((content, index) => (
+              <div key={index} className="flex items-center gap-2 bg-muted rounded px-2 py-1">
+                <span className="text-sm">
+                  {content.type === 'text' ? 'Text file' :
+                   ((content as ImageMessageContent | DocumentMessageContent).fileName || 'Untitled')}
+                </span>
+                <button
+                  onClick={() => {
+                    setCurrentFileContent(prev => prev.filter((_, i) => i !== index));
+                  }}
+                  className="hover:text-destructive"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <div className="flex items-end">
+            <FileUpload
+              onFileSelect={(content) => {
+                setCurrentFileContent(prev => [...prev, { ...content }]);
+              }}
+            />
+          </div>
           <Textarea
-          value={inputMessage}
-          onChange={(e) => setInputMessage(e.target.value)}
-          placeholder="Type your message"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
-              e.preventDefault();
-              handleSendMessage();
-            }
-          }}
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            placeholder="Type your message"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
             ref={inputRef}
             className="flex-1"
-          maxRows={8}
-          disabled={isLoading}
-        />
-        <Button
-          onClick={isLoading ? cancelCurrentCall : handleSendMessage}
-          disabled={!activeProjectId || !activeConversationId}
-          className="self-end relative"
-        >
-          {isLoading ? (
-            <Square className="w-4 h-4" />
-          ) : (
-            <Send className="w-4 h-4" />
-          )}
-        </Button>
+            maxRows={8}
+            disabled={isLoading}
+          />
+          <Button
+            onClick={isLoading ? cancelCurrentCall : handleSendMessage}
+            disabled={!activeProjectId || !activeConversationId}
+            className="self-end relative"
+          >
+            {isLoading ? (
+              <Square className="w-4 h-4" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+          </Button>
+        </div>
       </div>
 
       {selectedToolCall && (
