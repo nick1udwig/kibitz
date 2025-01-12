@@ -59,8 +59,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
   const handleFileDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
-      const file = e.dataTransfer.files[0];
-      if (file) {
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
         await processFile(file);
       }
     },
@@ -69,8 +69,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
+      const files = Array.from(e.target.files || []);
+      for (const file of files) {
         await processFile(file);
       }
     },
@@ -98,13 +98,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
         onChange={handleFileSelect}
         accept={[...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_DOCUMENT_TYPES].join(',')}
         className="hidden"
+        multiple
       />
       <Button
         onClick={triggerFileInput}
         variant="ghost"
         size="icon"
         className="h-8 w-8"
-        title="Upload file (Image or PDF)"
+        title="Upload files (Images or PDFs)"
       >
         <UploadCloud className="h-5 w-5" />
       </Button>
