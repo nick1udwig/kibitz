@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: 'LLMChat',
+  title: 'kinode-llm-chat',
   description: 'Chat interface for LLMs',
 };
 
