@@ -424,9 +424,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
         // If this is a new conversation, generate a title
-        if (activeConversation && cachedApiMessages.length === 2) {
-          const userFirstMessage = cachedApiMessages[0].content;
-          const assistantFirstMessage = cachedApiMessages[1].content;
+        if (activeConversation && currentMessages.length === 2) {
+          const userFirstMessage = currentMessages[0].content;
+          const assistantFirstMessage = currentMessages[1].content;
 
           const summaryResponse = await anthropic.messages.create({
             model: activeProject.settings.model || DEFAULT_MODEL,
