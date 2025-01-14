@@ -186,9 +186,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       setInputMessage('');
       setCurrentFileContent([]);
 
+      // retry enough times to always push past 60s (the rate limit timer):
+      //  https://github.com/anthropics/anthropic-sdk-typescript/blob/dc2591fcc8847d509760a61777fc1b79e0eab646/src/core.ts#L645
       const anthropic = new Anthropic({
         apiKey: activeProject.settings.apiKey,
-        dangerouslyAllowBrowser: true
+        dangerouslyAllowBrowser: true,
+        maxRetries: 11,
       });
 
       const savedToolResults = new Set<string>();
