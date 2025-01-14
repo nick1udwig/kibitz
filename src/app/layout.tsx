@@ -4,6 +4,11 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
+export const metadata = {
+  title: 'kinode-llm-chat',
+  description: 'Chat interface for LLMs',
+};
+
 export default function RootLayout({
   children,
 }: {

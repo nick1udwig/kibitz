@@ -608,9 +608,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                 <Image
                   src={`data:${content.source.media_type};base64,${content.source.data}`}
                   alt="User uploaded image"
-                  className="max-w-full h-auto rounded"
-                  width={800}
-                  height={600}
+                  className="max-h-[150px] max-w-[300px] w-auto h-auto rounded object-contain"
+                  width={300}
+                  height={150}
                 />
               </div>
             </div>
