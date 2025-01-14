@@ -1,4 +1,4 @@
-# llm-chat
+# kibitz
 
 A chat client for the Anthropic LLM API that can use MCP tools over WebSockets.
 
