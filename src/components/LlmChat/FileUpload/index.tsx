@@ -4,7 +4,26 @@ import { Button } from '@/components/ui/button';
 import { MessageContent } from '../types';
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const ACCEPTED_DOCUMENT_TYPES = ['application/pdf', 'text/plain'];
+const ACCEPTED_DOCUMENT_TYPES = ['application/pdf'];
+const ADDITIONAL_ACCEPTED_TEXT_TYPES = [
+  'applications/javascript',
+  'application/typescript',
+  'application/x-httpd-php',
+  'application/x-sh',
+  'application/x-powershell',
+  'application/json',
+  'application/xml',
+  'application/yaml',
+  'application/toml',
+  'application/x-tex',
+  'application/sql',
+  'application/x-python',
+  'application/x-ruby',
+  'application/x-diff',
+  'application/x-patch',
+  'application/typescript',
+  'application/x-properties',
+];
 
 interface FileUploadProps {
   onFileSelect: (content: MessageContent) => void;
@@ -14,14 +33,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback(async (file: File) => {
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type) && !ACCEPTED_DOCUMENT_TYPES.includes(file.type)) {
-      alert('Unsupported file type. Please upload an image (JPEG, PNG, GIF, WebP) or a PDF document.');
+    if (!(ACCEPTED_IMAGE_TYPES.includes(file.type) || ACCEPTED_DOCUMENT_TYPES.includes(file.type) || file.type.startsWith('text/') || ADDITIONAL_ACCEPTED_TEXT_TYPES.includes(file.type))) {
+      alert('Unsupported file type. Please upload an image (JPEG, PNG, GIF, WebP), a PDF, or a plaintext document.');
       return;
     }
 
     const reader = new FileReader();
     reader.onload = async () => {
-      if (file.type === 'text/plain') {
+      if (file.type.startsWith('text/') || ADDITIONAL_ACCEPTED_TEXT_TYPES.includes(file.type)) {
         const text = reader.result as string;
         onFileSelect({
           type: 'text',
