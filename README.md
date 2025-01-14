@@ -11,8 +11,8 @@ A chat client for the Anthropic LLM API that can use MCP tools over WebSockets.
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/nick1udwig/llm-chat.git
-cd llm-chat
+git clone https://github.com/nick1udwig/kibitz.git
+cd kibitz
 ```
 
 2. Install dependencies:
