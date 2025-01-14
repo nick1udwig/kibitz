@@ -75,7 +75,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       // Update server status to connecting
       setServers(current =>
         current.map(s => s.id === server.id
-          ? { ...s, status: 'connecting' }
+          ? { ...s, status: 'connecting', error: undefined }
           : s
         )
       );
@@ -163,6 +163,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
               const connectedServer = {
                 ...server,
                 status: 'connected' as const,
+                error: undefined,
                 tools,
                 connection: ws
               };
@@ -194,7 +195,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   }, [cleanupServer, scheduleReconnect]);
 
   const addServer = useCallback(async (server: McpServer) => {
-    setServers(current => [...current, { ...server, status: 'connecting' }]);
+    setServers(current => [...current, { ...server, status: 'connecting', error: undefined }]);
 
     try {
       const connectedServer = await connectToServer(server);
@@ -231,7 +232,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
                 updateProjectSettings(project.id, { settings: {
                   ...project.settings,
                   mcpServers: project.settings.mcpServers.map(s =>
-                    newServer && s.id === newServer.id ? { ...s, status: newServer.status } : s
+                    newServer && s.id === newServer.id ? { ...s, status: newServer.status, error: undefined } : s
                   ),
                 }})
               })}
