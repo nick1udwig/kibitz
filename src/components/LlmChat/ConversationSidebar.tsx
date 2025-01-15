@@ -100,6 +100,7 @@ export const ConversationSidebar = ({
         z-40 
         flex flex-col
         h-screen
+        overflow-hidden
       `}>
         {/* Top buttons */}
         <div className="flex gap-2 mb-2 p-4 pt-16 md:pt-4">
@@ -124,7 +125,7 @@ export const ConversationSidebar = ({
         </div>
 
         {/* Projects and Conversations list */}
-        <div className="flex-1 overflow-y-auto min-h-0 px-4">
+        <div className="flex-1 overflow-y-auto min-h-0 px-4 w-full">
           {sortedProjects.map(project => (
             <div key={project.id} className="mb-2">
               {/* Project header */}

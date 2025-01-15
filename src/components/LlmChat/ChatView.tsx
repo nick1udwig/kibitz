@@ -541,7 +541,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               key={`text-${index}-${contentIndex}`}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-            <div className="relative group w-full max-w-full">
+            <div className="relative group w-full max-w-full overflow-x-auto">
             <div className="absolute right-2 top-2 z-10">
                 <CopyButton
                   text={content.text}
@@ -550,14 +550,14 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                 />
               </div>
               <div
-                className={`w-full max-w-[inherit] rounded-lg px-4 py-2 ${
+                className={`w-full rounded-lg px-4 py-2 ${
                   message.role === 'user'
                     ? 'bg-accent !text-accent-foreground not-prose'
                     : 'bg-muted text-foreground'
-                }`}
+                } overflow-hidden`}
                 >
                   <ReactMarkdown
-                    className={`prose dark:prose-invert max-w-none overflow-x-auto ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''} [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:max-w-full [&_p]:overflow-x-auto [&_p]:max-w-full`}
+                    className={`prose dark:prose-invert max-w-none ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''} [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:max-w-full [&_p]:break-words [&_p]:overflow-x-auto [&_p]:max-w-full prose-p:my-0`}
                     components={{
                       pre({ node, children, ...props }) {
                         return (
@@ -726,8 +726,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   return (
       <div className="flex flex-col h-full relative w-full overflow-x-hidden">
-      <div ref={chatContainerRef} className="h-[calc(100vh-8rem)] overflow-y-auto p-4 w-full">
-        <div className="space-y-4 mb-4 w-full">
+      <div ref={chatContainerRef} className="h-[calc(100vh-8rem)] overflow-y-auto px-4 pb-4 pt-2 w-full">
+        <div className="space-y-4 mb-4 w-full max-w-full">
           {activeConversation.messages.map((message, index) => (
             renderMessage(message, index)
           ))}
@@ -741,7 +741,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         </div>
       )}
 
-      <div className="flex flex-col gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)] overflow-x-hidden">
+      <div className="flex flex-col gap-2 p-2 bg-background/95 backdrop-blur-sm fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)] overflow-x-hidden">
         {currentFileContent.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {currentFileContent.map((content, index) => (
