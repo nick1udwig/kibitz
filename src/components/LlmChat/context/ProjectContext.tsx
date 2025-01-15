@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
 import { loadState, saveState, migrateFromLocalStorage } from '../../../lib/db';
-import { McpContext } from './McpContext';
+import { useMcp } from './McpContext';
 
 const ProjectContext = createContext<ProjectState | null>(null);
 
@@ -34,7 +34,15 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const mcpContext = useContext(McpContext);
+  const mcpContextRef = useRef<ReturnType<typeof useMcp> | null>(null);
+
+  useEffect(() => {
+    try {
+      mcpContextRef.current = useMcp();
+    } catch (error) {
+      console.error('MCP context not available:', error);
+    }
+  }, []);
 
   // Use ref to track if initial load has happened
   const initialized = useRef(false);
@@ -162,8 +170,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setActiveConversationId(conversationId);
 
     // Attempt to connect to local MCP
-    if (mcpContext) {
-      mcpContext.attemptLocalMcpConnection().then(server => {
+    if (mcpContextRef.current) {
+      mcpContextRef.current.attemptLocalMcpConnection().then(server => {
         if (server) {
           updateProjectSettings(projectId, {
             settings: {
@@ -176,7 +184,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     return projectId;
-  }, [activeProjectId, projects, updateProjectSettings, mcpContext]);
+  }, [activeProjectId, projects, updateProjectSettings]);
 
   const deleteProject = useCallback((id: string) => {
     setProjects(current => {

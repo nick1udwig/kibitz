@@ -297,6 +297,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       id: 'localhost-mcp',
       name: 'Local MCP',
       uri: 'ws://localhost:10125',
+      status: 'disconnected',
     };
 
     try {
