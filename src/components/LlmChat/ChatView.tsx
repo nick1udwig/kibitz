@@ -550,17 +550,17 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                   />
                 </div>
                 <div
-                  className={`w-full max-w-full rounded-lg px-4 py-2 overflow-hidden ${
+                  className={`w-full max-w-full rounded-lg px-4 py-2 ${
                     message.role === 'user'
                       ? 'bg-accent !text-accent-foreground not-prose'
                       : 'bg-muted text-foreground'
                   }`}
                 >
                   <ReactMarkdown
-                    className={`prose dark:prose-invert break-words overflow-hidden max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''}`}
+                    className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''}`}
                     components={{
                       p: ({children}) => (
-                        <p className="break-words overflow-hidden">
+                        <p className="break-words whitespace-pre-wrap overflow-hidden">
                           {children}
                         </p>
                       ),
@@ -580,9 +580,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                       },
                       code({ node, inline, children, ...props }) {
                         return inline ? (
-                          <code className="break-words" {...props}>{children}</code>
+                          <code className="text-inherit whitespace-nowrap" {...props}>{children}</code>
                         ) : (
-                          <code className="block overflow-x-auto" {...props}>{children}</code>
+                          <code className="block overflow-x-auto whitespace-pre" {...props}>{children}</code>
                         );
                       },
                       a: ({href, children}) => (
