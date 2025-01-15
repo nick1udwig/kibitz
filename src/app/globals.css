@@ -107,3 +107,12 @@
     @apply font-['Kode_Mono'];
   }
 }
+
+@layer utilities {
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+  }
+}
