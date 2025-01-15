@@ -88,7 +88,8 @@ export const loadState = async (): Promise<DbState> => {
 
 // Sanitize project data before storage by removing non-serializable properties
 const sanitizeProjectForStorage = (project: Project): Project => {
-  return {
+  // First convert to JSON to remove non-serializable properties
+  const sanitizedProject = JSON.parse(JSON.stringify({
     ...project,
     settings: {
       ...project.settings,
@@ -97,8 +98,36 @@ const sanitizeProjectForStorage = (project: Project): Project => {
         ws: undefined, // Remove WebSocket instance
         status: 'disconnected'
       })) || []
-    }
+    },
+    conversations: project.conversations.map(conv => ({
+      ...conv,
+      lastUpdated: conv.lastUpdated instanceof Date ? conv.lastUpdated.toISOString() : conv.lastUpdated,
+      messages: conv.messages.map(msg => ({
+        ...msg,
+        timestamp: msg.timestamp instanceof Date ? msg.timestamp.toISOString() : msg.timestamp
+      }))
+    }))
+  }));
+
+  // Convert ISO strings back to Date objects
+  type TempConversation = Omit<ConversationBrief, 'lastUpdated'> & {
+    lastUpdated: string;
+    messages: (Omit<Message, 'timestamp'> & { timestamp: string })[];
   };
+
+  sanitizedProject.conversations = sanitizedProject.conversations.map((conv: TempConversation) => ({
+    ...conv,
+    lastUpdated: new Date(conv.lastUpdated),
+    messages: conv.messages.map(msg => ({
+      ...msg,
+      timestamp: new Date(msg.timestamp)
+    }))
+  }));
+
+  sanitizedProject.createdAt = new Date(project.createdAt);
+  sanitizedProject.updatedAt = new Date(project.updatedAt);
+
+  return sanitizedProject;
 };
 
 export const saveState = async (state: DbState): Promise<void> => {
