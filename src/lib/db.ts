@@ -20,7 +20,7 @@ const initDb = async (): Promise<KibitzDb> => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = () => reject(request.error);
-    
+
     request.onsuccess = () => resolve(request.result as KibitzDb);
 
     request.onupgradeneeded = (event) => {
@@ -49,7 +49,7 @@ const initDb = async (): Promise<KibitzDb> => {
 
 export const loadState = async (): Promise<DbState> => {
   const db = await initDb();
-  
+
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['projects', 'appState'], 'readonly');
     const projectStore = transaction.objectStore('projects');
@@ -88,13 +88,13 @@ export const loadState = async (): Promise<DbState> => {
 
 export const saveState = async (state: DbState): Promise<void> => {
   const db = await initDb();
-  
+
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['projects', 'appState'], 'readwrite');
-    
+
     // Clear existing data
     transaction.objectStore('projects').clear();
-    
+
     // Save projects
     state.projects.forEach(project => {
       transaction.objectStore('projects').add(project);
@@ -114,14 +114,14 @@ export const saveState = async (state: DbState): Promise<void> => {
 
 export const saveMcpServers = async (servers: McpServer[]): Promise<void> => {
   const db = await initDb();
-  
+
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['mcpServers'], 'readwrite');
     const store = transaction.objectStore('mcpServers');
-    
+
     // Clear existing data
     store.clear();
-    
+
     // Save servers
     servers.forEach(server => {
       store.add(server);
@@ -134,7 +134,7 @@ export const saveMcpServers = async (servers: McpServer[]): Promise<void> => {
 
 export const loadMcpServers = async (): Promise<McpServer[]> => {
   const db = await initDb();
-  
+
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['mcpServers'], 'readonly');
     const store = transaction.objectStore('mcpServers');
@@ -186,7 +186,7 @@ export const migrateFromLocalStorage = async (): Promise<void> => {
         activeProjectId: parsed.activeProjectId,
         activeConversationId: parsed.activeConversationId
       };
-      
+
       await saveState(state);
     } catch (error) {
       console.error('Error migrating projects data:', error);
@@ -207,7 +207,7 @@ export const migrateFromLocalStorage = async (): Promise<void> => {
 export const exportToJson = async (): Promise<string> => {
   const state = await loadState();
   const mcpServers = await loadMcpServers();
-  
+
   return JSON.stringify({
     projects: state.projects,
     mcpServers,

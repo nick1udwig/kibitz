@@ -229,7 +229,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
         const savedServers = await loadMcpServers();
         console.log(`loading servers from IndexedDB: ${JSON.stringify(savedServers)}`);
-        
+
         for (const server of savedServers) {
           try {
             const newServer = await addServer(server);
