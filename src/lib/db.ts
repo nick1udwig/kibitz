@@ -86,6 +86,21 @@ export const loadState = async (): Promise<DbState> => {
   });
 };
 
+// Sanitize project data before storage by removing non-serializable properties
+const sanitizeProjectForStorage = (project: Project): Project => {
+  return {
+    ...project,
+    settings: {
+      ...project.settings,
+      mcpServers: project.settings.mcpServers?.map(server => ({
+        ...server,
+        ws: undefined, // Remove WebSocket instance
+        status: 'disconnected'
+      })) || []
+    }
+  };
+};
+
 export const saveState = async (state: DbState): Promise<void> => {
   const db = await initDb();
 
@@ -95,9 +110,10 @@ export const saveState = async (state: DbState): Promise<void> => {
     // Clear existing data
     transaction.objectStore('projects').clear();
 
-    // Save projects
+    // Save projects with sanitized data
     state.projects.forEach(project => {
-      transaction.objectStore('projects').add(project);
+      const sanitizedProject = sanitizeProjectForStorage(project);
+      transaction.objectStore('projects').add(sanitizedProject);
     });
 
     // Save active IDs
