@@ -29,6 +29,12 @@ module.exports = {
               wordBreak: 'break-word',
               whiteSpace: 'pre-wrap',
             },
+            'code::before': {
+              content: '""',
+            },
+            'code::after': {
+              content: '""',
+            },
             p: {
               wordBreak: 'break-word',
               overflowWrap: 'break-word',
