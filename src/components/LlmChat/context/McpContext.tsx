@@ -292,11 +292,32 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     }
   }, [connectToServer, servers]);
 
+  const attemptLocalMcpConnection = useCallback(async () => {
+    const server: McpServer = {
+      id: 'localhost-mcp',
+      name: 'Local MCP',
+      uri: 'ws://localhost:10125',
+    };
+
+    try {
+      const connectedServer = await connectToServer(server);
+      if (connectedServer.status === 'connected') {
+        setServers(current => [...current, connectedServer]);
+        return connectedServer;
+      }
+      return null;
+    } catch {
+      console.log('Local MCP not available');
+      return null;
+    }
+  }, [connectToServer]);
+
   const value = {
     servers,
     addServer,
     removeServer,
     reconnectServer,
+    attemptLocalMcpConnection,
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>): Promise<string> => {
       const ws = connectionsRef.current.get(serverId);
       if (!ws || ws.readyState !== WebSocket.OPEN) {

@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
 import { loadState, saveState, migrateFromLocalStorage } from '../../../lib/db';
+import { McpContext } from './McpContext';
 
 const ProjectContext = createContext<ProjectState | null>(null);
 
@@ -33,6 +34,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const mcpContext = useContext(McpContext);
 
   // Use ref to track if initial load has happened
   const initialized = useRef(false);
@@ -147,7 +149,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updatedAt: new Date(),
       order: Date.now()  // Use timestamp for default order
     };
-      setProjects(prev => {
+
+    // Add the project first
+    setProjects(prev => {
         // Get highest order value
         const maxOrder = prev.reduce((max, p) => Math.max(max, p.order || 0), 0);
         // Place new project at the end with an order value greater than the highest
@@ -156,8 +160,23 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     setActiveProjectId(projectId);
     setActiveConversationId(conversationId);
+
+    // Attempt to connect to local MCP
+    if (mcpContext) {
+      mcpContext.attemptLocalMcpConnection().then(server => {
+        if (server) {
+          updateProjectSettings(projectId, {
+            settings: {
+              ...newProject.settings,
+              mcpServers: [...newProject.settings.mcpServers, server]
+            }
+          });
+        }
+      });
+    }
+
     return projectId;
-  }, [activeProjectId, projects]);
+  }, [activeProjectId, projects, updateProjectSettings, mcpContext]);
 
   const deleteProject = useCallback((id: string) => {
     setProjects(current => {
