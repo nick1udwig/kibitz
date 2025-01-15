@@ -29,6 +29,19 @@ interface FileUploadProps {
   onFileSelect: (content: MessageContent) => void;
 }
 
+function decodeBase64ToUtf8String(base64: string): string {
+  try {
+    const binaryStr = atob(base64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch (error) {
+    throw new Error('Failed to decode base64 string: ' + (error as Error).message);
+  }
+}
+
 export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -40,16 +53,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
 
     const reader = new FileReader();
     reader.onload = async () => {
+      const base64Data = (reader.result as string).split(',')[1];
       if (file.type.startsWith('text/') || ADDITIONAL_ACCEPTED_TEXT_TYPES.includes(file.type)) {
-        const text = reader.result as string;
         onFileSelect({
           type: 'text',
-          text: text,
+          text: decodeBase64ToUtf8String(base64Data),
         });
         return;
       }
 
-      const base64Data = (reader.result as string).split(',')[1];
       if (ACCEPTED_IMAGE_TYPES.includes(file.type)) {
         onFileSelect({
           type: 'image',
