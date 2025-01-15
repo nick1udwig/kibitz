@@ -92,13 +92,17 @@ const AlertDialogDescription = React.forwardRef(function AlertDialogDescription(
 })
 
 const AlertDialogAction = React.forwardRef(function AlertDialogAction(
-  props: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & { className?: string },
+  props: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & { 
+    className?: string,
+    autoFocus?: boolean 
+  },
   ref: React.ForwardedRef<HTMLButtonElement>
 ) {
   return (
     <AlertDialogPrimitive.Action
       ref={ref}
       className={cn(buttonVariants(), props.className)}
+      autoFocus={props.autoFocus}
       {...props}
     />
   )
