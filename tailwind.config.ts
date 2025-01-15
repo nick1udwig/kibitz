@@ -16,6 +16,26 @@ module.exports = {
       },
     },
     extend: {
+      typography: {
+        DEFAULT: {
+          css: {
+            maxWidth: '100%',
+            overflow: 'hidden',
+            pre: {
+              maxWidth: '100%',
+              overflow: 'auto',
+            },
+            code: {
+              wordBreak: 'break-word',
+              whiteSpace: 'pre-wrap',
+            },
+            p: {
+              wordBreak: 'break-word',
+              overflowWrap: 'break-word',
+            }
+          }
+        }
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

@@ -539,9 +539,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             return (
               <div
                 key={`text-${index}-${contentIndex}`}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} max-w-full`}
               >
-              <div className="relative group w-full">
+              <div className="relative group w-full max-w-full overflow-hidden">
               <div className="absolute right-2 top-2 z-10">
                   <CopyButton
                     text={content.text}
@@ -550,18 +550,23 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                   />
                 </div>
                 <div
-                  className={`w-full rounded-lg px-4 py-2 ${
+                  className={`w-full max-w-full rounded-lg px-4 py-2 ${
                     message.role === 'user'
                       ? 'bg-accent !text-accent-foreground not-prose'
                       : 'bg-muted text-foreground'
                   }`}
                 >
                   <ReactMarkdown
-                    className={`prose dark:prose-invert max-w-none ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''}`}
+                    className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''}`}
                     components={{
+                      p: ({children}) => (
+                        <p className="break-words whitespace-pre-wrap overflow-hidden">
+                          {children}
+                        </p>
+                      ),
                       pre({ node, children, ...props }) {
                         return (
-                          <div className="group/code relative">
+                          <div className="group/code relative max-w-full overflow-x-auto">
                             <div className="sticky top-2 float-right -mr-2 z-10">
                               <CopyButton
                                 text={node?.children[0]?.children[0]?.value || ''}
@@ -569,8 +574,15 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                                 className="opacity-0 group-hover/code:opacity-100 transition-opacity"
                               />
                             </div>
-                            <pre {...props}>{children}</pre>
+                            <pre className="overflow-x-auto max-w-full" {...props}>{children}</pre>
                           </div>
+                        );
+                      },
+                      code({ node, inline, children, ...props }) {
+                        return inline ? (
+                          <code className="text-inherit whitespace-nowrap" {...props}>{children}</code>
+                        ) : (
+                          <code className="block overflow-x-auto whitespace-pre" {...props}>{children}</code>
                         );
                       },
                       a: ({href, children}) => (
@@ -694,7 +706,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           }`}
         >
           <ReactMarkdown
-            className="prose dark:prose-invert max-w-none"
+            className="prose dark:prose-invert break-words overflow-hidden whitespace-pre-wrap max-w-full"
             components={{
               a: ({href, children}) => (
                 <a
@@ -726,7 +738,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   return (
     <div className="flex flex-col h-full relative">
-      <div ref={chatContainerRef} className="h-[calc(100vh-8rem)] overflow-y-auto p-4">
+      <div ref={chatContainerRef} className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
         <div className="space-y-4 mb-4">
           {activeConversation.messages.map((message, index) => (
             renderMessage(message, index)
