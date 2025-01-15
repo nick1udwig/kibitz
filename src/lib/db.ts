@@ -47,7 +47,11 @@ const initDb = async (): Promise<KibitzDb> => {
         projectStore.createIndex('conversations.messages.content', 'conversations.messages.content', { multiEntry: true });
       } else if (event.oldVersion < 2) {
         // Adding the order index in version 2
-        const transaction = event.target.transaction;
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during upgrade');
+          return;
+        }
         const projectStore = transaction.objectStore('projects');
         
         // Only add the index if it doesn't exist
@@ -57,7 +61,7 @@ const initDb = async (): Promise<KibitzDb> => {
         
         // Add order field to existing projects
         projectStore.openCursor().onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest).result;
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
           if (cursor) {
             const project = cursor.value;
             if (typeof project.order !== 'number') {
@@ -273,7 +277,7 @@ export const migrateFromLocalStorage = async (): Promise<void> => {
     try {
       const parsed = JSON.parse(projectsData);
       const state: DbState = {
-        projects: parsed.projects.map((proj: Project) => ({
+        projects: parsed.projects.map((proj: Project, index: number) => ({
           ...proj,
           settings: {
             ...proj.settings,
@@ -292,8 +296,7 @@ export const migrateFromLocalStorage = async (): Promise<void> => {
           })),
           createdAt: new Date(proj.createdAt),
           updatedAt: new Date(proj.updatedAt),
-          order: typeof proj.order === 'number' ? proj.order : Date.now() // Add order field if missing
-=======
+          order: typeof proj.order === 'number' ? proj.order : Date.now() + index // Add order field if missing
         })),
         activeProjectId: parsed.activeProjectId,
         activeConversationId: parsed.activeConversationId
