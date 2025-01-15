@@ -7,7 +7,7 @@ import { useProjects } from './ProjectContext';
 import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { loadMcpServers, saveMcpServers, migrateFromLocalStorage } from '../../../lib/db';
 
-const McpContext = createContext<McpState | null>(null);
+export const McpContext = createContext<McpState | null>(null);
 
 export const useMcp = () => {
   const context = useContext(McpContext);
