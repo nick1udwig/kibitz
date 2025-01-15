@@ -5,6 +5,7 @@ import { McpServer } from '../types/mcp';
 import { McpState, McpServerConnection, Tool } from './types';
 import { useProjects } from './ProjectContext';
 import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
+import { loadMcpServers, saveMcpServers, migrateFromLocalStorage } from '../../../lib/db';
 
 const McpContext = createContext<McpState | null>(null);
 
@@ -215,40 +216,51 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   }, [connectToServer, servers]);
 
 
-  // Try to restore server state from localStorage
+  // Try to restore server state from IndexedDB
   useEffect(() => {
-    const savedServers = localStorage.getItem('mcp_servers');
-    if (savedServers) {
+    const initializeServers = async () => {
       try {
-        const parsed = JSON.parse(savedServers) as McpServer[];
-        console.log(`loading servers from local storage: ${JSON.stringify(parsed)}`);
-        parsed.forEach(server => {
-          addServer(server)
-            .catch(error => {
-              console.error(`Initial connection failed for ${server.name}:`, error);
-            })
-            .then(newServer => {
+        // Check if we need to migrate from localStorage
+        if (localStorage.getItem('mcp_servers')) {
+          await migrateFromLocalStorage();
+          // Clear localStorage after successful migration
+          localStorage.removeItem('mcp_servers');
+        }
+
+        const savedServers = await loadMcpServers();
+        console.log(`loading servers from IndexedDB: ${JSON.stringify(savedServers)}`);
+
+        for (const server of savedServers) {
+          try {
+            const newServer = await addServer(server);
+            if (newServer) {
               projects.forEach(project => {
                 updateProjectSettings(project.id, { settings: {
                   ...project.settings,
                   mcpServers: project.settings.mcpServers.map(s =>
-                    newServer && s.id === newServer.id ? { ...s, status: newServer.status, error: undefined } : s
+                    s.id === newServer.id ? { ...s, status: newServer.status, error: undefined } : s
                   ),
                 }})
-              })}
-            );
-        });
+              });
+            }
+          } catch (error) {
+            console.error(`Initial connection failed for ${server.name}:`, error);
+          }
+        }
       } catch (error) {
-        console.error('Error parsing saved servers:', error);
+        console.error('Error initializing MCP servers:', error);
       }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  ////}, [projects, addServer, updateProjectSettings]);
+    };
 
-  // Save server state to localStorage
+    initializeServers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Save server state to IndexedDB
   useEffect(() => {
-    localStorage.setItem('mcp_servers', JSON.stringify(servers));
+    saveMcpServers(servers).catch(error => {
+      console.error('Error saving MCP servers:', error);
+    });
   }, [servers]);
 
 

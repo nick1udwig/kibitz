@@ -2,8 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
-import { Message } from '../types';
-import { McpServer } from '../types/mcp';
+import { loadState, saveState, migrateFromLocalStorage } from '../../../lib/db';
 
 const ProjectContext = createContext<ProjectState | null>(null);
 
@@ -58,59 +57,49 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (initialized.current) return;
     initialized.current = true;
 
-    const savedData = localStorage.getItem('chat_app_projects');
-    if (savedData) {
+    const initializeData = async () => {
       try {
-        const parsed = JSON.parse(savedData);
-        setProjects(parsed.projects.map((proj: Project & { settings: ProjectSettings }) => ({
-          ...proj,
-          settings: {
-            apiKey: proj.settings.apiKey,
-            model: proj.settings.model,
-            systemPrompt: proj.settings.systemPrompt,
-            mcpServers: (proj.settings.mcpServers || []).map((server: McpServer) => ({
-              ...server,
-              status: 'disconnected'
-            })),
-          },
-          conversations: proj.conversations.map((conv: ConversationBrief & { messages: Message[] }) => ({
-            ...conv,
-            lastUpdated: new Date(conv.lastUpdated),
-            messages: conv.messages.map((msg: Message) => ({
-              ...msg,
-              timestamp: new Date(msg.timestamp)
-            }))
-          })),
-          createdAt: new Date(proj.createdAt),
-          updatedAt: new Date(proj.updatedAt)
-        })));
-        setActiveProjectId(parsed.activeProjectId);
-        setActiveConversationId(parsed.activeConversationId);
+        // Check if we need to migrate from localStorage
+        if (localStorage.getItem('chat_app_projects')) {
+          await migrateFromLocalStorage();
+          // Clear localStorage after successful migration
+          localStorage.removeItem('chat_app_projects');
+        }
+
+        const state = await loadState();
+        if (state.projects.length > 0) {
+          setProjects(state.projects);
+          setActiveProjectId(state.activeProjectId);
+          setActiveConversationId(state.activeConversationId);
+        } else {
+          createDefaultProject();
+        }
       } catch (error) {
-        console.error('Error parsing saved data:', error);
+        console.error('Error initializing data:', error);
         createDefaultProject();
       }
-    } else {
-      createDefaultProject();
-    }
+    };
+
+    initializeData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Save state changes with debounce
-  const saveToLocalStorage = useCallback(() => {
-    if (projects.length > 0) {
-      localStorage.setItem('chat_app_projects', JSON.stringify({
+  useEffect(() => {
+    if (projects.length === 0) return;
+
+    const timeoutId = setTimeout(() => {
+      saveState({
         projects,
         activeProjectId,
         activeConversationId
-      }));
-    }
-  }, [projects, activeProjectId, activeConversationId]);
+      }).catch(error => {
+        console.error('Error saving state:', error);
+      });
+    }, 1000);
 
-  useEffect(() => {
-    const timeoutId = setTimeout(saveToLocalStorage, 1000);
     return () => clearTimeout(timeoutId);
-  }, [saveToLocalStorage]);
+  }, [projects, activeProjectId, activeConversationId]);
 
   const updateProjectSettings = useCallback((id: string, updates: ProjectUpdates) => {
     setProjects(current =>
