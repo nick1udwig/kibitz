@@ -253,7 +253,8 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     };
 
     initializeServers();
-  }, [addServer, projects, updateProjectSettings]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Save server state to IndexedDB
   useEffect(() => {
