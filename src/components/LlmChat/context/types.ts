@@ -24,6 +24,7 @@ export interface Project {
   conversations: ConversationBrief[];
   createdAt: Date;
   updatedAt: Date;
+  order: number;  // Lower number means higher in the list
 }
 
 export interface McpServerConnection extends McpServer {

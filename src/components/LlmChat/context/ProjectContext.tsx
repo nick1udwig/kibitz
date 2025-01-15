@@ -47,7 +47,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       },
       conversations: [],
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      order: Date.now()  // Use timestamp for order
     };
     setProjects([defaultProject]);
     setActiveProjectId(defaultProject.id);
@@ -143,9 +144,16 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         messages: []
       }],
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      order: Date.now()  // Use timestamp for default order
     };
-    setProjects(prev => [...prev, newProject]);
+      setProjects(prev => {
+        // Get highest order value
+        const maxOrder = prev.reduce((max, p) => Math.max(max, p.order || 0), 0);
+        // Place new project at the end with an order value greater than the highest
+        newProject.order = maxOrder + 1;
+        return [...prev, newProject];
+      });
     setActiveProjectId(projectId);
     setActiveConversationId(conversationId);
     return projectId;
