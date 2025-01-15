@@ -157,6 +157,17 @@ export const saveState = async (state: DbState): Promise<void> => {
   });
 };
 
+// Sanitize MCP server data before storage by removing non-serializable properties
+const sanitizeMcpServerForStorage = (server: McpServer): McpServer => {
+  const sanitizedServer = JSON.parse(JSON.stringify({
+    ...server,
+    ws: undefined, // Remove WebSocket instance
+    status: 'disconnected'
+  }));
+
+  return sanitizedServer;
+};
+
 export const saveMcpServers = async (servers: McpServer[]): Promise<void> => {
   const db = await initDb();
 
@@ -167,9 +178,10 @@ export const saveMcpServers = async (servers: McpServer[]): Promise<void> => {
     // Clear existing data
     store.clear();
 
-    // Save servers
+    // Save sanitized servers
     servers.forEach(server => {
-      store.add(server);
+      const sanitizedServer = sanitizeMcpServerForStorage(server);
+      store.add(sanitizedServer);
     });
 
     transaction.oncomplete = () => resolve();
