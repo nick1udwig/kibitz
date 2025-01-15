@@ -557,10 +557,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                   }`}
                 >
                   <ReactMarkdown
-                    className={`prose dark:prose-invert break-words overflow-hidden whitespace-pre-wrap max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''}`}
+                    className={`prose dark:prose-invert break-words overflow-hidden max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''}`}
                     components={{
                       p: ({children}) => (
-                        <p className="break-words whitespace-pre-wrap overflow-hidden">
+                        <p className="break-words overflow-hidden">
                           {children}
                         </p>
                       ),
