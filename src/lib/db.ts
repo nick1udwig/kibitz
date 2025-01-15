@@ -87,6 +87,42 @@ export const loadState = async (): Promise<DbState> => {
 };
 
 // Sanitize project data before storage by removing non-serializable properties
+// Helper function to safely convert a Date to ISO string
+const safeToISOString = (date: Date | string | number | undefined): string => {
+  if (date instanceof Date) {
+    // Ensure the date is valid
+    const timestamp = date.getTime();
+    if (isNaN(timestamp)) {
+      return new Date().toISOString(); // fallback to current time for invalid dates
+    }
+    return date.toISOString();
+  }
+  if (typeof date === 'string') {
+    // If it's already a string, try to parse it as a date first
+    const parsedDate = new Date(date);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString();
+    }
+    return date; // return as is if can't be parsed
+  }
+  if (typeof date === 'number') {
+    const parsedDate = new Date(date);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString();
+    }
+  }
+  return new Date().toISOString(); // fallback to current time
+};
+
+// Helper function to safely create a Date object
+const safeDate = (date: string | number | Date | undefined): Date => {
+  if (date instanceof Date && !isNaN(date.getTime())) {
+    return date;
+  }
+  const parsed = new Date(date || Date.now());
+  return isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
 const sanitizeProjectForStorage = (project: Project): Project => {
   // First convert to JSON to remove non-serializable properties
   const sanitizedProject = JSON.parse(JSON.stringify({
@@ -101,10 +137,10 @@ const sanitizeProjectForStorage = (project: Project): Project => {
     },
     conversations: project.conversations.map(conv => ({
       ...conv,
-      lastUpdated: conv.lastUpdated instanceof Date ? conv.lastUpdated.toISOString() : conv.lastUpdated,
+      lastUpdated: safeToISOString(conv.lastUpdated),
       messages: conv.messages.map(msg => ({
         ...msg,
-        timestamp: msg.timestamp instanceof Date ? msg.timestamp.toISOString() : msg.timestamp
+        timestamp: safeToISOString(msg.timestamp)
       }))
     }))
   }));
@@ -117,15 +153,15 @@ const sanitizeProjectForStorage = (project: Project): Project => {
 
   sanitizedProject.conversations = sanitizedProject.conversations.map((conv: TempConversation) => ({
     ...conv,
-    lastUpdated: new Date(conv.lastUpdated),
+    lastUpdated: safeDate(conv.lastUpdated),
     messages: conv.messages.map(msg => ({
       ...msg,
-      timestamp: new Date(msg.timestamp)
+      timestamp: safeDate(msg.timestamp)
     }))
   }));
 
-  sanitizedProject.createdAt = new Date(project.createdAt);
-  sanitizedProject.updatedAt = new Date(project.updatedAt);
+  sanitizedProject.createdAt = safeDate(project.createdAt);
+  sanitizedProject.updatedAt = safeDate(project.updatedAt);
 
   return sanitizedProject;
 };
