@@ -3,7 +3,7 @@ import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 
 const DB_NAME = 'kibitz_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 interface DbState {
   projects: Project[];
@@ -26,23 +26,48 @@ const initDb = async (): Promise<KibitzDb> => {
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result as KibitzDb;
 
-      // Projects store
-      const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
-      projectStore.createIndex('createdAt', 'createdAt');
-      projectStore.createIndex('updatedAt', 'updatedAt');
-      projectStore.createIndex('name', 'name');
+      if (event.oldVersion < 1) {
+        // Projects store
+        const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
+        projectStore.createIndex('createdAt', 'createdAt');
+        projectStore.createIndex('updatedAt', 'updatedAt');
+        projectStore.createIndex('name', 'name');
+        projectStore.createIndex('order', 'order');  // Add order index
 
-      // App state store (for active IDs)
-      db.createObjectStore('appState', { keyPath: 'id' });
+        // App state store (for active IDs)
+        db.createObjectStore('appState', { keyPath: 'id' });
 
-      // MCP servers store
-      const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
-      mcpStore.createIndex('name', 'name');
+        // MCP servers store
+        const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
+        mcpStore.createIndex('name', 'name');
 
-      // Create indexes for future search capabilities
-      projectStore.createIndex('settings.systemPrompt', 'settings.systemPrompt');
-      projectStore.createIndex('conversations.name', 'conversations.name', { multiEntry: true });
-      projectStore.createIndex('conversations.messages.content', 'conversations.messages.content', { multiEntry: true });
+        // Create indexes for future search capabilities
+        projectStore.createIndex('settings.systemPrompt', 'settings.systemPrompt');
+        projectStore.createIndex('conversations.name', 'conversations.name', { multiEntry: true });
+        projectStore.createIndex('conversations.messages.content', 'conversations.messages.content', { multiEntry: true });
+      } else if (event.oldVersion < 2) {
+        // Adding the order index in version 2
+        const transaction = event.target.transaction;
+        const projectStore = transaction.objectStore('projects');
+        
+        // Only add the index if it doesn't exist
+        if (!projectStore.indexNames.contains('order')) {
+          projectStore.createIndex('order', 'order');
+        }
+        
+        // Add order field to existing projects
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest).result;
+          if (cursor) {
+            const project = cursor.value;
+            if (typeof project.order !== 'number') {
+              project.order = cursor.key;
+              cursor.update(project);
+            }
+            cursor.continue();
+          }
+        };
+      }
     };
   });
 };
@@ -58,7 +83,7 @@ export const loadState = async (): Promise<DbState> => {
     const projects: Project[] = [];
     const state: Partial<DbState> = {};
 
-    projectStore.openCursor().onsuccess = (event) => {
+    projectStore.index('order').openCursor().onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
       if (cursor) {
         projects.push(cursor.value);
@@ -163,6 +188,11 @@ const sanitizeProjectForStorage = (project: Project): Project => {
   sanitizedProject.createdAt = safeDate(project.createdAt);
   sanitizedProject.updatedAt = safeDate(project.updatedAt);
 
+  // Ensure project has an order field
+  if (typeof sanitizedProject.order !== 'number') {
+    sanitizedProject.order = Date.now(); // Use timestamp as default order if not set
+  }
+
   return sanitizedProject;
 };
 
@@ -261,7 +291,9 @@ export const migrateFromLocalStorage = async (): Promise<void> => {
             }))
           })),
           createdAt: new Date(proj.createdAt),
-          updatedAt: new Date(proj.updatedAt)
+          updatedAt: new Date(proj.updatedAt),
+          order: typeof proj.order === 'number' ? proj.order : Date.now() // Add order field if missing
+=======
         })),
         activeProjectId: parsed.activeProjectId,
         activeConversationId: parsed.activeConversationId

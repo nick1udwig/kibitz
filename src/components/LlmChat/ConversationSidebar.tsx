@@ -72,6 +72,9 @@ export const ConversationSidebar = ({
     setItemToDelete(null);
   };
 
+  // Sort projects by order
+  const sortedProjects = [...projects].sort((a, b) => (a.order || 0) - (b.order || 0));
+  
   return (
     <>
       {/* Floating Mobile Menu Toggle */}
@@ -122,7 +125,7 @@ export const ConversationSidebar = ({
 
         {/* Projects and Conversations list */}
         <div className="flex-1 overflow-y-auto min-h-0 px-4">
-          {projects.map(project => (
+          {sortedProjects.map(project => (
             <div key={project.id} className="mb-2">
               {/* Project header */}
               <div
