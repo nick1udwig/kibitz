@@ -7,7 +7,7 @@ import { useProjects } from './ProjectContext';
 import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { loadMcpServers, saveMcpServers, migrateFromLocalStorage } from '../../../lib/db';
 
-export const McpContext = createContext<McpState | null>(null);
+const McpContext = createContext<McpState | null>(null);
 
 export const useMcp = () => {
   const context = useContext(McpContext);
@@ -312,6 +312,34 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       return null;
     }
   }, [connectToServer]);
+
+  useEffect(() => {
+    if (projects.length == 0) {
+      return;
+    }
+    const project = projects[projects.length - 1]
+    if (project.settings.mcpServers.length > 0) {
+      return;
+    }
+    const createdAt = project.createdAt;
+    const updatedAt = project.updatedAt;
+    const now = new Date;
+    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+    if (!(createdAt >= oneMinuteAgo && createdAt <= now) || updatedAt > createdAt) {
+      return;
+    }
+
+    attemptLocalMcpConnection().then(server => {
+      if (server) {
+        updateProjectSettings(project.id, {
+          settings: {
+            ...project.settings,
+            mcpServers: [...project.settings.mcpServers, server]
+          }
+        });
+      }
+    });
+  }, [projects, attemptLocalMcpConnection, updateProjectSettings]);
 
   const value = {
     servers,
