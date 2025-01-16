@@ -316,7 +316,7 @@ export const ConversationSidebar = ({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete} className="bg-primary" autoFocus>
+              <AlertDialogAction onClick={handleDelete} autoFocus>
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>
