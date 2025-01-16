@@ -27,6 +27,7 @@ const ADDITIONAL_ACCEPTED_TEXT_TYPES = [
 
 interface FileUploadProps {
   onFileSelect: (content: MessageContent) => void;
+  onUploadComplete?: () => void;
 }
 
 function decodeBase64ToUtf8String(base64: string): string {

@@ -584,8 +584,8 @@ Example good titles:
                     : 'bg-muted text-foreground'
                     }`}
                 >
-                  <ReactMarkdown
-                    className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_pre]:!bg-accent-foreground/10 [&_p]:!text-accent-foreground [&_code]:!text-accent-foreground' : ''}`}
+<ReactMarkdown
+                    className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground [&_code]:!text-accent-foreground' : ''}`}
                     components={{
                       p: ({ children }) => (
                         <p className="break-words whitespace-pre-wrap overflow-hidden">
