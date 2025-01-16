@@ -74,7 +74,7 @@ export const ConversationSidebar = ({
 
   // Sort projects by order
   const sortedProjects = [...projects].sort((a, b) => (a.order || 0) - (b.order || 0));
-  
+
   return (
     <>
       {/* Floating Mobile Menu Toggle */}
@@ -195,61 +195,68 @@ export const ConversationSidebar = ({
                     <PlusCircle className="w-4 h-4 mr-2" />
                     New Chat
                   </Button>
-                {project.conversations
-                  .sort((a, b) => {
-                    const dateA = a.createdAt || a.lastUpdated;
-                    const dateB = b.createdAt || b.lastUpdated;
-                    return dateB.getTime() - dateA.getTime();
-                  })
-                  .map(convo => (
-                    <div
-                      key={convo.id}
-                      className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
+                  {project.conversations
+                    .sort((a, b) => {
+                      // Convert dates to timestamps, handling various formats
+                      const getTimestamp = (date: Date | string | undefined): number => {
+                        if (!date) return Date.now();
+                        if (date instanceof Date) return date.getTime();
+                        return new Date(date).getTime();
+                      };
+
+                      const timestampA = getTimestamp(a.createdAt || a.lastUpdated);
+                      const timestampB = getTimestamp(b.createdAt || b.lastUpdated);
+                      return timestampB - timestampA;
+                    })
+                    .map(convo => (
+                      <div
+                        key={convo.id}
+                        className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
                       ${convo.id === activeConversationId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
                       text-sm truncate max-w-[250px]`}
-                      onClick={() => {
-                        setActiveProject(project.id);
-                        setActiveConversation(convo.id);
-                        onConversationSelect?.();
-                      }}
-                    >
-                      <span className="truncate flex-1" title={convo.name}>{convo.name}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="p-1 h-6 w-6"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRenameItem({
-                            type: 'conversation',
-                            projectId: project.id,
-                            conversationId: convo.id,
-                            currentName: convo.name
-                          });
-                          setNewName(convo.name);
-                          setShowRenameDialog(true);
+                        onClick={() => {
+                          setActiveProject(project.id);
+                          setActiveConversation(convo.id);
+                          onConversationSelect?.();
                         }}
                       >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="p-1 h-6 w-6"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setItemToDelete({
-                            type: 'conversation',
-                            projectId: project.id,
-                            conversationId: convo.id
-                          });
-                          setShowDeleteConfirm(true);
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
-                    </div>
-                  ))}
+                        <span className="truncate flex-1" title={convo.name}>{convo.name}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="p-1 h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenameItem({
+                              type: 'conversation',
+                              projectId: project.id,
+                              conversationId: convo.id,
+                              currentName: convo.name
+                            });
+                            setNewName(convo.name);
+                            setShowRenameDialog(true);
+                          }}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="p-1 h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setItemToDelete({
+                              type: 'conversation',
+                              projectId: project.id,
+                              conversationId: convo.id
+                            });
+                            setShowDeleteConfirm(true);
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
