@@ -68,10 +68,6 @@ export const ConversationSidebar = ({
     setExpandedProjects(prev => {
       const newExpanded = new Set(prev);
       if (newExpanded.has(projectId)) {
-        // Don't allow collapsing active project
-        if (projectId === activeProjectId) {
-          return prev;
-        }
         newExpanded.delete(projectId);
       } else {
         newExpanded.add(projectId);
