@@ -71,9 +71,12 @@ export const ConversationSidebar = ({
   const handleProjectSelect = (projectId: string, shouldCreateChat: boolean = false) => {
     const project = projects.find(p => p.id === projectId);
     
-    if (shouldCreateChat && project?.conversations.length === 0) {
+    if (!project?.conversations) {
+      return;
+    }
+    if (shouldCreateChat && project.conversations.length === 0) {
       createConversation(projectId);
-    } else if (project?.conversations.length > 0) {
+    } else if (project.conversations.length > 0) {
       // Try to restore the last active conversation for this project
       const lastActive = lastActiveConversations[projectId];
       const conversationExists = lastActive && project.conversations.some(c => c.id === lastActive);
