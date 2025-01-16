@@ -265,7 +265,7 @@ export const ConversationSidebar = ({
                             setShowRenameDialog(true);
                           }}
                         >
-                          <Pencil className="w-4 h-4 opacity-100 transition-all duration-200 hover:scale-125 hover:opacity-75" />
+                          <Pencil className="w-4 h-4 opacity-100 transition-opacity duration-200 hover:opacity-75" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -281,7 +281,7 @@ export const ConversationSidebar = ({
                             setShowDeleteConfirm(true);
                           }}
                         >
-                          <Trash2 className="w-4 h-4 text-destructive opacity-100 transition-all duration-200 hover:scale-125 hover:opacity-75" />
+                          <Trash2 className="w-4 h-4 text-destructive opacity-100 transition-opacity duration-200 hover:opacity-75" />
                         </Button>
                       </div>
                     ))}
