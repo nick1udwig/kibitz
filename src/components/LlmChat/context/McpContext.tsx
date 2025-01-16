@@ -293,12 +293,18 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   }, [connectToServer, servers]);
 
   const attemptLocalMcpConnection = useCallback(async () => {
+    const id = 'localhost-mcp';
     const server: McpServer = {
-      id: 'localhost-mcp',
+      id: id,
       name: 'Local MCP',
       uri: 'ws://localhost:10125',
       status: 'disconnected',
     };
+
+    const existingServer = servers.find(server => server.id === id);
+    if (existingServer) {
+      return existingServer;
+    }
 
     try {
       const connectedServer = await connectToServer(server);
@@ -311,7 +317,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       console.log('Local MCP not available');
       return null;
     }
-  }, [connectToServer]);
+  }, [connectToServer, servers]);
 
   useEffect(() => {
     if (projects.length == 0) {
