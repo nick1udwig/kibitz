@@ -65,18 +65,36 @@ export const ConversationSidebar = ({
     });
   };
 
+  // Keep track of last active conversation for each project
+  const [lastActiveConversations] = useState<Record<string, string>>({});
+  
   const handleProjectSelect = (projectId: string, shouldCreateChat: boolean = false) => {
-    setActiveProject(projectId);
     const project = projects.find(p => p.id === projectId);
     
     if (shouldCreateChat && project?.conversations.length === 0) {
       createConversation(projectId);
     } else if (project?.conversations.length > 0) {
-      // Always select the first conversation when switching projects
-      // (they're already sorted by newest first in the render logic)
-      setActiveConversation(project.conversations[0].id);
+      // Try to restore the last active conversation for this project
+      const lastActive = lastActiveConversations[projectId];
+      const conversationExists = lastActive && project.conversations.some(c => c.id === lastActive);
+      
+      if (conversationExists) {
+        setActiveConversation(lastActive);
+      } else {
+        // If no last active chat or it doesn't exist anymore, select the newest
+        setActiveConversation(project.conversations[0].id);
+      }
     }
+    
+    setActiveProject(projectId);
   };
+  
+  // Update last active conversation when it changes
+  useEffect(() => {
+    if (activeProjectId && activeConversationId) {
+      lastActiveConversations[activeProjectId] = activeConversationId;
+    }
+  }, [activeProjectId, activeConversationId]);
 
   const handleDelete = () => {
     if (!itemToDelete) return;
