@@ -293,7 +293,7 @@ export const ConversationSidebar = ({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete} autoFocus>
+              <AlertDialogAction onClick={handleDelete} variant="default" autoFocus>
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -303,43 +303,48 @@ export const ConversationSidebar = ({
         {/* Rename dialog */}
         <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Rename {renameItem?.type === 'project' ? 'Project' : 'Conversation'}</DialogTitle>
-            </DialogHeader>
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Enter new name"
-              className="my-4"
-            />
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowRenameDialog(false);
-                  setRenameItem(null);
-                  setNewName('');
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  if (renameItem && newName.trim()) {
-                    if (renameItem.type === 'project') {
-                      renameProject(renameItem.projectId, newName.trim());
-                    } else if (renameItem.conversationId) {
-                      renameConversation(renameItem.projectId, renameItem.conversationId, newName.trim());
-                    }
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (renameItem && newName.trim()) {
+                if (renameItem.type === 'project') {
+                  renameProject(renameItem.projectId, newName.trim());
+                } else if (renameItem.conversationId) {
+                  renameConversation(renameItem.projectId, renameItem.conversationId, newName.trim());
+                }
+                setShowRenameDialog(false);
+                setRenameItem(null);
+                setNewName('');
+              }
+            }}>
+              <DialogHeader>
+                <DialogTitle>Rename {renameItem?.type === 'project' ? 'Project' : 'Conversation'}</DialogTitle>
+              </DialogHeader>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Enter new name"
+                className="my-4"
+              />
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
                     setShowRenameDialog(false);
                     setRenameItem(null);
                     setNewName('');
-                  }
-                }}
-              >
-                Save
-              </Button>
-            </DialogFooter>
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="default"
+                >
+                  Save
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       </div>
