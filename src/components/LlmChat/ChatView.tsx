@@ -215,7 +215,41 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       ] as TextBlockParam[] : undefined;
 
       while (true) {
-        const cachedApiMessages = currentMessages.map((m, index, array) =>
+        const cachedApiMessages = currentMessages.filter((message, index, array) => {
+          // Process messages and remove incomplete tool use interactions
+          // If content is a string, keep it
+          if (typeof message.content === 'string') return true;
+
+          // At this point we know message.content is an array
+          const messageContent = message.content as MessageContent[];
+
+          // Check if this message has a tool_use
+          const hasToolUse = messageContent.some(c => c.type === 'tool_use');
+          if (!hasToolUse) return true;
+
+          // Look for matching tool_result in next message
+          const nextMessage = array[index + 1];
+          if (!nextMessage) return false;
+
+          // If next message has string content, can't have tool_result
+          if (typeof nextMessage.content === 'string') return false;
+
+          const nextMessageContent = nextMessage.content as MessageContent[];
+
+          // Check if any tool_use in current message has matching tool_result in next message
+          return messageContent.every(content => {
+            if (content.type !== 'tool_use') return true;
+            if (!('id' in content)) return true; // Skip if no id present
+            const toolId = content.id;
+            return nextMessageContent.some(
+              nextContent =>
+                nextContent.type === 'tool_result' &&
+                'tool_use_id' in nextContent &&
+                nextContent.tool_use_id === toolId
+            );
+          });
+        })
+        .map((m, index, array) =>
           index < array.length - 3 ?
             {
               role: m.role,
@@ -366,6 +400,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
         streamRef.current = stream;
 
+        // Break if cancel was requested during setup
+        if (shouldCancelRef.current) {
+          break;
+        }
+
         stream.on('text', (text) => {
           textContent.text += text;
 
@@ -486,6 +525,11 @@ Example good titles:
         const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
         if (toolUseContent && toolUseContent.type === 'tool_use') {
           try {
+            // Break if cancel was requested before tool execution
+            if (shouldCancelRef.current) {
+              break;
+            }
+
             const serverWithTool = servers.find(s =>
               s.tools?.some(t => t.name === toolUseContent.name)
             );
@@ -500,6 +544,11 @@ Example good titles:
               toolUseContent.input as Record<string, unknown>,
             );
 
+            // Check cancel after tool execution
+            if (shouldCancelRef.current) {
+              break;
+            }
+
             const toolResultMessage: Message = {
               role: 'user',
               content: [{
@@ -513,8 +562,11 @@ Example good titles:
             currentMessages.push(toolResultMessage);
             updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-            // Continue the conversation with the tool result
-            continue;
+            // Continue the conversation with the tool result if not cancelled
+            if (!shouldCancelRef.current) {
+              continue;
+            }
+            break;
           } catch (error) {
             const errorMessage: Message = {
               role: 'user',
