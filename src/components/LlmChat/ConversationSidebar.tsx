@@ -141,7 +141,7 @@ export const ConversationSidebar = ({
             <div key={project.id} className={`mb-2 ${index > 0 ? 'mt-2 pt-2 border-t border-accent/35' : ''}`}>
               {/* Project header */}
               <div
-                className={`p-2 rounded-lg flex items-center gap-2 transition-colors
+                className={`p-2 rounded-lg flex items-center gap-2 transition-colors cursor-pointer
                 ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
                 text-base font-medium`}
                 onClick={(e) => {

@@ -337,6 +337,16 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     );
   }, []);
 
+  // Ensure a chat is selected when switching projects
+  const setActiveProjectWithChat = useCallback((projectId: string) => {
+    setActiveProjectId(projectId);
+    const project = projects.find(p => p.id === projectId);
+    if (project && project.conversations.length > 0 && !activeConversationId) {
+      // Project has chats but none selected - select the first one (newest)
+      setActiveConversationId(project.conversations[0].id);
+    }
+  }, [projects, activeConversationId]);
+
   const value: ProjectState = {
     projects,
     activeProjectId,
@@ -347,7 +357,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     createConversation,
     deleteConversation,
     renameConversation,
-    setActiveProject: setActiveProjectId,
+    setActiveProject: setActiveProjectWithChat,
     setActiveConversation: setActiveConversationId,
     renameProject
   };
