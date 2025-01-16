@@ -789,7 +789,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           <Textarea
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder={!activeProject?.settings.apiKey?.trim() ? "Please set your API key in Settings first" : "Type your message"}
+            placeholder={!activeProject?.settings.apiKey?.trim() ? "⚠️ Set your API key in Settings (gear icon) to start chatting" : "Type your message"}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
                 e.preventDefault();
@@ -797,7 +797,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               }
             }}
             ref={inputRef}
-            className="flex-1"
+            className={`flex-1 ${!activeProject?.settings.apiKey?.trim() ? "placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}`}
             maxRows={8}
             disabled={isLoading || !activeProject?.settings.apiKey?.trim()}
           />
