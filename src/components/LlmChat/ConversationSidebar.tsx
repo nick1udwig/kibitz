@@ -187,7 +187,7 @@ export const ConversationSidebar = ({
                   }}
                   title="New chat"
                 >
-                  <PlusCircle className="w-4 h-4 transition-transform duration-200 hover:scale-125" />
+                  <PlusCircle className="w-4 h-4 opacity-90 transition-transform duration-200 hover:scale-125 hover:opacity-100" />
                 </Button>
                 <Button
                   variant="ghost"
@@ -204,7 +204,7 @@ export const ConversationSidebar = ({
                     setShowRenameDialog(true);
                   }}
                 >
-                  <Pencil className="w-4 h-4" />
+                  <Pencil className="w-4 h-4 opacity-90 transition-transform duration-200 hover:scale-125 hover:opacity-100" />
                 </Button>
                 <Button
                   variant="ghost"
@@ -216,7 +216,7 @@ export const ConversationSidebar = ({
                     setShowDeleteConfirm(true);
                   }}
                 >
-                  <Trash2 className="w-4 h-4 text-destructive" />
+                  <Trash2 className="w-4 h-4 text-destructive opacity-90 transition-transform duration-200 hover:scale-125 hover:opacity-100" />
                 </Button>
               </div>
 
@@ -265,7 +265,7 @@ export const ConversationSidebar = ({
                             setShowRenameDialog(true);
                           }}
                         >
-                          <Pencil className="w-4 h-4" />
+                          <Pencil className="w-4 h-4 opacity-90 transition-transform duration-200 hover:scale-125 hover:opacity-100" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -281,7 +281,7 @@ export const ConversationSidebar = ({
                             setShowDeleteConfirm(true);
                           }}
                         >
-                          <Trash2 className="w-4 h-4 text-destructive" />
+                          <Trash2 className="w-4 h-4 text-destructive opacity-90 transition-transform duration-200 hover:scale-125 hover:opacity-100" />
                         </Button>
                       </div>
                     ))}
