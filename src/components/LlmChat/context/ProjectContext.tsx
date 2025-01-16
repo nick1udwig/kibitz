@@ -129,7 +129,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
               ? updates.settings.mcpServers
               : p.settings.mcpServers
           } : p.settings,
-          conversations: updates.conversations || p.conversations,
+        conversations: updates.conversations !== undefined ? updates.conversations : p.conversations,
           updatedAt: new Date()
         };
       })
