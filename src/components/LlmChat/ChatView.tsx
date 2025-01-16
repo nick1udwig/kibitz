@@ -569,21 +569,23 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                         </p>
                       ),
                       pre({ children, ...props }) {
-                        // Get all text content from code blocks
-                        const text = Array.isArray(children) 
-                          ? children
-                              .map(child => {
-                                if (typeof child === 'string') return child;
-                                if (child?.props?.children) {
-                                  if (Array.isArray(child.props.children)) {
-                                    return child.props.children.join('');
-                                  }
-                                  return child.props.children;
-                                }
-                                return '';
-                              })
-                              .join('\n')
-                          : '';
+                        // Extract text from the code block
+                        const getCodeText = (node: any): string => {
+                          if (typeof node === 'string') return node;
+                          if (!node) return '';
+                          if (Array.isArray(node)) {
+                            return node.map(getCodeText).join('\n');
+                          }
+                          if (node.props?.className?.includes('language-')) {
+                            return getCodeText(node.props.children);
+                          }
+                          if (node.props?.children) {
+                            return getCodeText(node.props.children);
+                          }
+                          return '';
+                        };
+
+                        const text = getCodeText(children).trim();
 
                         return (
                           <div className="group/code relative max-w-full overflow-x-auto">
