@@ -202,15 +202,17 @@ export const ConversationSidebar = ({
               {/* Conversations under project */}
               {expandedProjects.has(project.id) && (
                 <div className="ml-4 mt-1 space-y-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={() => createConversation(project.id)}
-                  >
-                    <PlusCircle className="w-4 h-4 mr-2" />
-                    New Chat
-                  </Button>
+                  <div className="px-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-auto inline-flex items-center rounded-[4px] bg-transparent border-[#8B4C4C] hover:bg-[#4d1717]"
+                      onClick={() => createConversation(project.id)}
+                    >
+                      <PlusCircle className="w-4 h-4 mr-1" />
+                      New Chat
+                    </Button>
+                  </div>
                   {project.conversations
                     .sort((a, b) => {
                       // Convert dates to timestamps, handling various formats

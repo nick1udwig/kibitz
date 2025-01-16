@@ -76,7 +76,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
           // Create default project with an initial conversation
           const defaultConversation = {
             id: generateId(),
-            name: 'New Chat',
+            name: '(New Chat)',
             lastUpdated: new Date(),
             messages: [],
             createdAt: new Date()
@@ -146,10 +146,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const createInitialChat = useCallback((projectId: string) => {
     const conversationId = generateId();
-    const initialChat = {
-      id: conversationId,
-      name: 'New Chat',
-      lastUpdated: new Date(),
+          const initialChat = {
+            id: conversationId,
+            name: '(New Chat)',
+            lastUpdated: new Date(),
       messages: [],
       createdAt: new Date()
     };
@@ -225,7 +225,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
           conversations: [
             {
               id: conversationId,
-              name: name || `New Chat`,
+              name: name || `(New Chat)`,
               lastUpdated: new Date(),
               createdAt: new Date(),
               messages: []
@@ -252,7 +252,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (updatedConversations.length === 0) {
           const newChat = {
             id: newChatId, // Use the pre-generated ID
-            name: 'New Chat',
+            name: '(New Chat)',
             lastUpdated: new Date(),
             messages: [],
             createdAt: new Date()
