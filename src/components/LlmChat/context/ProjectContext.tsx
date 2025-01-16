@@ -61,12 +61,33 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const initializeData = async () => {
       try {
         const state = await loadState();
-        if (state.projects.length > 0) {
+        const hasProjects = state.projects.length > 0;
+        if (hasProjects) {
           setProjects(state.projects);
           setActiveProjectId(state.activeProjectId);
-          setActiveConversationId(state.activeConversationId);
+          // Only restore active conversation if it exists
+          if (state.activeProjectId && state.activeConversationId) {
+            const project = state.projects.find(p => p.id === state.activeProjectId);
+            if (project?.conversations.some(c => c.id === state.activeConversationId)) {
+              setActiveConversationId(state.activeConversationId);
+            }
+          }
         } else {
-          createDefaultProject();
+          // Create default project without any conversations
+          const defaultProject = {
+            id: generateId(),
+            name: 'Default Project',
+            settings: {
+              ...DEFAULT_PROJECT_SETTINGS,
+              mcpServers: []
+            },
+            conversations: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            order: Date.now()
+          };
+          setProjects([defaultProject]);
+          setActiveProjectId(defaultProject.id);
         }
       } catch (error) {
         console.error('Error initializing data:', error);
@@ -108,7 +129,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
               ? updates.settings.mcpServers
               : p.settings.mcpServers
           } : p.settings,
-          conversations: updates.conversations || p.conversations,
+        conversations: updates.conversations !== undefined ? updates.conversations : p.conversations,
           updatedAt: new Date()
         };
       })
@@ -130,12 +151,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }),
         ...settings,
       },
-      conversations: [{
-        id: conversationId,
-        name: 'Conversation 1',
-        lastUpdated: new Date(),
-        messages: []
-      }],
+      conversations: [],
       createdAt: new Date(),
       updatedAt: new Date(),
       order: Date.now()  // Use timestamp for default order
@@ -148,23 +164,20 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return [...prev, newProject];
       });
     setActiveProjectId(projectId);
-    setActiveConversationId(conversationId);
+    // Don't auto-select a conversation when creating a project
     return projectId;
   }, [activeProjectId, projects]);
 
   const deleteProject = useCallback((id: string) => {
-    setProjects(current => {
-      const updatedProjects = current.filter(p => p.id !== id);
-      return updatedProjects;
-    });
-
-    if (activeProjectId === id) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      setActiveProjectId(prev => {
-        const newActiveId = projects.find(p => p.id !== id)?.id ?? null;
-        setActiveConversationId(null);
-        return newActiveId;
-      });
+    // First find the new project and its first conversation if any
+    const newProject = projects.find(p => p.id !== id);
+    
+    setProjects(current => current.filter(p => p.id !== id));
+    
+    if (activeProjectId === id && newProject) {
+      const firstConversationId = newProject.conversations[0]?.id ?? null;
+      setActiveProjectId(newProject.id);
+      setActiveConversationId(firstConversationId);
     }
   }, [activeProjectId, projects]);
 
@@ -176,13 +189,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return {
           ...p,
           conversations: [
-            ...p.conversations,
             {
               id: conversationId,
-              name: name || `Conversation ${p.conversations.length + 1}`,
+              name: name || `New Chat`,
               lastUpdated: new Date(),
+              createdAt: new Date(),
               messages: []
-            }
+            },
+            ...p.conversations
           ],
           updatedAt: new Date()
         };

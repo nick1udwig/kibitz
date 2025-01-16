@@ -428,8 +428,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         currentMessages.push(processedResponse);
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-        // If this is a new conversation, generate a title
-        if (activeConversation && currentMessages.length === 2) {
+          // Only rename if this is a new chat getting its first messages
+          if (activeConversation && currentMessages.length === 2 && activeConversation.name === 'New Chat') {
           const userFirstMessage = currentMessages[0].content;
           const assistantFirstMessage = currentMessages[1].content;
 
@@ -438,9 +438,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             max_tokens: 20,
             messages: [{
               role: "user",
-              content: `User: ${JSON.stringify(userFirstMessage)}\nAssistant: ${Array.isArray(assistantFirstMessage)
-                ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-                : assistantFirstMessage}\n\n# Based on the above chat exchange, generate a very brief (2-5 words) title that captures the main topic or purpose.`
+              content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
+
+User message: ${JSON.stringify(userFirstMessage)}
+Assistant response: ${Array.isArray(assistantFirstMessage)
+  ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+  : assistantFirstMessage}
+
+Format: Only output the title, no quotes or explanation
+Example good titles:
+- React Router Setup
+- Python Script Optimization
+- Database Schema Design
+- ML Model Training
+- Docker Container Networking`
             }]
           });
 
@@ -747,7 +758,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   if (!activeConversation) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Spinner />
+        <div className="text-center">
+          <p className="mb-4 text-muted-foreground">Select a conversation or start a new chat</p>
+        </div>
       </div>
     );
   }

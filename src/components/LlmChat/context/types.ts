@@ -15,6 +15,7 @@ export interface ConversationBrief {
   name: string;
   lastUpdated: Date;
   messages: Message[];
+  createdAt?: Date;  // Optional to maintain compatibility with existing data
 }
 
 export interface Project {
