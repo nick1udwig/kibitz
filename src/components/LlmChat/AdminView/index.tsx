@@ -22,11 +22,31 @@ export const AdminView = () => {
 
   useEffect(() => {
     if (!activeProject) return;
-    handleSettingsChange({
-      mcpServers: servers.filter(s => (
-        activeProject.settings.mcpServers.find(mcpS => mcpS.id === s.id)
-      )) as McpServer[]
-    })
+    
+    // Get filtered servers based on project settings
+    const newMcpServers = servers.filter(s => (
+      activeProject.settings.mcpServers.find(mcpS => mcpS.id === s.id)
+    )).map(server => ({
+      id: server.id,
+      name: server.name,
+      uri: server.uri
+    })) as McpServer[];  // Only keep persistent properties
+
+    // Deep compare current and new server states, excluding status and connection details
+    const currentServers = activeProject.settings.mcpServers.map(server => ({
+      id: server.id,
+      name: server.name,
+      uri: server.uri
+    }));
+    
+    const hasChanged = JSON.stringify(currentServers) !== JSON.stringify(newMcpServers);
+    
+    // Only update if persistent properties have changed
+    if (hasChanged) {
+      handleSettingsChange({
+        mcpServers: newMcpServers
+      });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId, servers]);
 
