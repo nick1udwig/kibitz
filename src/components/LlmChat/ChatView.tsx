@@ -151,17 +151,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const handleSendMessage = async () => {
     shouldCancelRef.current = false;
     if ((!inputMessage.trim() && currentFileContent.length === 0) || !activeProject || !activeConversationId) return;
-    if (!activeProject.settings.apiKey) {
-      setError('Please set your API key in settings');
+    
+    // Reset any previous error and show loading state
+    setError(null);
+    setIsLoading(true);
+
+    if (!activeProject.settings.apiKey?.trim()) {
+      setError('API key not found. Please set your Anthropic API key in the Settings panel (gear icon).');
+      setIsLoading(false);
       return;
     }
-
     // Reset the textarea height immediately after sending
     if (inputRef.current) {
       inputRef.current.style.height = '2.5em';
     }
-    setIsLoading(true);
-    setError(null);
 
     try {
       const userMessageContent: MessageContent[] = currentFileContent.map(c =>
@@ -199,12 +202,14 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       const toolsCached = getUniqueTools(true);
       const tools = getUniqueTools(false);
 
-      const systemPromptContent = [
+      // Only include system content if there is a non-empty system prompt
+      const systemPrompt = activeProject.settings.systemPrompt?.trim();
+      const systemPromptContent = systemPrompt ? [
         {
           type: "text",
-          text: `${activeProject.settings.systemPrompt || ''}`,
+          text: systemPrompt,
         },
-      ] as TextBlockParam[];
+      ] as TextBlockParam[] : undefined;
 
       while (true) {
         const cachedApiMessages = currentMessages.map((m, index, array) =>
@@ -348,7 +353,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
           messages: apiMessagesToSend,
-          ...(systemPromptContent && {
+          ...(systemPromptContent && systemPromptContent.length > 0 && {
             system: systemPromptContent
           }),
           ...(tools.length > 0 && {
@@ -784,7 +789,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           <Textarea
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder="Type your message"
+            placeholder={!activeProject?.settings.apiKey?.trim() ? "Please set your API key in Settings first" : "Type your message"}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
                 e.preventDefault();
@@ -794,7 +799,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             ref={inputRef}
             className="flex-1"
             maxRows={8}
-            disabled={isLoading}
+            disabled={isLoading || !activeProject?.settings.apiKey?.trim()}
           />
           <Button
             onClick={isLoading ? cancelCurrentCall : handleSendMessage}
