@@ -196,6 +196,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ...(currentProject && {
           apiKey: currentProject.settings.apiKey,
           systemPrompt: currentProject.settings.systemPrompt,
+          mcpServers: currentProject.settings.mcpServers,
         }),
         ...settings,
       },
