@@ -193,7 +193,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       const anthropic = new Anthropic({
         apiKey: activeProject.settings.apiKey,
         dangerouslyAllowBrowser: true,
-        maxRetries: 11,
+        maxRetries: 12,
       });
 
       const savedToolResults = new Set<string>();
