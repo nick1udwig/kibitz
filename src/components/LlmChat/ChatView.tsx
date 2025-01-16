@@ -555,8 +555,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                 </div>
                 <div
                   className={`w-full max-w-full rounded-lg px-4 py-2 ${message.role === 'user'
-                      ? 'bg-accent !text-accent-foreground'
-                      : 'bg-muted text-foreground'
+                    ? 'bg-accent !text-accent-foreground'
+                    : 'bg-muted text-foreground'
                     }`}
                 >
                   <ReactMarkdown
@@ -632,8 +632,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             >
               <div
                 className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
-                    ? 'bg-accent text-accent-foreground'
-                    : 'bg-muted text-foreground'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'bg-muted text-foreground'
                   }`}
               >
                 <Image
@@ -654,8 +654,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             >
               <div
                 className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
-                    ? 'bg-accent text-accent-foreground'
-                    : 'bg-muted text-foreground'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'bg-muted text-foreground'
                   }`}
               >
                 <embed
@@ -688,8 +688,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               <div
                 key={`message-${index}-content-${contentIndex}`}
                 className={`w-full rounded-lg px-4 py-2 relative group ${message.role === 'user'
-                    ? 'bg-accent text-accent-foreground'
-                    : 'bg-muted text-foreground'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'bg-muted text-foreground'
                   }`}
               >
                 <button
@@ -717,8 +717,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       >
         <div
           className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
-              ? 'bg-accent text-accent-foreground'
-              : 'bg-muted text-foreground'
+            ? 'bg-accent text-accent-foreground'
+            : 'bg-muted text-foreground'
             }`}
         >
           <ReactMarkdown
@@ -801,7 +801,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           <Textarea
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder={!activeProject?.settings.apiKey?.trim() ? "⚠️ Set your API key in Settings (gear icon) to start chatting" : "Type your message"}
+            placeholder={!activeProject?.settings.apiKey?.trim() ? "⚠️ Set your API key in Settings to start chatting" : "Type your message"}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
                 e.preventDefault();
