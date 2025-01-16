@@ -174,6 +174,9 @@ export const ConversationSidebar = ({
                   className="p-1 h-6 w-6"
                   onClick={(e) => {
                     e.stopPropagation();
+                    // First switch to the project
+                    setActiveProject(project.id);
+                    // Then create new conversation (which will automatically set it as active)
                     createConversation(project.id);
                     // Ensure project is expanded when creating a new chat
                     setExpandedProjects(prev => {
