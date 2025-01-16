@@ -102,14 +102,14 @@ export const ConversationSidebar = ({
 
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 
+        fixed inset-y-0 left-0
         md:sticky md:top-0 md:left-auto
         w-[280px] max-w-[85vw]
-        bg-background border-r 
+        bg-background border-r
         transition-transform duration-200 ease-in-out
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
         md:translate-x-0
-        z-40 
+        z-40
         flex flex-col
         h-screen
       `}>
@@ -141,14 +141,22 @@ export const ConversationSidebar = ({
             <div key={project.id} className={`mb-2 ${index > 0 ? 'mt-2 pt-2 border-t border-accent/35' : ''}`}>
               {/* Project header */}
               <div
-                className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
+                className={`p-2 rounded-lg flex items-center gap-2 transition-colors
                 ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
                 text-base font-medium`}
-                onClick={() => handleProjectSelect(project.id, true)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleProjectExpanded(project.id);
+                  // Only set the active project if it's not already active
+                  if (project.id !== activeProjectId) {
+                    handleProjectSelect(project.id, true);
+                  }
+                }}
               >
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    e.preventDefault();
                     toggleProjectExpanded(project.id);
                   }}
                   className="p-1 hover:bg-muted-foreground/10 rounded"
@@ -160,6 +168,24 @@ export const ConversationSidebar = ({
                   )}
                 </button>
                 <span className="truncate flex-1">{project.name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="p-1 h-6 w-6"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    createConversation(project.id);
+                    // Ensure project is expanded when creating a new chat
+                    setExpandedProjects(prev => {
+                      const newExpanded = new Set(prev);
+                      newExpanded.add(project.id);
+                      return newExpanded;
+                    });
+                  }}
+                  title="New chat"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
