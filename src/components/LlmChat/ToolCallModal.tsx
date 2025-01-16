@@ -18,7 +18,7 @@ export const ToolCallModal = ({ toolCall, onClose }: ToolCallModalProps) => {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="w-[95vw] max-w-[95vw] sm:w-[90vw] md:w-[85vw] lg:w-[80vw] max-h-[90vh] flex flex-col">
+      <DialogContent>
         <DialogHeader className="mb-4 shrink-0">
           <div className="flex justify-between items-center gap-4">
             <DialogTitle className="truncate">{`Tool Call: ${toolCall.name}`}</DialogTitle>
