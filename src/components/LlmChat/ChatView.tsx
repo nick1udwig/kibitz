@@ -571,6 +571,14 @@ Example good titles:
               className={`flex max-w-full pt-6`}
             >
               <div className="relative group w-full max-w-full overflow-hidden">
+                {!content.text.match(/```[\s\S]*```/) && (
+                  <div className="absolute right-2 top-0 z-10">
+                    <CopyButton
+                      text={content.text.trim()}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    />
+                  </div>
+                )}
                 <div
                   className={`w-full max-w-full rounded-lg px-4 py-2 ${message.role === 'user'
                     ? 'bg-accent !text-accent-foreground'
