@@ -18,7 +18,7 @@ export const ToolCallModal = ({ toolCall, onClose }: ToolCallModalProps) => {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="w-[95vw] max-w-[95vw] sm:w-[90vw] md:w-[85vw] lg:w-[80vw] max-h-[90vh] flex flex-col">
         <DialogHeader className="mb-4 shrink-0">
           <div className="flex justify-between items-center gap-4">
             <DialogTitle className="truncate">{`Tool Call: ${toolCall.name}`}</DialogTitle>
@@ -32,7 +32,10 @@ export const ToolCallModal = ({ toolCall, onClose }: ToolCallModalProps) => {
           </div>
         </DialogHeader>
 
-        <div className={cn("space-y-4 overflow-y-auto flex-grow", isExpanded ? "pr-2" : "")}>
+        <div className={cn(
+          "space-y-4 overflow-hidden flex-grow",
+          isExpanded ? "overflow-y-auto pr-2" : "max-h-[240px] sm:max-h-[280px]"
+        )}>
           <div>
             <h4 className="font-medium mb-2">Input:</h4>
             <div className="relative">
