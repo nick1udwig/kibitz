@@ -41,14 +41,11 @@ export const ConversationSidebar = ({
   // Ensure active project is always expanded
   useEffect(() => {
     if (activeProjectId) {
-      expandProject(activeProjectId);
-    }
-  }, [activeProjectId]);
-
-  // Ensure active project is always expanded
-  useEffect(() => {
-    if (activeProjectId) {
-      expandProject(activeProjectId);
+      setExpandedProjects(prev => {
+        const newExpanded = new Set(prev);
+        newExpanded.add(activeProjectId);
+        return newExpanded;
+      });
     }
   }, [activeProjectId]);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
@@ -76,9 +73,11 @@ export const ConversationSidebar = ({
     });
   };
 
-  const handleProjectSelect = (projectId: string) => {
+  const handleProjectSelect = (projectId: string, shouldCreateChat: boolean = false) => {
     setActiveProject(projectId);
-    expandProject(projectId);
+    if (shouldCreateChat && projects.find(p => p.id === projectId)?.conversations.length === 0) {
+      createConversation(projectId);
+    }
   };
 
   const handleDelete = () => {
@@ -153,7 +152,7 @@ export const ConversationSidebar = ({
                 className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
                 ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
                 text-sm`}
-                onClick={() => handleProjectSelect(project.id)}
+                onClick={() => handleProjectSelect(project.id, true)}
               >
                 <button
                   onClick={(e) => {
