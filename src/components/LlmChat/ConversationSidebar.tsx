@@ -195,8 +195,13 @@ export const ConversationSidebar = ({
                     <PlusCircle className="w-4 h-4 mr-2" />
                     New Chat
                   </Button>
-                {/* Conversations are already newest-first */}
-                {project.conversations.map(convo => (
+                {project.conversations
+                  .sort((a, b) => {
+                    const dateA = a.createdAt || a.lastUpdated;
+                    const dateB = b.createdAt || b.lastUpdated;
+                    return dateB.getTime() - dateA.getTime();
+                  })
+                  .map(convo => (
                     <div
                       key={convo.id}
                       className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors

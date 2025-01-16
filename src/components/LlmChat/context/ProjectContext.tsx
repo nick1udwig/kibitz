@@ -196,6 +196,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
               id: conversationId,
               name: name || `New Chat`,
               lastUpdated: new Date(),
+              createdAt: new Date(),
               messages: []
             },
             ...p.conversations
