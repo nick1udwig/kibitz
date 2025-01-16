@@ -74,6 +74,7 @@ export const AdminView = () => {
                   apiKey: e.target.value.trim()
                 })}
                 placeholder="Enter your Anthropic API key"
+                className={!activeProject.settings.apiKey?.trim() ? "border-red-500 dark:border-red-400 placeholder:text-red-500 dark:placeholder:text-red-400" : ""}
               />
             </div>
 
