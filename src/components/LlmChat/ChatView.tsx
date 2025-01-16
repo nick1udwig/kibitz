@@ -125,11 +125,15 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   };
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
+    // Find the current conversation to preserve its properties
+    const currentConversation = activeProject?.conversations.find(c => c.id === conversationId);
+    if (!currentConversation) return;
+
     updateProjectSettings(projectId, {
       conversations: activeProject!.conversations.map(conv =>
         conv.id === conversationId
           ? {
-            ...conv,
+            ...currentConversation, // Preserve all existing properties including name
             messages: newMessages,
             lastUpdated: new Date()
           }
@@ -428,7 +432,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
           // Only rename if this is a new chat getting its first messages
-          if (activeConversation && currentMessages.length === 2 && activeConversation.name === 'New Chat') {
+          // Get the current conversation state directly from projects
+          const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+          if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
+          // Double check the name hasn't changed while we were processing
+          const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+          if (latestConversation?.name !== '(New Chat)') {
+            console.log('Title already changed, skipping generation');
+            return;
+          }
+
           const userFirstMessage = currentMessages[0].content;
           const assistantFirstMessage = currentMessages[1].content;
 
@@ -554,15 +567,17 @@ Example good titles:
           return (
             <div
               key={`text-${index}-${contentIndex}`}
-              className={`flex max-w-full`}
+              className={`flex max-w-full pt-6`}
             >
               <div className="relative group w-full max-w-full overflow-hidden">
-                <div className="absolute right-2 top-2 z-10">
-                  <CopyButton
-                    text={content.text.trim()}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  />
-                </div>
+                {!content.text.match(/```[\s\S]*```/) && (
+                  <div className="absolute right-2 top-0 z-10">
+                    <CopyButton
+                      text={content.text.trim()}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    />
+                  </div>
+                )}
                 <div
                   className={`w-full max-w-full rounded-lg px-4 py-2 ${message.role === 'user'
                     ? 'bg-accent !text-accent-foreground'
@@ -810,6 +825,11 @@ Example good titles:
             <FileUpload
               onFileSelect={(content) => {
                 setCurrentFileContent(prev => [...prev, { ...content }]);
+              }}
+              onUploadComplete={() => {
+                if (inputRef.current) {
+                  inputRef.current.focus();
+                }
               }}
             />
           </div>

@@ -76,7 +76,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
           // Create default project with an initial conversation
           const defaultConversation = {
             id: generateId(),
-            name: 'New Chat',
+            name: '(New Chat)',
             lastUpdated: new Date(),
             messages: [],
             createdAt: new Date()
@@ -125,9 +125,26 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [projects, activeProjectId, activeConversationId]);
 
   const updateProjectSettings = useCallback((id: string, updates: ProjectUpdates) => {
-    setProjects(current =>
-      current.map(p => {
+    setProjects(current => {
+      const currentProject = current.find(p => p.id === id);
+      if (!currentProject) return current;
+
+      return current.map(p => {
         if (p.id !== id) return p;
+
+        // If we're updating conversations, preserve names of existing conversations
+        let updatedConversations = p.conversations;
+        if (updates.conversations) {
+          updatedConversations = updates.conversations.map(newConv => {
+            const existingConv = currentProject.conversations.find(c => c.id === newConv.id);
+            // If conversation exists and was previously renamed (not New Chat), keep its name
+            if (existingConv && existingConv.name !== '(New Chat)') {
+              return { ...newConv, name: existingConv.name };
+            }
+            return newConv;
+          });
+        }
+
         return {
           ...p,
           settings: updates.settings ? {
@@ -137,19 +154,19 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
               ? updates.settings.mcpServers
               : p.settings.mcpServers
           } : p.settings,
-        conversations: updates.conversations !== undefined ? updates.conversations : p.conversations,
+          conversations: updatedConversations,
           updatedAt: new Date()
         };
-      })
-    );
+      });
+    });
   }, []);
 
   const createInitialChat = useCallback((projectId: string) => {
     const conversationId = generateId();
-    const initialChat = {
-      id: conversationId,
-      name: 'New Chat',
-      lastUpdated: new Date(),
+          const initialChat = {
+            id: conversationId,
+            name: '(New Chat)',
+            lastUpdated: new Date(),
       messages: [],
       createdAt: new Date()
     };
@@ -225,7 +242,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
           conversations: [
             {
               id: conversationId,
-              name: name || `New Chat`,
+              name: name || `(New Chat)`,
               lastUpdated: new Date(),
               createdAt: new Date(),
               messages: []
@@ -252,7 +269,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (updatedConversations.length === 0) {
           const newChat = {
             id: newChatId, // Use the pre-generated ID
-            name: 'New Chat',
+            name: '(New Chat)',
             lastUpdated: new Date(),
             messages: [],
             createdAt: new Date()
@@ -286,6 +303,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [activeConversationId, projects]);
 
   const renameConversation = useCallback((projectId: string, conversationId: string, newName: string) => {
+    // Don't allow renaming to "(New Chat)" after it's been changed
+    if (newName === '(New Chat)') {
+      console.log('Prevented rename to (New Chat)');
+      return;
+    }
+    
+    console.log(`Renaming conversation ${conversationId} to "${newName}"`);
+    
     setProjects(current =>
       current.map(p => {
         if (p.id !== projectId) return p;
