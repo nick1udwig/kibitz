@@ -187,7 +187,7 @@ export const ConversationSidebar = ({
                   }}
                   title="New chat"
                 >
-                  <PlusCircle className="w-4 h-4" />
+                  <PlusCircle className="w-4 h-4 transition-transform duration-200 hover:scale-125" />
                 </Button>
                 <Button
                   variant="ghost"
