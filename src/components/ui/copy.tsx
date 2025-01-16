@@ -1,14 +1,12 @@
 import { useState } from 'react';
-import { Copy as CopyIcon, Check as CheckIcon } from 'lucide-react';
-import { Button } from './button';
+import { ClipboardIcon, CheckIcon } from 'lucide-react';
 
 interface CopyButtonProps {
   text: string;
-  title?: string;
   className?: string;
 }
 
-export const CopyButton = ({ text, title = 'Copy', className = '' }: CopyButtonProps) => {
+export const CopyButton = ({ text, className = '' }: CopyButtonProps) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -22,18 +20,16 @@ export const CopyButton = ({ text, title = 'Copy', className = '' }: CopyButtonP
   };
 
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={`h-6 w-6 p-0 hover:bg-background ${className}`}
+    <button
       onClick={handleCopy}
-      title={title}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm hover:bg-kinode-orange/10 ${className}`}
     >
       {copied ? (
-        <CheckIcon className="h-3 w-3" />
+        <CheckIcon className="h-4 w-4" />
       ) : (
-        <CopyIcon className="h-3 w-3" />
+        <ClipboardIcon className="h-4 w-4" />
       )}
-    </Button>
+      {copied ? "Copied" : "Copy"}
+    </button>
   );
 };
