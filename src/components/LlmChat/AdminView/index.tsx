@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useProjects } from '../context/ProjectContext';
 import { ProjectSettings } from '../context/types';
 import { McpServer } from '../types/mcp';
@@ -15,6 +16,7 @@ import { useMcp } from '../context/McpContext';
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings } = useProjects();
   const { servers } = useMcp();
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -126,31 +128,51 @@ export const AdminView = () => {
           <h3 className="text-lg font-medium mb-4">Advanced Settings</h3>
           <Button
             variant="destructive"
-            onClick={async () => {
-              // Clear all IndexedDB databases
-              const clearAllIndexedDB = async () => {
-                const databases = await window.indexedDB.databases();
-                return Promise.all(
-                  databases.map(db =>
-                    new Promise<void>((resolve, reject) => {
-                      const request = window.indexedDB.deleteDatabase(db.name!);
-                      request.onsuccess = () => resolve();
-                      request.onerror = () => reject(request.error);
-                    })
-                  )
-                );
-              };
-
-              try {
-                await clearAllIndexedDB();
-                window.location.reload();
-              } catch (error) {
-                console.error('Error clearing databases:', error);
-              }
-            }}
+            onClick={() => setShowResetConfirm(true)}
           >
             Reset state
           </Button>
+
+          {/* Reset state confirmation dialog */}
+          <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset Application State</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to reset the application state? This will delete all projects, conversations, and settings. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    // Clear all IndexedDB databases
+                    const clearAllIndexedDB = async () => {
+                      const databases = await window.indexedDB.databases();
+                      return Promise.all(
+                        databases.map(db =>
+                          new Promise<void>((resolve, reject) => {
+                            const request = window.indexedDB.deleteDatabase(db.name!);
+                            request.onsuccess = () => resolve();
+                            request.onerror = () => reject(request.error);
+                          })
+                        )
+                      );
+                    };
+
+                    try {
+                      await clearAllIndexedDB();
+                      window.location.reload();
+                    } catch (error) {
+                      console.error('Error clearing databases:', error);
+                    }
+                  }}
+                >
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
     </div>
