@@ -126,11 +126,15 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   };
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
+    // Find the current conversation to preserve its properties
+    const currentConversation = activeProject?.conversations.find(c => c.id === conversationId);
+    if (!currentConversation) return;
+
     updateProjectSettings(projectId, {
       conversations: activeProject!.conversations.map(conv =>
         conv.id === conversationId
           ? {
-            ...conv,
+            ...currentConversation, // Preserve all existing properties including name
             messages: newMessages,
             lastUpdated: new Date()
           }
@@ -429,7 +433,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
           // Only rename if this is a new chat getting its first messages
-          if (activeConversation && currentMessages.length === 2 && activeConversation.name === 'New Chat') {
+          // Get the current conversation state directly from projects
+          const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+          if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
+          // Double check the name hasn't changed while we were processing
+          const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+          if (latestConversation?.name !== '(New Chat)') {
+            console.log('Title already changed, skipping generation');
+            return;
+          }
+
           const userFirstMessage = currentMessages[0].content;
           const assistantFirstMessage = currentMessages[1].content;
 
