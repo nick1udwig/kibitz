@@ -674,7 +674,7 @@ Example good titles:
                                 className="opacity-0 group-hover/code:opacity-100 transition-opacity"
                               />
                             </div>
-                            <pre className="overflow-x-auto max-w-full whitespace-pre" {...props}>{children}</pre>
+                            <pre className="overflow-x-scroll max-w-full whitespace-pre" {...props}>{children}</pre>
                           </div>
                         );
                       },
