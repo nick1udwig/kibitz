@@ -31,49 +31,25 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     }))
   );
   const connectionsRef = useRef<Map<string, WebSocket>>(new Map());
-  const reconnectTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const lastReconnectAttemptRef = useRef<Map<string, number>>(new Map());
+  const reconnectAttemptsRef = useRef<Map<string, number>>(new Map());
 
-  const cleanupServer = useCallback((serverId: string) => {
-    // Clear any existing reconnection timeout
-    const existingTimeout = reconnectTimeoutsRef.current.get(serverId);
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-      reconnectTimeoutsRef.current.delete(serverId);
-    }
-
-    // Close WebSocket connection
-    const ws = connectionsRef.current.get(serverId);
-    if (ws) {
-      ws.close();
-      connectionsRef.current.delete(serverId);
-    }
-  }, []);
-
-  // use a ref to avoid circular dependencies between scheduleReconnect & connectToServer
-  const connectToServerRef = useRef<(server: McpServer) => Promise<McpServerConnection>>(null!);
-
-  const scheduleReconnect = useCallback((server: McpServer, delay: number = 5000) => {
-    // Clear any existing reconnection timeout
-    const existingTimeout = reconnectTimeoutsRef.current.get(server.id);
-    if (existingTimeout) {
-      clearTimeout(existingTimeout);
-    }
-
-    // Schedule new reconnection attempt
-    const timeout = setTimeout(() => {
-      connectToServerRef.current?.(server).catch(error => {
-        console.error(`Reconnection failed for ${server.name}:`, error);
-        // If reconnection fails, schedule another attempt with exponential backoff
-        scheduleReconnect(server, Math.min(delay * 2, 30000)); // Cap at 30 seconds
-      });
-    }, delay);
-
-    reconnectTimeoutsRef.current.set(server.id, timeout);
+  const getBackoffTime = useCallback((serverId: string) => {
+    const attempts = reconnectAttemptsRef.current.get(serverId) || 0;
+    // Base delay is 1 second, doubles each attempt, caps at 30 seconds
+    return Math.min(1000 * Math.pow(2, attempts), 30000);
   }, []);
 
   const connectToServer = useCallback(async (server: McpServer): Promise<McpServerConnection> => {
+    const now = Date.now();
+    const lastAttempt = lastReconnectAttemptRef.current.get(server.id) || 0;
+    const backoff = getBackoffTime(server.id);
+    if (now - lastAttempt < backoff) {
+      throw new Error('Too many connection attempts');
+    }
+    lastReconnectAttemptRef.current.set(server.id, now);
+
     try {
-      // Update server status to connecting
       setServers(current =>
         current.map(s => s.id === server.id
           ? { ...s, status: 'connecting', error: undefined }
@@ -87,12 +63,11 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
         const timeout = setTimeout(() => {
           ws.close();
           reject(new Error('Connection timeout'));
-        }, 10000); // 10 second connection timeout
+        }, 10000);
 
         ws.onopen = () => {
           clearTimeout(timeout);
           connectionsRef.current.set(server.id, ws);
-
           ws.send(JSON.stringify({
             jsonrpc: '2.0',
             method: 'initialize',
@@ -107,49 +82,44 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
         ws.onclose = () => {
           clearTimeout(timeout);
-          cleanupServer(server.id);
-
-          // Update server status to disconnected
-          setServers(current =>
-            current.map(s => s.id === server.id
-              ? { ...s, status: 'disconnected', error: 'Connection closed' }
-              : s
-            )
-          );
-
-          // Schedule reconnection attempt
-          scheduleReconnect(server);
+          const existing = connectionsRef.current.get(server.id);
+          if (existing === ws) {
+            connectionsRef.current.delete(server.id);
+            // Increment attempt counter on disconnect
+            const attempts = (reconnectAttemptsRef.current.get(server.id) || 0) + 1;
+            reconnectAttemptsRef.current.set(server.id, attempts);
+            setServers(current =>
+              current.map(s => s.id === server.id
+                ? { ...s, status: 'disconnected', error: undefined }
+                : s
+              )
+            );
+          }
         };
 
         ws.onerror = (error) => {
           clearTimeout(timeout);
-          console.log(`WebSocket error (trying to reconnect...): ${error}`);
-          cleanupServer(server.id);
-
-          // Update server status to error
-          setServers(current =>
-            current.map(s => s.id === server.id
-              ? { ...s, status: 'error', error: 'Connection error' }
-              : s
-            )
-          );
-
-          // Schedule reconnection attempt
-          scheduleReconnect(server, 0);
-
+          const existing = connectionsRef.current.get(server.id);
+          if (existing === ws) {
+            connectionsRef.current.delete(server.id);
+            setServers(current =>
+              current.map(s => s.id === server.id
+                ? { ...s, status: 'error', error: undefined }
+                : s
+              )
+            );
+          }
           reject(error);
         };
 
         ws.onmessage = (event) => {
           try {
             const response = JSON.parse(event.data);
-
             if (response.id === 1) {
               ws.send(JSON.stringify({
                 jsonrpc: '2.0',
                 method: 'notifications/initialized',
               }));
-
               ws.send(JSON.stringify({
                 jsonrpc: '2.0',
                 method: 'tools/list',
@@ -157,9 +127,10 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
               }));
             } else if (response.id === 2) {
               if (response['error']) {
-                console.log(`Received unexpected WS-MCP message: ${response.results}`);
                 return server;
               }
+              // Reset attempt counter on successful connection
+              reconnectAttemptsRef.current.delete(server.id);
               const tools: ATool[] = response.result.tools.map((tool: Tool) => ({
                 ...tool,
                 input_schema: tool.inputSchema,
@@ -175,31 +146,34 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
               setServers(current =>
                 current.map(s => s.id === server.id ? connectedServer : s)
               );
-
               resolve(connectedServer);
             }
-          } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
+          } catch {
             return {
               ...server,
               status: 'error',
-              error: error instanceof Error ? error.message : 'Error parsing WebSocket message'
+              error: undefined
             };
           }
         };
       });
-    } catch (error) {
-      console.error(`Failed to connect to server ${server.name}:`, error);
+    } catch {
       return {
         ...server,
         status: 'error',
-        error: error instanceof Error ? error.message : 'Failed to connect'
+        error: undefined
       };
     }
-  }, [cleanupServer, scheduleReconnect]);
+  }, []);
 
   const addServer = useCallback(async (server: McpServer) => {
-    setServers(current => [...current, { ...server, status: 'connecting', error: undefined }]);
+    setServers(current => {
+      const exists = current.some(s => s.id === server.id);
+      if (exists) {
+        return current.map(s => s.id === server.id ? { ...server, status: 'connecting', error: undefined } : s);
+      }
+      return [...current, { ...server, status: 'connecting', error: undefined }];
+    });
 
     try {
       const connectedServer = await connectToServer(server);
@@ -218,52 +192,14 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     }
   }, [connectToServer, servers]);
 
-
-  // Try to restore server state from IndexedDB
-  useEffect(() => {
-    const initializeServers = async () => {
-      try {
-        const savedServers = await loadMcpServers();
-        console.log(`loading servers from IndexedDB: ${JSON.stringify(savedServers)}`);
-
-        for (const server of savedServers) {
-          try {
-            const newServer = await addServer(server);
-            if (newServer) {
-              projects.forEach(project => {
-                updateProjectSettings(project.id, { settings: {
-                  ...project.settings,
-                  mcpServers: project.settings.mcpServers.map(s =>
-                    s.id === newServer.id ? { ...s, status: newServer.status, error: undefined } : s
-                  ),
-                }})
-              });
-            }
-          } catch (error) {
-            console.error(`Initial connection failed for ${server.name}:`, error);
-          }
-        }
-      } catch (error) {
-        console.error('Error initializing MCP servers:', error);
-      }
-    };
-
-    initializeServers();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Save server state to IndexedDB
-  useEffect(() => {
-    saveMcpServers(servers).catch(error => {
-      console.error('Error saving MCP servers:', error);
-    });
-  }, [servers]);
-
-
   const removeServer = useCallback((serverId: string) => {
-    cleanupServer(serverId);
+    const ws = connectionsRef.current.get(serverId);
+    if (ws) {
+      ws.close();
+      connectionsRef.current.delete(serverId);
+    }
     setServers(current => current.filter(s => s.id !== serverId));
-  }, [cleanupServer]);
+  }, []);
 
   const reconnectServer = useCallback(async (serverId: string) => {
     const server = servers.find(s => s.id === serverId);
@@ -291,7 +227,7 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   const attemptLocalMcpConnection = useCallback(async () => {
     const id = 'localhost-mcp';
     const server: McpServer = {
-      id: id,
+      id,
       name: 'Local MCP',
       uri: 'ws://localhost:10125',
       status: 'disconnected',
@@ -305,7 +241,14 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     try {
       const connectedServer = await connectToServer(server);
       if (connectedServer.status === 'connected') {
-        setServers(current => [...current, connectedServer]);
+        // Only add if not already in the list
+        setServers(current => {
+          const exists = current.some(s => s.id === id);
+          if (exists) {
+            return current.map(s => s.id === id ? connectedServer : s);
+          }
+          return [...current, connectedServer];
+        });
         return connectedServer;
       }
       return null;
@@ -315,33 +258,47 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     }
   }, [connectToServer, servers]);
 
+  // Load initial servers from IndexedDB
   useEffect(() => {
-    if (projects.length == 0) {
-      return;
-    }
-    const project = projects[projects.length - 1]
-    if (project.settings.mcpServers.length > 0) {
-      return;
-    }
-    const createdAt = project.createdAt;
-    const updatedAt = project.updatedAt;
-    const now = new Date;
-    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
-    if (!(createdAt >= oneMinuteAgo && createdAt <= now) || updatedAt > createdAt) {
-      return;
-    }
-
-    attemptLocalMcpConnection().then(server => {
-      if (server) {
-        updateProjectSettings(project.id, {
-          settings: {
-            ...project.settings,
-            mcpServers: [...project.settings.mcpServers, server]
-          }
-        });
+    const initializeServers = async () => {
+      try {
+        const savedServers = await loadMcpServers();
+        for (const server of savedServers) {
+          await addServer(server).catch(console.error);
+        }
+      } catch (error) {
+        console.error('Error initializing MCP servers:', error);
       }
-    });
-  }, [projects, attemptLocalMcpConnection, updateProjectSettings]);
+    };
+
+    initializeServers();
+  }, [addServer]);
+
+  // Save servers to IndexedDB when they change
+  useEffect(() => {
+    saveMcpServers(servers).catch(console.error);
+  }, [servers]);
+
+  // Connection checker that runs every 2 seconds with backoff
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      servers.forEach(server => {
+        const ws = connectionsRef.current.get(server.id);
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          const lastAttempt = lastReconnectAttemptRef.current.get(server.id) || 0;
+          const timeSinceLastAttempt = now - lastAttempt;
+          // Only attempt reconnection if at least 5 seconds have passed
+          if (timeSinceLastAttempt >= 5000) {
+            lastReconnectAttemptRef.current.set(server.id, now);
+            reconnectServer(server.id).catch(console.error);
+          }
+        }
+      });
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [servers, reconnectServer]);
 
   const value = {
     servers,
