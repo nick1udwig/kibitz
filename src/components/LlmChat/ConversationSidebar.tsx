@@ -65,12 +65,36 @@ export const ConversationSidebar = ({
     });
   };
 
+  // Keep track of last active conversation for each project
+  const [lastActiveConversations] = useState<Record<string, string>>({});
+  
   const handleProjectSelect = (projectId: string, shouldCreateChat: boolean = false) => {
-    setActiveProject(projectId);
-    if (shouldCreateChat && projects.find(p => p.id === projectId)?.conversations.length === 0) {
+    const project = projects.find(p => p.id === projectId);
+    
+    if (shouldCreateChat && project?.conversations.length === 0) {
       createConversation(projectId);
+    } else if (project?.conversations.length > 0) {
+      // Try to restore the last active conversation for this project
+      const lastActive = lastActiveConversations[projectId];
+      const conversationExists = lastActive && project.conversations.some(c => c.id === lastActive);
+      
+      if (conversationExists) {
+        setActiveConversation(lastActive);
+      } else {
+        // If no last active chat or it doesn't exist anymore, select the newest
+        setActiveConversation(project.conversations[0].id);
+      }
     }
+    
+    setActiveProject(projectId);
   };
+  
+  // Update last active conversation when it changes
+  useEffect(() => {
+    if (activeProjectId && activeConversationId) {
+      lastActiveConversations[activeProjectId] = activeConversationId;
+    }
+  }, [activeProjectId, activeConversationId]);
 
   const handleDelete = () => {
     if (!itemToDelete) return;
@@ -141,7 +165,7 @@ export const ConversationSidebar = ({
             <div key={project.id} className={`mb-2 ${index > 0 ? 'mt-2 pt-2 border-t border-accent/35' : ''}`}>
               {/* Project header */}
               <div
-                className={`p-2 rounded-lg flex items-center gap-2 transition-colors
+                className={`p-2 rounded-lg flex items-center gap-2 transition-colors cursor-pointer
                 ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
                 text-base font-medium`}
                 onClick={(e) => {
