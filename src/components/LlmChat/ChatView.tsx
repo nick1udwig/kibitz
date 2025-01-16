@@ -10,7 +10,6 @@ import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from './types';
-import { Spinner } from '@/components/ui/spinner';
 import { ToolCallModal } from './ToolCallModal';
 import { useProjects } from './context/ProjectContext';
 import { useFocusControl } from './context/useFocusControl';
@@ -111,7 +110,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         )
       )
       .flatMap(s => s.tools || [])
-      .forEach(tool => {
+      .forEach((tool: Tool) => {
         if (!toolMap.has(tool.name)) {
           toolMap.set(tool.name, {
             name: tool.name,
@@ -580,17 +579,20 @@ Example good titles:
                       ),
                       pre({ children, ...props }) {
                         // Extract text from the code block
-                        const getCodeText = (node: any): string => {
+          const getCodeText = (node: unknown): string => {
                           if (typeof node === 'string') return node;
                           if (!node) return '';
                           if (Array.isArray(node)) {
                             return node.map(getCodeText).join('\n');
                           }
-                          if (node.props?.className?.includes('language-')) {
-                            return getCodeText(node.props.children);
-                          }
-                          if (node.props?.children) {
-                            return getCodeText(node.props.children);
+                          if (typeof node === 'object' && node !== null && 'props' in node) {
+                            const element = node as { props?: { className?: string; children?: unknown } };
+                            if (element.props?.className?.includes('language-')) {
+                              return getCodeText(element.props.children);
+                            }
+                            if (element.props?.children) {
+                              return getCodeText(element.props.children);
+                            }
                           }
                           return '';
                         };

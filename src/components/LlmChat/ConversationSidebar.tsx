@@ -53,14 +53,6 @@ export const ConversationSidebar = ({
   const [renameItem, setRenameItem] = useState<{ type: 'project' | 'conversation', projectId: string, conversationId?: string, currentName: string } | null>(null);
   const [newName, setNewName] = useState('');
 
-  const expandProject = (projectId: string) => {
-    setExpandedProjects(prev => {
-      const newExpanded = new Set(prev);
-      newExpanded.add(projectId);
-      return newExpanded;
-    });
-  };
-
   const toggleProjectExpanded = (projectId: string) => {
     setExpandedProjects(prev => {
       const newExpanded = new Set(prev);
@@ -293,7 +285,7 @@ export const ConversationSidebar = ({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete} variant="default" autoFocus>
+              <AlertDialogAction onClick={handleDelete} className="bg-primary" autoFocus>
                 Delete
               </AlertDialogAction>
             </AlertDialogFooter>

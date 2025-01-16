@@ -139,7 +139,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const createProject = useCallback((name: string, settings?: Partial<ProjectSettings>) => {
     const currentProject = projects.find(p => p.id === activeProjectId);
     const projectId = generateId();
-    const conversationId = generateId();
     const newProject: Project = {
       id: projectId,
       name,
