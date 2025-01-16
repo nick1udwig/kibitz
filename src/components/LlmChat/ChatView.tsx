@@ -539,7 +539,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             return (
               <div
                 key={`text-${index}-${contentIndex}`}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} max-w-full`}
+                className={`flex max-w-full`}
               >
               <div className="relative group w-full max-w-full overflow-hidden">
               <div className="absolute right-2 top-2 z-10">
@@ -609,7 +609,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           return (
             <div
               key={`image-${index}-${contentIndex}`}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex`}
             >
               <div
                 className={`w-full rounded-lg px-4 py-2 ${
@@ -632,7 +632,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           return (
             <div
               key={`document-${index}-${contentIndex}`}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex`}
             >
               <div
                 className={`w-full rounded-lg px-4 py-2 ${
@@ -666,7 +666,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           return (
             <div
               key={`tool_use-${index}-${contentIndex}`}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex`}
             >
               <div
                 key={`message-${index}-content-${contentIndex}`}
@@ -697,7 +697,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     return (
       <div
         key={`string-${index}`}
-        className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+        className={`flex`}
       >
         <div
           className={`w-full rounded-lg px-4 py-2 ${
