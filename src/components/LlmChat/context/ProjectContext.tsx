@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
-import { loadState, saveState, migrateFromLocalStorage } from '../../../lib/db';
+import { loadState, saveState } from '../../../lib/db';
 
 const ProjectContext = createContext<ProjectState | null>(null);
 
@@ -60,13 +60,6 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const initializeData = async () => {
       try {
-        // Check if we need to migrate from localStorage
-        if (localStorage.getItem('chat_app_projects')) {
-          await migrateFromLocalStorage();
-          // Clear localStorage after successful migration
-          localStorage.removeItem('chat_app_projects');
-        }
-
         const state = await loadState();
         if (state.projects.length > 0) {
           setProjects(state.projects);

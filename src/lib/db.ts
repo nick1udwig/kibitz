@@ -3,7 +3,7 @@ import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 
 const DB_NAME = 'kibitz_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 interface DbState {
   projects: Project[];
@@ -71,6 +71,10 @@ const initDb = async (): Promise<KibitzDb> => {
             cursor.continue();
           }
         };
+      } else if (event.oldVersion < 3) {
+        // Move MCP servers to a separate object store
+        const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
+        mcpStore.createIndex('name', 'name');
       }
     };
   });
@@ -228,9 +232,6 @@ export const saveState = async (state: DbState): Promise<void> => {
 };
 
 // Sanitize MCP server data before storage by removing non-serializable properties
-const MCP_SERVERS_KEY = 'kibitz_mcp_servers';
-
-// Sanitize MCP server data before storage by removing non-serializable properties
 const sanitizeMcpServerForStorage = (server: McpServer): McpServer => {
   const sanitizedServer = JSON.parse(JSON.stringify({
     ...server,
@@ -242,83 +243,48 @@ const sanitizeMcpServerForStorage = (server: McpServer): McpServer => {
 };
 
 export const saveMcpServers = async (servers: McpServer[]): Promise<void> => {
-  try {
-    // Save sanitized servers
-    const sanitizedServers = servers.map(server => sanitizeMcpServerForStorage(server));
-    localStorage.setItem(MCP_SERVERS_KEY, JSON.stringify(sanitizedServers));
-    return Promise.resolve();
-  } catch (error) {
-    console.error('Error saving MCP servers:', error);
-    return Promise.reject(error);
-  }
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['mcpServers'], 'readwrite');
+    const store = transaction.objectStore('mcpServers');
+
+    // Clear existing servers
+    store.clear();
+
+    // Save all servers
+    servers.forEach(server => {
+      const sanitizedServer = sanitizeMcpServerForStorage(server);
+      store.add(sanitizedServer);
+    });
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
 };
 
 export const loadMcpServers = async (): Promise<McpServer[]> => {
-  try {
-    const serversData = localStorage.getItem(MCP_SERVERS_KEY);
-    if (!serversData) {
-      return [];
-    }
-    const servers = JSON.parse(serversData) as McpServer[];
-    return servers;
-  } catch (error) {
-    console.error('Error loading MCP servers:', error);
-    return [];
-  }
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const servers: McpServer[] = [];
+    const transaction = db.transaction(['mcpServers'], 'readonly');
+    const store = transaction.objectStore('mcpServers');
+
+    store.openCursor().onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor) {
+        servers.push(cursor.value);
+        cursor.continue();
+      }
+    };
+
+    transaction.oncomplete = () => resolve(servers);
+    transaction.onerror = () => reject(transaction.error);
+  });
 };
 
-// Migration utility
-export const migrateFromLocalStorage = async (): Promise<void> => {
-  // Load data from localStorage
-  const projectsData = localStorage.getItem('chat_app_projects');
-  const serversData = localStorage.getItem('mcp_servers');
-
-  if (projectsData) {
-    try {
-      const parsed = JSON.parse(projectsData);
-      const state: DbState = {
-        projects: parsed.projects.map((proj: Project, index: number) => ({
-          ...proj,
-          settings: {
-            ...proj.settings,
-            mcpServers: (proj.settings.mcpServers || []).map((server: McpServer) => ({
-              ...server,
-              status: 'disconnected'
-            }))
-          },
-          conversations: proj.conversations.map((conv: ConversationBrief & { messages: Message[] }) => ({
-            ...conv,
-            lastUpdated: new Date(conv.lastUpdated),
-            messages: conv.messages.map(msg => ({
-              ...msg,
-              timestamp: new Date(msg.timestamp)
-            }))
-          })),
-          createdAt: new Date(proj.createdAt),
-          updatedAt: new Date(proj.updatedAt),
-          order: typeof proj.order === 'number' ? proj.order : Date.now() + index // Add order field if missing
-        })),
-        activeProjectId: parsed.activeProjectId,
-        activeConversationId: parsed.activeConversationId
-      };
-
-      await saveState(state);
-    } catch (error) {
-      console.error('Error migrating projects data:', error);
-    }
-  }
-
-  if (serversData) {
-    try {
-      const servers = JSON.parse(serversData);
-      // Migrate from old localStorage key to new key
-      localStorage.setItem(MCP_SERVERS_KEY, JSON.stringify(servers));
-    } catch (error) {
-      console.error('Error migrating MCP servers data:', error);
-    }
-  }
-};
-
+// Deprecated - no longer needed since all data has been migrated to IndexedDB
 // Export utility function for JSON export
 export const exportToJson = async (): Promise<string> => {
   const state = await loadState();
