@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Maximize2, Minimize2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface ToolCallModalProps {
   toolCall: {
@@ -18,9 +19,9 @@ export const ToolCallModal = ({ toolCall, onClose }: ToolCallModalProps) => {
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent>
-        <DialogHeader>
-          <div className="flex justify-between items-center">
-            <DialogTitle>Tool Call: {toolCall.name}</DialogTitle>
+        <DialogHeader className="mb-4 shrink-0">
+          <div className="flex justify-between items-center gap-4">
+            <DialogTitle className="truncate">{`Tool Call: ${toolCall.name}`}</DialogTitle>
             <Button
               variant="ghost"
               size="icon"
@@ -30,27 +31,42 @@ export const ToolCallModal = ({ toolCall, onClose }: ToolCallModalProps) => {
             </Button>
           </div>
         </DialogHeader>
-        <div
-          className="space-y-4 transition-all duration-200"
-          style={isExpanded ? {
-            width: '80vw',
-            maxWidth: '1200px',
-            height: '70vh',
-            overflow: 'hidden'
-          } : undefined}
-        >
-          <div className={`h-full space-y-4 ${isExpanded ? 'overflow-y-auto pr-4' : ''}`}>
-            <div>
-              <h4 className="font-medium mb-2">Input:</h4>
-              <pre className="bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all">
+
+        <div className={cn(
+          "space-y-4 overflow-hidden flex-grow",
+          isExpanded ? "overflow-y-auto pr-2" : "max-h-[240px] sm:max-h-[280px]"
+        )}>
+          <div>
+            <h4 className="font-medium mb-2">Input:</h4>
+            <div className="relative">
+              <pre
+                className={cn(
+                  "bg-muted p-2 sm:p-4 rounded-md whitespace-pre-wrap break-all text-sm sm:text-base",
+                  !isExpanded && "max-h-[100px] sm:max-h-[120px] overflow-hidden"
+                )}
+              >
                 {JSON.stringify(toolCall.input, null, 2)}
               </pre>
+              {!isExpanded && (
+                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-muted to-transparent pointer-events-none" />
+              )}
             </div>
-            <div>
-              <h4 className="font-medium mb-2">Result:</h4>
-              <pre className="bg-muted p-4 rounded-md overflow-x-auto whitespace-pre-wrap break-all">
+          </div>
+
+          <div>
+            <h4 className="font-medium mb-2">Result:</h4>
+            <div className="relative">
+              <pre
+                className={cn(
+                  "bg-muted p-2 sm:p-4 rounded-md whitespace-pre-wrap break-all text-sm sm:text-base",
+                  !isExpanded && "max-h-[100px] sm:max-h-[120px] overflow-hidden"
+                )}
+              >
                 {toolCall.result || 'No result available'}
               </pre>
+              {!isExpanded && (
+                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-muted to-transparent pointer-events-none" />
+              )}
             </div>
           </div>
         </div>
