@@ -169,18 +169,15 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [activeProjectId, projects]);
 
   const deleteProject = useCallback((id: string) => {
-    setProjects(current => {
-      const updatedProjects = current.filter(p => p.id !== id);
-      return updatedProjects;
-    });
-
-    if (activeProjectId === id) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      setActiveProjectId(prev => {
-        const newActiveId = projects.find(p => p.id !== id)?.id ?? null;
-        setActiveConversationId(null);
-        return newActiveId;
-      });
+    // First find the new project and its first conversation if any
+    const newProject = projects.find(p => p.id !== id);
+    
+    setProjects(current => current.filter(p => p.id !== id));
+    
+    if (activeProjectId === id && newProject) {
+      const firstConversationId = newProject.conversations[0]?.id ?? null;
+      setActiveProjectId(newProject.id);
+      setActiveConversationId(firstConversationId);
     }
   }, [activeProjectId, projects]);
 
