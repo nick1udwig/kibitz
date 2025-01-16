@@ -73,7 +73,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             }
           }
         } else {
-          // Create default project without any conversations
+          // Create default project with an initial conversation
+          const defaultConversation = {
+            id: generateId(),
+            name: 'New Chat',
+            lastUpdated: new Date(),
+            messages: [],
+            createdAt: new Date()
+          };
           const defaultProject = {
             id: generateId(),
             name: 'Default Project',
@@ -81,13 +88,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
               ...DEFAULT_PROJECT_SETTINGS,
               mcpServers: []
             },
-            conversations: [],
+            conversations: [defaultConversation],
             createdAt: new Date(),
             updatedAt: new Date(),
             order: Date.now()
           };
           setProjects([defaultProject]);
           setActiveProjectId(defaultProject.id);
+          setActiveConversationId(defaultConversation.id);
         }
       } catch (error) {
         console.error('Error initializing data:', error);
@@ -136,10 +144,33 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     );
   }, []);
 
+  const createInitialChat = useCallback((projectId: string) => {
+    const conversationId = generateId();
+    const initialChat = {
+      id: conversationId,
+      name: 'New Chat',
+      lastUpdated: new Date(),
+      messages: [],
+      createdAt: new Date()
+    };
+
+    setProjects(current =>
+      current.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          conversations: [initialChat],
+          updatedAt: new Date()
+        };
+      })
+    );
+    setActiveConversationId(conversationId);
+    return conversationId;
+  }, []);
+
   const createProject = useCallback((name: string, settings?: Partial<ProjectSettings>) => {
     const currentProject = projects.find(p => p.id === activeProjectId);
     const projectId = generateId();
-    const conversationId = generateId();
     const newProject: Project = {
       id: projectId,
       name,
@@ -156,17 +187,20 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updatedAt: new Date(),
       order: Date.now()  // Use timestamp for default order
     };
-      setProjects(prev => {
-        // Get highest order value
-        const maxOrder = prev.reduce((max, p) => Math.max(max, p.order || 0), 0);
-        // Place new project at the end with an order value greater than the highest
-        newProject.order = maxOrder + 1;
-        return [...prev, newProject];
-      });
+    setProjects(prev => {
+      // Get highest order value
+      const maxOrder = prev.reduce((max, p) => Math.max(max, p.order || 0), 0);
+      // Place new project at the end with an order value greater than the highest
+      newProject.order = maxOrder + 1;
+      return [...prev, newProject];
+    });
     setActiveProjectId(projectId);
-    // Don't auto-select a conversation when creating a project
+    
+    // Create initial chat
+    createInitialChat(projectId);
+    
     return projectId;
-  }, [activeProjectId, projects]);
+  }, [activeProjectId, projects, createInitialChat]);
 
   const deleteProject = useCallback((id: string) => {
     // First find the new project and its first conversation if any
@@ -206,21 +240,48 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const deleteConversation = useCallback((projectId: string, conversationId: string) => {
+    // Generate new chat ID outside the update function so we can use it consistently
+    const newChatId = generateId();
+
     setProjects(current =>
       current.map(p => {
         if (p.id !== projectId) return p;
+        const updatedConversations = p.conversations.filter(c => c.id !== conversationId);
+        
+        // If this would leave the project with no conversations, create a new one immediately
+        if (updatedConversations.length === 0) {
+          const newChat = {
+            id: newChatId, // Use the pre-generated ID
+            name: 'New Chat',
+            lastUpdated: new Date(),
+            messages: [],
+            createdAt: new Date()
+          };
+          return {
+            ...p,
+            conversations: [newChat],
+            updatedAt: new Date()
+          };
+        }
+        
         return {
           ...p,
-          conversations: p.conversations.filter(c => c.id !== conversationId),
+          conversations: updatedConversations,
           updatedAt: new Date()
         };
       })
     );
 
-    if (activeConversationId === conversationId) {
-      const project = projects.find(p => p.id === projectId);
-      const nextConvoId = project?.conversations.find(c => c.id !== conversationId)?.id ?? null;
-      setActiveConversationId(nextConvoId);
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      if (project.conversations.length === 1) {
+        // If we just deleted the last conversation, select the new one we created
+        setActiveConversationId(newChatId);
+      } else if (activeConversationId === conversationId) {
+        // If we deleted the active conversation but there are others, select the next available one
+        const nextConvoId = project.conversations.find(c => c.id !== conversationId)?.id ?? null;
+        setActiveConversationId(nextConvoId);
+      }
     }
   }, [activeConversationId, projects]);
 
