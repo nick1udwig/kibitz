@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -120,6 +121,38 @@ export const AdminView = () => {
         servers={activeProject.settings.mcpServers}
         onServersChange={(mcpServers) => handleSettingsChange({ mcpServers })}
       />
+      <Card className="mt-6">
+        <CardContent className="p-6">
+          <h3 className="text-lg font-medium mb-4">Advanced Settings</h3>
+          <Button
+            variant="destructive"
+            onClick={async () => {
+              // Clear all IndexedDB databases
+              const clearAllIndexedDB = async () => {
+                const databases = await window.indexedDB.databases();
+                return Promise.all(
+                  databases.map(db =>
+                    new Promise<void>((resolve, reject) => {
+                      const request = window.indexedDB.deleteDatabase(db.name!);
+                      request.onsuccess = () => resolve();
+                      request.onerror = () => reject(request.error);
+                    })
+                  )
+                );
+              };
+
+              try {
+                await clearAllIndexedDB();
+                window.location.reload();
+              } catch (error) {
+                console.error('Error clearing databases:', error);
+              }
+            }}
+          >
+            Reset state
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 };
