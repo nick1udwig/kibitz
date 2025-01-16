@@ -102,14 +102,14 @@ export const ConversationSidebar = ({
 
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 
+        fixed inset-y-0 left-0
         md:sticky md:top-0 md:left-auto
         w-[280px] max-w-[85vw]
-        bg-background border-r 
+        bg-background border-r
         transition-transform duration-200 ease-in-out
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
         md:translate-x-0
-        z-40 
+        z-40
         flex flex-col
         h-screen
       `}>
@@ -183,22 +183,6 @@ export const ConversationSidebar = ({
                     });
                   }}
                   title="New chat"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="p-1 h-6 w-6"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    createConversation(project.id);
-                    setExpandedProjects(prev => {
-                      const newExpanded = new Set(prev);
-                      newExpanded.add(project.id);
-                      return newExpanded;
-                    });
-                  }}
                 >
                   <PlusCircle className="w-4 h-4" />
                 </Button>
