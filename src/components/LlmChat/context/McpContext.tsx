@@ -122,20 +122,23 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
         };
 
           ws.onerror = (error) => {
-          clearTimeout(timeout);
-          console.error('WebSocket error:', error);
-          cleanupServer(server.id);
+            clearTimeout(timeout);
+            console.error('WebSocket error:', error);
+            cleanupServer(server.id);
 
-          // Update server status to error
-          setServers(current =>
-            current.map(s => s.id === server.id
-              ? { ...s, status: 'error', error: 'Connection error' }
-              : s
-            )
-          );
+            // Update server status to error
+            setServers(current =>
+              current.map(s => s.id === server.id
+                ? { ...s, status: 'error', error: 'Connection error' }
+                : s
+              )
+            );
 
-          reject(error);
-        };
+            // Schedule reconnection attempt
+            scheduleReconnect(server);
+
+            reject(error);
+          };
 
         ws.onmessage = (event) => {
           try {
