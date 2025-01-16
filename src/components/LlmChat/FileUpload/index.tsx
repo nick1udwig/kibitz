@@ -89,7 +89,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onUploadCo
       }
     };
     reader.readAsDataURL(file);
-  }, [onFileSelect]);
+  }, [onFileSelect, onUploadComplete]);
 
   const handleFileDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
