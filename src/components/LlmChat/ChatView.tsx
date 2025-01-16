@@ -122,7 +122,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       });
 
     const tools = Array.from(toolMap.values());
-    return !should_cache ? tools : tools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: {type: 'ephemeral'} as CacheControlEphemeral});
+    return !should_cache ? tools : tools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: { type: 'ephemeral' } as CacheControlEphemeral });
   };
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
@@ -130,10 +130,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       conversations: activeProject!.conversations.map(conv =>
         conv.id === conversationId
           ? {
-              ...conv,
-              messages: newMessages,
-              lastUpdated: new Date()
-            }
+            ...conv,
+            messages: newMessages,
+            lastUpdated: new Date()
+          }
           : conv
       )
     });
@@ -151,13 +151,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const handleSendMessage = async () => {
     shouldCancelRef.current = false;
     if ((!inputMessage.trim() && currentFileContent.length === 0) || !activeProject || !activeConversationId) return;
-    
+
     // Reset any previous error and show loading state
     setError(null);
     setIsLoading(true);
 
     if (!activeProject.settings.apiKey?.trim()) {
-      setError('API key not found. Please set your Anthropic API key in the Settings panel (gear icon).');
+      setError('API key not found. Please set your Anthropic API key in the Settings panel.');
       setIsLoading(false);
       return;
     }
@@ -222,13 +222,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             {
               role: m.role,
               content: (typeof m.content === 'string' ?
-                [{ type: 'text' as const, text: m.content, cache_control: {type: 'ephemeral'} as CacheControlEphemeral }]
+                [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }]
                 : m.content.map((c, index, array) =>
                   index != array.length - 1 ? c :
-                  {
-                    ...c,
-                    cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
-                  }
+                    {
+                      ...c,
+                      cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
+                    }
                 )) as MessageContent[],
               toolInput: m.toolInput ? m.toolInput : undefined,
             }
@@ -259,39 +259,39 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                   return toolResult;
                 }).map(msg =>
                   !(msg.content as MessageContent[]).find(c => c.type === 'tool_result') ?
-                  {
-                    ...msg,
-                    content: [
-                      msg.content[0],
-                      {
-                        type: 'text' as const,
-                        text: `${JSON.stringify(msg.content[1])}`,
-                      },
-                    ],
-                  } :
-                  {
-                    ...msg,
-                    content: [
-                      {
-                        type: 'text' as const,
-                        text: `${JSON.stringify({ ...(msg.content as MessageContent[])[0], content: 'elided'})}`,
-                      },
-                    ],
-                  }
+                    {
+                      ...msg,
+                      content: [
+                        msg.content[0],
+                        {
+                          type: 'text' as const,
+                          text: `${JSON.stringify(msg.content[1])}`,
+                        },
+                      ],
+                    } :
+                    {
+                      ...msg,
+                      content: [
+                        {
+                          type: 'text' as const,
+                          text: `${JSON.stringify({ ...(msg.content as MessageContent[])[0], content: 'elided' })}`,
+                        },
+                      ],
+                    }
                 ),
                 {
                   role: 'user' as const,
                   content: [{
                     type: 'text' as const,
                     text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
-                    cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+                    cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
                   }],
                 },
               ] as Message[],
               system: [{
                 type: 'text' as const,
                 text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
-                cache_control: {type: 'ephemeral'} as CacheControlEphemeral,
+                cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
               }],
             });
 
@@ -397,28 +397,28 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           }
           return content;
         })
-        .filter((content: MessageContent) => {
-          if (!content['type']) {
-            return true;
-          }
-          // Keep non-text content
-          if (content.type !== 'text') {
-            return true;
-          }
+          .filter((content: MessageContent) => {
+            if (!content['type']) {
+              return true;
+            }
+            // Keep non-text content
+            if (content.type !== 'text') {
+              return true;
+            }
 
-          // Check if text content is purely whitespace
-          const isWhitespace = content.text.trim().length === 0;
+            // Check if text content is purely whitespace
+            const isWhitespace = content.text.trim().length === 0;
 
-          // If there's only one content block and it's whitespace, replace with "empty"
-          if (isWhitespace && finalResponse.content.length === 1) {
-            console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
-            content.text = 'empty';
-            return true;
-          }
+            // If there's only one content block and it's whitespace, replace with "empty"
+            if (isWhitespace && finalResponse.content.length === 1) {
+              console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
+              content.text = 'empty';
+              return true;
+            }
 
-          // For multiple content blocks, drop purely whitespace ones
-          return !isWhitespace;
-        });
+            // For multiple content blocks, drop purely whitespace ones
+            return !isWhitespace;
+          });
 
         const processedResponse = {
           ...finalResponse,
@@ -541,29 +541,28 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     if (Array.isArray(message.content)) {
       return message.content.map((content, contentIndex) => {
         if (content.type === 'text') {
-            return (
-              <div
-                key={`text-${index}-${contentIndex}`}
-                className={`flex max-w-full`}
-              >
+          return (
+            <div
+              key={`text-${index}-${contentIndex}`}
+              className={`flex max-w-full`}
+            >
               <div className="relative group w-full max-w-full overflow-hidden">
-              <div className="absolute right-2 top-2 z-10">
-                <CopyButton
-                  text={content.text.trim()}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                />
-              </div>
+                <div className="absolute right-2 top-2 z-10">
+                  <CopyButton
+                    text={content.text.trim()}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
+                </div>
                 <div
-                  className={`w-full max-w-full rounded-lg px-4 py-2 ${
-                    message.role === 'user'
-                      ? 'bg-accent !text-accent-foreground'
-                      : 'bg-muted text-foreground'
-                  }`}
+                  className={`w-full max-w-full rounded-lg px-4 py-2 ${message.role === 'user'
+                    ? 'bg-accent !text-accent-foreground'
+                    : 'bg-muted text-foreground'
+                    }`}
                 >
                   <ReactMarkdown
                     className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_pre]:!bg-accent-foreground/10 [&_p]:!text-accent-foreground [&_code]:!text-accent-foreground' : ''}`}
                     components={{
-                      p: ({children}) => (
+                      p: ({ children }) => (
                         <p className="break-words whitespace-pre-wrap overflow-hidden">
                           {children}
                         </p>
@@ -606,7 +605,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                           <code className="block overflow-x-auto whitespace-pre" {...props}>{children}</code>
                         );
                       },
-                      a: ({href, children}) => (
+                      a: ({ href, children }) => (
                         <a
                           href={href}
                           target="_blank"
@@ -632,11 +631,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               className={`flex`}
             >
               <div
-                className={`w-full rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-accent text-accent-foreground'
-                    : 'bg-muted text-foreground'
-                }`}
+                className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'bg-muted text-foreground'
+                  }`}
               >
                 <Image
                   src={`data:${content.source.media_type};base64,${content.source.data}`}
@@ -655,11 +653,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               className={`flex`}
             >
               <div
-                className={`w-full rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-accent text-accent-foreground'
-                    : 'bg-muted text-foreground'
-                }`}
+                className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'bg-muted text-foreground'
+                  }`}
               >
                 <embed
                   src={`data:${content.source.media_type};base64,${content.source.data}`}
@@ -690,11 +687,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             >
               <div
                 key={`message-${index}-content-${contentIndex}`}
-              className={`w-full rounded-lg px-4 py-2 relative group ${
-                  message.role === 'user'
-                    ? 'bg-accent text-accent-foreground'
-                    : 'bg-muted text-foreground'
-                }`}
+                className={`w-full rounded-lg px-4 py-2 relative group ${message.role === 'user'
+                  ? 'bg-accent text-accent-foreground'
+                  : 'bg-muted text-foreground'
+                  }`}
               >
                 <button
                   onClick={() => setSelectedToolCall({
@@ -720,16 +716,15 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         className={`flex`}
       >
         <div
-          className={`w-full rounded-lg px-4 py-2 ${
-            message.role === 'user'
-              ? 'bg-accent text-accent-foreground'
-              : 'bg-muted text-foreground'
-          }`}
+          className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
+            ? 'bg-accent text-accent-foreground'
+            : 'bg-muted text-foreground'
+            }`}
         >
           <ReactMarkdown
             className="prose dark:prose-invert break-words overflow-hidden whitespace-pre-wrap max-w-full"
             components={{
-              a: ({href, children}) => (
+              a: ({ href, children }) => (
                 <a
                   href={href}
                   target="_blank"
@@ -781,7 +776,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               <div key={index} className="flex items-center gap-2 bg-muted rounded px-2 py-1">
                 <span className="text-sm">
                   {content.type === 'text' ? 'Text file' :
-                   ((content as ImageMessageContent | DocumentMessageContent).fileName || 'Untitled')}
+                    ((content as ImageMessageContent | DocumentMessageContent).fileName || 'Untitled')}
                 </span>
                 <button
                   onClick={() => {
@@ -806,7 +801,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           <Textarea
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder={!activeProject?.settings.apiKey?.trim() ? "⚠️ Set your API key in Settings (gear icon) to start chatting" : "Type your message"}
+            placeholder={!activeProject?.settings.apiKey?.trim() ? "⚠️ Set your API key in Settings to start chatting" : "Type your message"}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
                 e.preventDefault();
