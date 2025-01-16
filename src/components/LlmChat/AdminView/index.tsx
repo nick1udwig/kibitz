@@ -62,15 +62,19 @@ export const AdminView = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">
-                API Key
+                API Key <span className="text-red-500">*</span>
               </label>
+              <p className="text-sm text-muted-foreground mb-2">
+                Required to chat. Get yours at <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">console.anthropic.com</a>
+              </p>
               <Input
                 type="password"
-                value={activeProject.settings.apiKey}
+                value={activeProject.settings.apiKey || ''}
                 onChange={(e) => handleSettingsChange({
-                  apiKey: e.target.value
+                  apiKey: e.target.value.trim()
                 })}
-                placeholder="Enter your Anthropic API key"
+                placeholder="⚠️ Enter your Anthropic API key to use the chat"
+                className={!activeProject.settings.apiKey?.trim() ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}
               />
             </div>
 

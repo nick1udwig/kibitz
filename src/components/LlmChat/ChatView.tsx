@@ -151,17 +151,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const handleSendMessage = async () => {
     shouldCancelRef.current = false;
     if ((!inputMessage.trim() && currentFileContent.length === 0) || !activeProject || !activeConversationId) return;
-    if (!activeProject.settings.apiKey) {
-      setError('Please set your API key in settings');
+    
+    // Reset any previous error and show loading state
+    setError(null);
+    setIsLoading(true);
+
+    if (!activeProject.settings.apiKey?.trim()) {
+      setError('API key not found. Please set your Anthropic API key in the Settings panel (gear icon).');
+      setIsLoading(false);
       return;
     }
-
     // Reset the textarea height immediately after sending
     if (inputRef.current) {
       inputRef.current.style.height = '2.5em';
     }
-    setIsLoading(true);
-    setError(null);
 
     try {
       const userMessageContent: MessageContent[] = currentFileContent.map(c =>
@@ -199,12 +202,14 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       const toolsCached = getUniqueTools(true);
       const tools = getUniqueTools(false);
 
-      const systemPromptContent = [
+      // Only include system content if there is a non-empty system prompt
+      const systemPrompt = activeProject.settings.systemPrompt?.trim();
+      const systemPromptContent = systemPrompt ? [
         {
           type: "text",
-          text: `${activeProject.settings.systemPrompt || ''}`,
+          text: systemPrompt,
         },
-      ] as TextBlockParam[];
+      ] as TextBlockParam[] : undefined;
 
       while (true) {
         const cachedApiMessages = currentMessages.map((m, index, array) =>
@@ -348,7 +353,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
           messages: apiMessagesToSend,
-          ...(systemPromptContent && {
+          ...(systemPromptContent && systemPromptContent.length > 0 && {
             system: systemPromptContent
           }),
           ...(tools.length > 0 && {
@@ -543,11 +548,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               >
               <div className="relative group w-full max-w-full overflow-hidden">
               <div className="absolute right-2 top-2 z-10">
-                  <CopyButton
-                    text={content.text}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  />
-                </div>
+                <CopyButton
+                  text={content.text.trim()}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                />
+              </div>
                 <div
                   className={`w-full max-w-full rounded-lg px-4 py-2 ${
                     message.role === 'user'
@@ -564,7 +569,24 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                         </p>
                       ),
                       pre({ children, ...props }) {
-                        const text = props?.children?.[0]?.props?.children?.[0]?.value || '';
+                        // Extract text from the code block
+                        const getCodeText = (node: any): string => {
+                          if (typeof node === 'string') return node;
+                          if (!node) return '';
+                          if (Array.isArray(node)) {
+                            return node.map(getCodeText).join('\n');
+                          }
+                          if (node.props?.className?.includes('language-')) {
+                            return getCodeText(node.props.children);
+                          }
+                          if (node.props?.children) {
+                            return getCodeText(node.props.children);
+                          }
+                          return '';
+                        };
+
+                        const text = getCodeText(children).trim();
+
                         return (
                           <div className="group/code relative max-w-full overflow-x-auto">
                             <div className="sticky top-2 float-right -mr-2 z-10">
@@ -784,7 +806,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           <Textarea
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder="Type your message"
+            placeholder={!activeProject?.settings.apiKey?.trim() ? "⚠️ Set your API key in Settings (gear icon) to start chatting" : "Type your message"}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
                 e.preventDefault();
@@ -792,9 +814,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               }
             }}
             ref={inputRef}
-            className="flex-1"
+            className={`flex-1 ${!activeProject?.settings.apiKey?.trim() ? "placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}`}
             maxRows={8}
-            disabled={isLoading}
+            disabled={isLoading || !activeProject?.settings.apiKey?.trim()}
           />
           <Button
             onClick={isLoading ? cancelCurrentCall : handleSendMessage}
