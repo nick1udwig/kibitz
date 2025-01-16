@@ -195,7 +195,8 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ...DEFAULT_PROJECT_SETTINGS,
         ...(currentProject && {
           apiKey: currentProject.settings.apiKey,
-          systemPrompt: currentProject.settings.systemPrompt,
+          systemPrompt: '',
+          mcpServers: [],
         }),
         ...settings,
       },
@@ -212,19 +213,19 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return [...prev, newProject];
     });
     setActiveProjectId(projectId);
-    
+
     // Create initial chat
     createInitialChat(projectId);
-    
+
     return projectId;
   }, [activeProjectId, projects, createInitialChat]);
 
   const deleteProject = useCallback((id: string) => {
     // First find the new project and its first conversation if any
     const newProject = projects.find(p => p.id !== id);
-    
+
     setProjects(current => current.filter(p => p.id !== id));
-    
+
     if (activeProjectId === id && newProject) {
       const firstConversationId = newProject.conversations[0]?.id ?? null;
       setActiveProjectId(newProject.id);
@@ -264,7 +265,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       current.map(p => {
         if (p.id !== projectId) return p;
         const updatedConversations = p.conversations.filter(c => c.id !== conversationId);
-        
+
         // If this would leave the project with no conversations, create a new one immediately
         if (updatedConversations.length === 0) {
           const newChat = {
@@ -280,7 +281,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
             updatedAt: new Date()
           };
         }
-        
+
         return {
           ...p,
           conversations: updatedConversations,
@@ -308,9 +309,9 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.log('Prevented rename to (New Chat)');
       return;
     }
-    
+
     console.log(`Renaming conversation ${conversationId} to "${newName}"`);
-    
+
     setProjects(current =>
       current.map(p => {
         if (p.id !== projectId) return p;
