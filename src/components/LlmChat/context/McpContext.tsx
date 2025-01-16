@@ -5,7 +5,7 @@ import { McpServer } from '../types/mcp';
 import { McpState, McpServerConnection, Tool } from './types';
 import { useProjects } from './ProjectContext';
 import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
-import { loadMcpServers, saveMcpServers, migrateFromLocalStorage } from '../../../lib/db';
+import { loadMcpServers, saveMcpServers } from '../../../lib/db';
 
 const McpContext = createContext<McpState | null>(null);
 
@@ -220,13 +220,6 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   useEffect(() => {
     const initializeServers = async () => {
       try {
-        // Check if we need to migrate from localStorage
-        if (localStorage.getItem('mcp_servers')) {
-          await migrateFromLocalStorage();
-          // Clear localStorage after successful migration
-          localStorage.removeItem('mcp_servers');
-        }
-
         const savedServers = await loadMcpServers();
         console.log(`loading servers from IndexedDB: ${JSON.stringify(savedServers)}`);
 
