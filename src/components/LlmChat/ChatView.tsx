@@ -822,6 +822,11 @@ Example good titles:
               onFileSelect={(content) => {
                 setCurrentFileContent(prev => [...prev, { ...content }]);
               }}
+              onUploadComplete={() => {
+                if (inputRef.current) {
+                  inputRef.current.focus();
+                }
+              }}
             />
           </div>
           <Textarea

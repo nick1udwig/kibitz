@@ -42,7 +42,7 @@ function decodeBase64ToUtf8String(base64: string): string {
   }
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onUploadComplete }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback(async (file: File) => {
@@ -59,6 +59,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
           type: 'text',
           text: decodeBase64ToUtf8String(base64Data),
         });
+        onUploadComplete?.();
         return;
       }
 
@@ -72,6 +73,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
           },
           fileName: file.name,
         });
+        onUploadComplete?.();
       } else if (file.type === 'application/pdf') {
         onFileSelect({
           type: 'document',
@@ -82,6 +84,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
           },
           fileName: file.name,
         });
+        onUploadComplete?.();
       }
     };
     reader.readAsDataURL(file);
