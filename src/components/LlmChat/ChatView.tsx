@@ -569,7 +569,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                         </p>
                       ),
                       pre({ children, ...props }) {
-                        const text = props?.children?.[0]?.props?.children?.[0]?.value || '';
+                        // Extract text from code block, handling nested structures
+                        const extractText = (node: any): string => {
+                          if (typeof node === 'string') return node;
+                          if (!node) return '';
+                          if (Array.isArray(node)) return node.map(extractText).join('');
+                          if (node.props?.children) return extractText(node.props.children);
+                          if (node.value) return node.value;
+                          return '';
+                        };
+                        const text = extractText(props.children);
                         return (
                           <div className="group/code relative max-w-full overflow-x-auto">
                             <div className="sticky top-2 float-right -mr-2 z-10">
