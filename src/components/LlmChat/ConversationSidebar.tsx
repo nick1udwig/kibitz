@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useProjects } from './context/ProjectContext';
 
 interface ConversationSidebarProps {
@@ -35,29 +35,54 @@ export const ConversationSidebar = ({
     setActiveConversation
   } = useProjects();
 
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set([activeProjectId!]));
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Ensure active project is always expanded
+  useEffect(() => {
+    if (activeProjectId) {
+      expandProject(activeProjectId);
+    }
+  }, [activeProjectId]);
+
+  // Ensure active project is always expanded
+  useEffect(() => {
+    if (activeProjectId) {
+      expandProject(activeProjectId);
+    }
+  }, [activeProjectId]);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<{ type: 'project' | 'conversation', projectId: string, conversationId?: string } | null>(null);
   const [renameItem, setRenameItem] = useState<{ type: 'project' | 'conversation', projectId: string, conversationId?: string, currentName: string } | null>(null);
   const [newName, setNewName] = useState('');
 
   const expandProject = (projectId: string) => {
-    const newExpanded = new Set(expandedProjects);
-    if (!newExpanded.has(projectId)) {
+    setExpandedProjects(prev => {
+      const newExpanded = new Set(prev);
       newExpanded.add(projectId);
-      setExpandedProjects(newExpanded);
-    }
+      return newExpanded;
+    });
   };
 
   const toggleProjectExpanded = (projectId: string) => {
-    const newExpanded = new Set(expandedProjects);
-    if (newExpanded.has(projectId)) {
-      newExpanded.delete(projectId);
-    } else {
-      newExpanded.add(projectId);
-    }
-    setExpandedProjects(newExpanded);
+    setExpandedProjects(prev => {
+      const newExpanded = new Set(prev);
+      if (newExpanded.has(projectId)) {
+        // Don't allow collapsing active project
+        if (projectId === activeProjectId) {
+          return prev;
+        }
+        newExpanded.delete(projectId);
+      } else {
+        newExpanded.add(projectId);
+      }
+      return newExpanded;
+    });
+  };
+
+  const handleProjectSelect = (projectId: string) => {
+    setActiveProject(projectId);
+    expandProject(projectId);
   };
 
   const handleDelete = () => {
@@ -132,11 +157,7 @@ export const ConversationSidebar = ({
                 className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
                 ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
                 text-sm`}
-                onClick={() => {
-                  setActiveProject(project.id);
-                  // Don't clear active conversation - let it persist or be null naturally
-                  expandProject(project.id);
-                }}
+                onClick={() => handleProjectSelect(project.id)}
               >
                 <button
                   onClick={(e) => {
@@ -215,7 +236,7 @@ export const ConversationSidebar = ({
                       ${convo.id === activeConversationId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
                       text-sm truncate max-w-[250px]`}
                         onClick={() => {
-                          setActiveProject(project.id);
+                          handleProjectSelect(project.id);
                           setActiveConversation(convo.id);
                           onConversationSelect?.();
                         }}
