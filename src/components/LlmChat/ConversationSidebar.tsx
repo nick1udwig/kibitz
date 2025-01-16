@@ -67,8 +67,14 @@ export const ConversationSidebar = ({
 
   const handleProjectSelect = (projectId: string, shouldCreateChat: boolean = false) => {
     setActiveProject(projectId);
-    if (shouldCreateChat && projects.find(p => p.id === projectId)?.conversations.length === 0) {
+    const project = projects.find(p => p.id === projectId);
+    
+    if (shouldCreateChat && project?.conversations.length === 0) {
       createConversation(projectId);
+    } else if (project?.conversations.length && !activeConversationId) {
+      // If there are conversations and none is selected, select the first one
+      // (they're already sorted by newest first in the render logic)
+      setActiveConversation(project.conversations[0].id);
     }
   };
 
