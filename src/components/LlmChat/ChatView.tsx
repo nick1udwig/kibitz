@@ -571,7 +571,7 @@ Example good titles:
               className={`flex max-w-full`}
             >
               <div className="relative group w-full max-w-full overflow-hidden">
-                <div className="absolute right-2 top-2 z-10">
+                <div className="absolute right-2 -top-4 z-10">
                   <CopyButton
                     text={content.text.trim()}
                     className="opacity-0 group-hover:opacity-100 transition-opacity"
