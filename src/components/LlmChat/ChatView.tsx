@@ -545,19 +545,18 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               <div className="absolute right-2 top-2 z-10">
                   <CopyButton
                     text={content.text}
-                    title="Copy message"
                     className="opacity-0 group-hover:opacity-100 transition-opacity"
                   />
                 </div>
                 <div
                   className={`w-full max-w-full rounded-lg px-4 py-2 ${
                     message.role === 'user'
-                      ? 'bg-accent !text-accent-foreground not-prose'
+                      ? 'bg-accent !text-accent-foreground'
                       : 'bg-muted text-foreground'
                   }`}
                 >
                   <ReactMarkdown
-                    className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground' : ''}`}
+                    className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_pre]:!bg-accent-foreground/10 [&_p]:!text-accent-foreground [&_code]:!text-accent-foreground' : ''}`}
                     components={{
                       p: ({children}) => (
                         <p className="break-words whitespace-pre-wrap overflow-hidden">
@@ -571,7 +570,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                             <div className="sticky top-2 float-right -mr-2 z-10">
                               <CopyButton
                                 text={text}
-                                title="Copy code"
                                 className="opacity-0 group-hover/code:opacity-100 transition-opacity"
                               />
                             </div>
