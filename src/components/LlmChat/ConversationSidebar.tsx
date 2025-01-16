@@ -97,7 +97,7 @@ export const ConversationSidebar = ({
     if (activeProjectId && activeConversationId) {
       lastActiveConversations[activeProjectId] = activeConversationId;
     }
-  }, [activeProjectId, activeConversationId]);
+  }, [activeProjectId, activeConversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = () => {
     if (!itemToDelete) return;
@@ -211,6 +211,8 @@ export const ConversationSidebar = ({
                       newExpanded.add(project.id);
                       return newExpanded;
                     });
+                    // Switch to chat view
+                    onConversationSelect?.();
                   }}
                   title="New chat"
                 >
