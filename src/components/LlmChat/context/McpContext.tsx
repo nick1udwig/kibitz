@@ -292,11 +292,67 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     }
   }, [connectToServer, servers]);
 
+  const attemptLocalMcpConnection = useCallback(async () => {
+    const id = 'localhost-mcp';
+    const server: McpServer = {
+      id: id,
+      name: 'Local MCP',
+      uri: 'ws://localhost:10125',
+      status: 'disconnected',
+    };
+
+    const existingServer = servers.find(server => server.id === id);
+    if (existingServer) {
+      return existingServer;
+    }
+
+    try {
+      const connectedServer = await connectToServer(server);
+      if (connectedServer.status === 'connected') {
+        setServers(current => [...current, connectedServer]);
+        return connectedServer;
+      }
+      return null;
+    } catch {
+      console.log('Local MCP not available');
+      return null;
+    }
+  }, [connectToServer, servers]);
+
+  useEffect(() => {
+    if (projects.length == 0) {
+      return;
+    }
+    const project = projects[projects.length - 1]
+    if (project.settings.mcpServers.length > 0) {
+      return;
+    }
+    const createdAt = project.createdAt;
+    const updatedAt = project.updatedAt;
+    const now = new Date;
+    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
+    if (!(createdAt >= oneMinuteAgo && createdAt <= now) || updatedAt > createdAt) {
+      return;
+    }
+
+    attemptLocalMcpConnection().then(server => {
+      if (server) {
+        updateProjectSettings(project.id, {
+          settings: {
+            ...project.settings,
+            mcpServers: [...project.settings.mcpServers, server]
+          }
+        });
+      }
+    });
+  }, [projects, attemptLocalMcpConnection, updateProjectSettings]);
+
   const value = {
     servers,
     addServer,
     removeServer,
     reconnectServer,
+    attemptLocalMcpConnection,
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>): Promise<string> => {
       const ws = connectionsRef.current.get(serverId);
       if (!ws || ws.readyState !== WebSocket.OPEN) {

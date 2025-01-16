@@ -564,12 +564,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                           {children}
                         </p>
                       ),
-                      pre({ node, children, ...props }) {
+                      pre({ children, ...props }) {
+                        const text = props?.children?.[0]?.props?.children?.[0]?.value || '';
                         return (
                           <div className="group/code relative max-w-full overflow-x-auto">
                             <div className="sticky top-2 float-right -mr-2 z-10">
                               <CopyButton
-                                text={node?.children[0]?.children[0]?.value || ''}
+                                text={text}
                                 title="Copy code"
                                 className="opacity-0 group-hover/code:opacity-100 transition-opacity"
                               />
@@ -578,7 +579,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                           </div>
                         );
                       },
-                      code({ node, inline, children, ...props }) {
+                      code({ inline, children, ...props }) {
                         return inline ? (
                           <code className="text-inherit whitespace-nowrap" {...props}>{children}</code>
                         ) : (
