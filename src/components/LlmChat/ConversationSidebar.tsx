@@ -137,13 +137,13 @@ export const ConversationSidebar = ({
 
         {/* Projects and Conversations list */}
         <div className="flex-1 overflow-y-auto min-h-0 px-4">
-          {sortedProjects.map(project => (
-            <div key={project.id} className="mb-2">
+          {sortedProjects.map((project, index) => (
+            <div key={project.id} className={`mb-2 ${index > 0 ? 'mt-2 pt-2 border-t border-accent/35' : ''}`}>
               {/* Project header */}
               <div
                 className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
                 ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
-                text-sm`}
+                text-base font-medium`}
                 onClick={() => handleProjectSelect(project.id, true)}
               >
                 <button
