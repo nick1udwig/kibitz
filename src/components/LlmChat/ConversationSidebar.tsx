@@ -134,7 +134,7 @@ export const ConversationSidebar = ({
                 text-sm`}
                 onClick={() => {
                   setActiveProject(project.id);
-                  setActiveConversation(null); // Clear active conversation to trigger auto-creation in ChatView
+                  // Don't clear active conversation - let it persist or be null naturally
                   expandProject(project.id);
                 }}
               >
@@ -195,7 +195,8 @@ export const ConversationSidebar = ({
                     <PlusCircle className="w-4 h-4 mr-2" />
                     New Chat
                   </Button>
-                  {project.conversations.map(convo => (
+                {/* Conversations are already newest-first */}
+                {project.conversations.map(convo => (
                     <div
                       key={convo.id}
                       className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
