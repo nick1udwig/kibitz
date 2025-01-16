@@ -667,14 +667,14 @@ Example good titles:
                         const text = getCodeText(children).trim();
 
                         return (
-                          <div className="group/code relative max-w-full overflow-x-auto">
-                            <div className="sticky top-2 float-right -mr-2 z-10">
+                          <div className="group/code relative max-w-full">
+                            <div className="absolute top-2 right-2 z-10">
                               <CopyButton
                                 text={text}
                                 className="opacity-0 group-hover/code:opacity-100 transition-opacity"
                               />
                             </div>
-                            <pre className="overflow-x-auto max-w-full" {...props}>{children}</pre>
+                            <pre className="overflow-x-auto max-w-full whitespace-pre" {...props}>{children}</pre>
                           </div>
                         );
                       },
