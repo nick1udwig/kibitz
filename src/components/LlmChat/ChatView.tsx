@@ -366,6 +366,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
         streamRef.current = stream;
 
+        // Break if cancel was requested during setup
+        if (shouldCancelRef.current) {
+          break;
+        }
+
         stream.on('text', (text) => {
           textContent.text += text;
 
@@ -486,6 +491,11 @@ Example good titles:
         const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
         if (toolUseContent && toolUseContent.type === 'tool_use') {
           try {
+            // Break if cancel was requested before tool execution 
+            if (shouldCancelRef.current) {
+              break;
+            }
+
             const serverWithTool = servers.find(s =>
               s.tools?.some(t => t.name === toolUseContent.name)
             );
@@ -500,6 +510,11 @@ Example good titles:
               toolUseContent.input as Record<string, unknown>,
             );
 
+            // Check cancel after tool execution
+            if (shouldCancelRef.current) {
+              break;
+            }
+
             const toolResultMessage: Message = {
               role: 'user',
               content: [{
@@ -513,8 +528,11 @@ Example good titles:
             currentMessages.push(toolResultMessage);
             updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-            // Continue the conversation with the tool result
-            continue;
+            // Continue the conversation with the tool result if not cancelled
+            if (!shouldCancelRef.current) {
+              continue;
+            }
+            break;
           } catch (error) {
             const errorMessage: Message = {
               role: 'user',
