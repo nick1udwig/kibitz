@@ -548,11 +548,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               >
               <div className="relative group w-full max-w-full overflow-hidden">
               <div className="absolute right-2 top-2 z-10">
-                  <CopyButton
-                    text={content.text}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  />
-                </div>
+                <CopyButton
+                  text={content.text.trim()}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                />
+              </div>
                 <div
                   className={`w-full max-w-full rounded-lg px-4 py-2 ${
                     message.role === 'user'
@@ -569,16 +569,22 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                         </p>
                       ),
                       pre({ children, ...props }) {
-                        // Extract text from code block, handling nested structures
-                        const extractText = (node: any): string => {
-                          if (typeof node === 'string') return node;
-                          if (!node) return '';
-                          if (Array.isArray(node)) return node.map(extractText).join('');
-                          if (node.props?.children) return extractText(node.props.children);
-                          if (node.value) return node.value;
-                          return '';
-                        };
-                        const text = extractText(props.children);
+                        // Get all text content from code blocks
+                        const text = Array.isArray(children) 
+                          ? children
+                              .map(child => {
+                                if (typeof child === 'string') return child;
+                                if (child?.props?.children) {
+                                  if (Array.isArray(child.props.children)) {
+                                    return child.props.children.join('');
+                                  }
+                                  return child.props.children;
+                                }
+                                return '';
+                              })
+                              .join('\n')
+                          : '';
+
                         return (
                           <div className="group/code relative max-w-full overflow-x-auto">
                             <div className="sticky top-2 float-right -mr-2 z-10">
