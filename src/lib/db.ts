@@ -3,7 +3,7 @@ import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 
 const DB_NAME = 'kibitz_db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 interface DbState {
   projects: Project[];
@@ -75,6 +75,27 @@ const initDb = async (): Promise<KibitzDb> => {
         // Move MCP servers to a separate object store
         const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
         mcpStore.createIndex('name', 'name');
+      } else if (event.oldVersion < 4) {
+        // Add provider field to existing projects
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during upgrade');
+          return;
+        }
+        const projectStore = transaction.objectStore('projects');
+        
+        // Add provider field to existing projects
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const project = cursor.value;
+            if (!project.settings.provider) {
+              project.settings.provider = 'anthropic';
+              cursor.update(project);
+            }
+            cursor.continue();
+          }
+        };
       }
     };
   });

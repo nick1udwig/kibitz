@@ -7,6 +7,7 @@ import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
 import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from './types';
@@ -850,6 +851,16 @@ Example good titles:
           {error}
         </div>
       )}
+      
+      {activeProject?.settings.provider === 'openrouter' && (
+        <div className="px-4">
+          <Alert>
+            <AlertDescription>
+              OpenRouter support is coming soon. Please switch to Anthropic provider in settings to chat.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       <div className="flex flex-col gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)]">
         {currentFileContent.length > 0 && (
@@ -888,7 +899,13 @@ Example good titles:
           <Textarea
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder={!activeProject?.settings.apiKey?.trim() ? "⚠️ Set your API key in Settings to start chatting" : "Type your message"}
+            placeholder={
+              activeProject?.settings.provider === 'openrouter'
+                ? "⚠️ OpenRouter support coming soon"
+                : !activeProject?.settings.apiKey?.trim()
+                ? "⚠️ Set your API key in Settings to start chatting"
+                : "Type your message"
+            }
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
                 e.preventDefault();
@@ -898,11 +915,11 @@ Example good titles:
             ref={inputRef}
             className={`flex-1 ${!activeProject?.settings.apiKey?.trim() ? "placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}`}
             maxRows={8}
-            disabled={isLoading || !activeProject?.settings.apiKey?.trim()}
+            disabled={isLoading || !activeProject?.settings.apiKey?.trim() || activeProject?.settings.provider === 'openrouter'}
           />
           <Button
             onClick={isLoading ? cancelCurrentCall : handleSendMessage}
-            disabled={!activeProjectId || !activeConversationId}
+            disabled={!activeProjectId || !activeConversationId || activeProject?.settings.provider === 'openrouter'}
             className="self-end relative"
           >
             {isLoading ? (

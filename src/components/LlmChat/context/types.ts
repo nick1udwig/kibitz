@@ -2,12 +2,16 @@ import { Message } from '../types';
 import { McpServer } from '../types/mcp';
 import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
 
+export type ProviderType = 'anthropic' | 'openrouter';
+
 export interface ProjectSettings {
+  provider?: ProviderType;  // Optional for backward compatibility, defaults to 'anthropic'
   apiKey: string;
   model: string;
   systemPrompt: string;
   mcpServers: McpServer[];
   elideToolResults: boolean;
+  openRouterBaseUrl?: string;  // Optional, only needed for OpenRouter
 }
 
 export interface ConversationBrief {

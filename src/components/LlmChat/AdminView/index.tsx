@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useProjects } from '../context/ProjectContext';
-import { ProjectSettings } from '../context/types';
+import { ProjectSettings, ProviderType } from '../context/types';
 import { McpServer } from '../types/mcp';
 import { McpConfiguration } from './McpConfiguration';
 import { ThemeToggle } from '../ThemeToggle';
@@ -62,10 +63,43 @@ export const AdminView = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">
+                Provider
+              </label>
+              <select
+                value={activeProject.settings.provider || 'anthropic'}
+                onChange={(e) => handleSettingsChange({
+                  provider: e.target.value as ProviderType
+                })}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openrouter">OpenRouter (Coming Soon)</option>
+              </select>
+            </div>
+
+            {activeProject.settings.provider === 'openrouter' && (
+              <Alert>
+                <AlertDescription>
+                  OpenRouter support is coming soon. Please use Anthropic for now.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
                 API Key <span className="text-red-500">*</span>
               </label>
               <p className="text-sm text-muted-foreground mb-2">
-                Required to chat. Get yours at <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">console.anthropic.com</a>
+                Required to chat. Get yours at{' '}
+                {activeProject.settings.provider === 'openrouter' ? (
+                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                    openrouter.ai
+                  </a>
+                ) : (
+                  <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                    console.anthropic.com
+                  </a>
+                )}
               </p>
               <Input
                 type="password"
@@ -73,7 +107,7 @@ export const AdminView = () => {
                 onChange={(e) => handleSettingsChange({
                   apiKey: e.target.value.trim()
                 })}
-                placeholder="⚠️ Enter your Anthropic API key to use the chat"
+                placeholder={`⚠️ Enter your ${activeProject.settings.provider === 'openrouter' ? 'OpenRouter' : 'Anthropic'} API key to use the chat`}
                 className={!activeProject.settings.apiKey?.trim() ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}
               />
             </div>
