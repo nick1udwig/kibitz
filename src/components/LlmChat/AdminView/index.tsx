@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useProjects } from '../context/ProjectContext';
 import { ProjectSettings, ProviderType } from '../context/types';
+import { getProviderModels } from '../types/provider';
 import { McpServer } from '../types/mcp';
 import { McpConfiguration } from './McpConfiguration';
 import { ThemeToggle } from '../ThemeToggle';
@@ -92,13 +93,16 @@ export const AdminView = () => {
               >
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="openrouter">OpenRouter (Coming Soon)</option>
+                <option value="openai">OpenAI (GPT-4/3.5)</option>
               </select>
             </div>
 
-            {activeProject.settings.provider === 'openrouter' && (
+            {(activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai') && (
               <Alert>
                 <AlertDescription>
-                  OpenRouter support is coming soon. Please use Anthropic for now.
+                  {activeProject.settings.provider === 'openrouter'
+                    ? "OpenRouter support is coming soon. Please use Anthropic for now."
+                    : "OpenAI support is coming soon. Please use Anthropic for now."}
                 </AlertDescription>
               </Alert>
             )}
@@ -109,39 +113,63 @@ export const AdminView = () => {
               </label>
               <p className="text-sm text-muted-foreground mb-2">
                 Required to chat. Get yours at{' '}
-                {activeProject.settings.provider === 'openrouter' ? (
-                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
-                    openrouter.ai
-                  </a>
-                ) : (
-                  <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
-                    console.anthropic.com
-                  </a>
-                )}
+                {(() => {
+                  switch(activeProject.settings.provider) {
+                    case 'openrouter':
+                      return (
+                        <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                          openrouter.ai
+                        </a>
+                      );
+                    case 'openai':
+                      return (
+                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                          platform.openai.com
+                        </a>
+                      );
+                    default:
+                      return (
+                        <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                          console.anthropic.com
+                        </a>
+                      );
+                  }
+                })()}
               </p>
               <Input
                 type="password"
                 value={
                   activeProject.settings.provider === 'openrouter'
                     ? activeProject.settings.openRouterApiKey || ''
+                    : activeProject.settings.provider === 'openai'
+                    ? activeProject.settings.openaiApiKey || ''
                     : activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || ''  // Fallback for backward compatibility
                 }
                 onChange={(e) => {
                   const value = e.target.value.trim();
-                  if (activeProject.settings.provider === 'openrouter') {
-                    handleSettingsChange({
-                      openRouterApiKey: value
-                    });
-                  } else {
-                    handleSettingsChange({
-                      anthropicApiKey: value,
-                      apiKey: value  // Keep apiKey in sync for backward compatibility
-                    });
+                  switch(activeProject.settings.provider) {
+                    case 'openrouter':
+                      handleSettingsChange({
+                        openRouterApiKey: value
+                      });
+                      break;
+                    case 'openai':
+                      handleSettingsChange({
+                        openaiApiKey: value
+                      });
+                      break;
+                    default:
+                      handleSettingsChange({
+                        anthropicApiKey: value,
+                        apiKey: value  // Keep apiKey in sync for backward compatibility
+                      });
                   }
                 }}
                 placeholder={
                   activeProject.settings.provider === 'openrouter'
                     ? "⚠️ OpenRouter support coming soon"
+                    : activeProject.settings.provider === 'openai'
+                    ? "⚠️ OpenAI support coming soon"
                     : "⚠️ Enter your Anthropic API key to use the chat"
                 }
                 className={
@@ -151,7 +179,7 @@ export const AdminView = () => {
                     ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
                     : ""
                 }
-                disabled={activeProject.settings.provider === 'openrouter'}
+                disabled={activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai'}
               />
             </div>
 
@@ -159,13 +187,18 @@ export const AdminView = () => {
               <label className="block text-sm font-medium mb-1">
                 Model
               </label>
-              <Input
+              <select
                 value={activeProject.settings.model}
                 onChange={(e) => handleSettingsChange({
                   model: e.target.value
                 })}
-                placeholder="claude-3-5-sonnet-20241022"
-              />
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                disabled={activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai'}
+              >
+                {getProviderModels(activeProject.settings.provider || 'anthropic').map(model => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
             </div>
 
             <div>
