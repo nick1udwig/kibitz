@@ -908,6 +908,8 @@ Example good titles:
                 ? "⚠️ OpenRouter support coming soon"
                 : !activeProject?.settings.apiKey?.trim()
                 ? "⚠️ Set your API key in Settings to start chatting"
+                : isLoading
+                ? "Processing response..."
                 : "Type your message"
             }
             onKeyDown={(e) => {
