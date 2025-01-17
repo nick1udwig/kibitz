@@ -85,9 +85,12 @@ export function getProviderModels(type: string): string[] {
       ];
     case 'openai':
       return [
-        'gpt-4-turbo-preview',
-        'gpt-4',
-        'gpt-3.5-turbo',
+        'gpt-4o',           // Most capable
+        'gpt-4-turbo',      // Fast, up to date
+        'gpt-4o-mini',      // Smaller but fast
+        'gpt-4',            // Original GPT-4
+        'gpt-3.5-turbo',    // Fast, cost-effective
+        'gpt-3.5-turbo-16k' // Larger context
       ];
     case 'openrouter':
       return [
