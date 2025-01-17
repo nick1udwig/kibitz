@@ -621,7 +621,7 @@ Example good titles:
               key={`text-${index}-${contentIndex}`}
               className={`flex max-w-full pt-6`}
             >
-              <div className="relative group w-full max-w-full overflow-hidden">
+              <div className="relative group w-full max-w-full overflow-x-auto">
                 {!content.text.match(/```[\s\S]*```/) && (
                   <div className="absolute right-2 top-0 z-10">
                     <CopyButton
@@ -636,7 +636,7 @@ Example good titles:
                     : 'bg-muted text-foreground'
                     }`}
                 >
-<ReactMarkdown
+                  <ReactMarkdown
                     className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground [&_code]:!text-accent-foreground' : ''}`}
                     components={{
                       p: ({ children }) => (
@@ -646,7 +646,7 @@ Example good titles:
                       ),
                       pre({ children, ...props }) {
                         // Extract text from the code block
-          const getCodeText = (node: unknown): string => {
+                        const getCodeText = (node: unknown): string => {
                           if (typeof node === 'string') return node;
                           if (!node) return '';
                           if (Array.isArray(node)) {
@@ -680,9 +680,9 @@ Example good titles:
                       },
                       code({ inline, children, ...props }) {
                         return inline ? (
-                          <code className="text-inherit whitespace-nowrap" {...props}>{children}</code>
+                          <code className="text-inherit whitespace-nowrap inline" {...props}>{children}</code>
                         ) : (
-                          <code className="block overflow-x-auto whitespace-pre" {...props}>{children}</code>
+                          <code className="block overflow-x-auto whitespace-pre-wrap" {...props}>{children}</code>
                         );
                       },
                       a: ({ href, children }) => (
