@@ -1,4 +1,5 @@
 import { Project, ConversationBrief } from '../components/LlmChat/context/types';
+import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
 import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 
@@ -156,31 +157,11 @@ const initDb = async (): Promise<KibitzDb> => {
             try {
               // Convert legacy provider settings to new format
               if (project.settings) {
-                if (project.settings.provider === 'anthropic' || !project.settings.provider) {
-                  project.settings.providerConfig = {
-                    type: 'anthropic',
-                    settings: {
-                      apiKey: project.settings.anthropicApiKey || project.settings.apiKey || '',
-                    }
-                  };
-                } else if (project.settings.provider === 'openrouter') {
-                  project.settings.providerConfig = {
-                    type: 'openrouter',
-                    settings: {
-                      apiKey: project.settings.openRouterApiKey || '',
-                      baseUrl: project.settings.openRouterBaseUrl || '',
-                    }
-                  };
-                } else if (project.settings.provider === 'openai') {
-                  project.settings.providerConfig = {
-                    type: 'openai',
-                    settings: {
-                      apiKey: project.settings.openaiApiKey || '',
-                      baseUrl: project.settings.openaiBaseUrl || 'https://api.openai.com/v1',
-                      organizationId: project.settings.openaiOrgId || '',
-                    }
-                  };
-                }
+                // Use the helper function to convert legacy settings to new format
+                project.settings.providerConfig = convertLegacyToProviderConfig(
+                  project.settings.provider,
+                  project.settings
+                );
                 cursor.update(project);
               }
             } catch (error) {
@@ -286,15 +267,10 @@ const sanitizeProjectForStorage = (project: Project): Project => {
         status: 'disconnected'
       })) || [],
       // Ensure providerConfig exists by converting from legacy if needed
-      providerConfig: project.settings.providerConfig || {
-        type: project.settings.provider || 'anthropic',
-        settings: project.settings.provider === 'openrouter' ? {
-          apiKey: project.settings.openRouterApiKey || '',
-          baseUrl: project.settings.openRouterBaseUrl || '',
-        } : {
-          apiKey: project.settings.anthropicApiKey || project.settings.apiKey || '',
-        }
-      }
+      providerConfig: project.settings.providerConfig || convertLegacyToProviderConfig(
+        project.settings.provider,
+        project.settings
+      )
     },
     conversations: project.conversations.map(conv => ({
       ...conv,
