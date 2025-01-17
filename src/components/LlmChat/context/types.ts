@@ -1,9 +1,14 @@
 import { Message } from '../types';
 import { McpServer } from '../types/mcp';
 import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
+import { ProviderConfig, LegacyProviderType, LegacyProviderSettings } from '../types/provider';
 
-export interface ProjectSettings {
-  apiKey: string;
+// Keep for backwards compatibility
+export type ProviderType = LegacyProviderType;
+
+export interface ProjectSettings extends LegacyProviderSettings {
+  provider?: LegacyProviderType;  // Optional for backward compatibility
+  providerConfig?: ProviderConfig;  // New provider configuration
   model: string;
   systemPrompt: string;
   mcpServers: McpServer[];

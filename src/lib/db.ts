@@ -1,9 +1,10 @@
 import { Project, ConversationBrief } from '../components/LlmChat/context/types';
+import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
 import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 
 const DB_NAME = 'kibitz_db';
-const DB_VERSION = 3;
+const DB_VERSION = 5;
 
 interface DbState {
   projects: Project[];
@@ -75,6 +76,113 @@ const initDb = async (): Promise<KibitzDb> => {
         // Move MCP servers to a separate object store
         const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
         mcpStore.createIndex('name', 'name');
+      } else if (event.oldVersion < 4) {
+        // Add provider field and separate API keys to existing projects
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during upgrade');
+          return;
+        }
+        const projectStore = transaction.objectStore('projects');
+        
+        // Migrate existing projects
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const project = cursor.value;
+            
+            // Always ensure settings object exists and has current defaults
+            if (!project.settings) {
+              project.settings = {
+                mcpServers: [],
+                model: 'claude-3-5-sonnet-20241022',
+                systemPrompt: '',
+                elideToolResults: false,
+              };
+            }
+
+            // Update model if it's an old one
+            if (project.settings) {
+              const oldModels = ['claude-2.0', 'claude-2.1', 'claude-2', 'claude-instant'];
+              if (oldModels.includes(project.settings.model) || !project.settings.model) {
+                project.settings.model = 'claude-3-5-sonnet-20241022';
+              }
+
+              // Always set provider if upgrading from v3
+              project.settings.provider = 'anthropic';
+              
+              // Copy API key to anthropicApiKey if it exists
+              if (project.settings.apiKey) {
+                project.settings.anthropicApiKey = project.settings.apiKey;
+                // Keep original apiKey for backward compatibility
+              }
+              
+              // Initialize empty OpenRouter fields
+              project.settings.openRouterApiKey = '';
+              project.settings.openRouterBaseUrl = '';
+            }
+
+            try {
+              cursor.update(project);
+            } catch (error) {
+              console.error('Error updating project during migration:', error);
+              // On error, try to at least save the provider field
+              try {
+                cursor.update({
+                  ...project,
+                  settings: {
+                    ...project.settings,
+                    provider: 'anthropic'
+                  }
+                });
+              } catch (fallbackError) {
+                console.error('Critical error during migration fallback:', fallbackError);
+              }
+            }
+            cursor.continue();
+          }
+        };
+
+        // Add error handling for the cursor operation
+        projectStore.openCursor().onerror = (error) => {
+          console.error('Error during v4 migration:', error);
+        };
+      } else if (event.oldVersion < 5) {
+        // Add new providerConfig field to existing projects
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during upgrade');
+          return;
+        }
+        const projectStore = transaction.objectStore('projects');
+        
+        // Migrate existing projects
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const project = cursor.value;
+            
+            try {
+              // Convert legacy provider settings to new format
+              if (project.settings) {
+                // Use the helper function to convert legacy settings to new format
+                project.settings.providerConfig = convertLegacyToProviderConfig(
+                  project.settings.provider,
+                  project.settings
+                );
+                cursor.update(project);
+              }
+            } catch (error) {
+              console.error('Error updating project during v5 migration:', error);
+            }
+            cursor.continue();
+          }
+        };
+
+        // Add error handling for the cursor operation
+        projectStore.openCursor().onerror = (error) => {
+          console.error('Error during v5 migration:', error);
+        };
       }
     };
   });
@@ -166,7 +274,12 @@ const sanitizeProjectForStorage = (project: Project): Project => {
         ...server,
         ws: undefined, // Remove WebSocket instance
         status: 'disconnected'
-      })) || []
+      })) || [],
+      // Ensure providerConfig exists by converting from legacy if needed
+      providerConfig: project.settings.providerConfig || convertLegacyToProviderConfig(
+        project.settings.provider,
+        project.settings
+      )
     },
     conversations: project.conversations.map(conv => ({
       ...conv,

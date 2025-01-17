@@ -8,9 +8,22 @@ const ProjectContext = createContext<ProjectState | null>(null);
 
 const generateId = () => Math.random().toString(36).substring(7);
 
+// Get default model for a provider
+function getDefaultModelForProvider(provider?: ProviderType): string {
+  switch (provider) {
+    case 'openai':
+      return 'gpt-4o';
+    case 'openrouter':
+      return 'openai/gpt-4-turbo-preview';
+    case 'anthropic':
+    default:
+      return 'claude-3-5-sonnet-20241022';
+  }
+}
+
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   apiKey: '',
-  model: 'claude-3-5-sonnet-20241022',
+  model: getDefaultModelForProvider('anthropic'),
   systemPrompt: '',
   mcpServers: [],
   elideToolResults: false,
