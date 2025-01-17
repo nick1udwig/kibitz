@@ -91,34 +91,36 @@ const initDb = async (): Promise<KibitzDb> => {
           if (cursor) {
             const project = cursor.value;
             
-          // Always ensure settings object exists and has current defaults
-          if (!project.settings) {
-            project.settings = {
-              mcpServers: [],
-              model: 'claude-3-5-sonnet-20241022',
-              systemPrompt: '',
-              elideToolResults: false,
-            };
-          } else {
-            // Update model if it's an old one
-            const oldModels = ['claude-2.0', 'claude-2.1', 'claude-2', 'claude-instant'];
-            if (oldModels.includes(project.settings.model) || !project.settings.model) {
-              project.settings.model = 'claude-3-5-sonnet-20241022';
-            }
+            // Always ensure settings object exists and has current defaults
+            if (!project.settings) {
+              project.settings = {
+                mcpServers: [],
+                model: 'claude-3-5-sonnet-20241022',
+                systemPrompt: '',
+                elideToolResults: false,
+              };
             }
 
-            // Always set provider if upgrading from v3
-            project.settings.provider = 'anthropic';
-            
-            // Copy API key to anthropicApiKey if it exists
-            if (project.settings.apiKey) {
-              project.settings.anthropicApiKey = project.settings.apiKey;
-              // Keep original apiKey for backward compatibility
+            // Update model if it's an old one
+            if (project.settings) {
+              const oldModels = ['claude-2.0', 'claude-2.1', 'claude-2', 'claude-instant'];
+              if (oldModels.includes(project.settings.model) || !project.settings.model) {
+                project.settings.model = 'claude-3-5-sonnet-20241022';
+              }
+
+              // Always set provider if upgrading from v3
+              project.settings.provider = 'anthropic';
+              
+              // Copy API key to anthropicApiKey if it exists
+              if (project.settings.apiKey) {
+                project.settings.anthropicApiKey = project.settings.apiKey;
+                // Keep original apiKey for backward compatibility
+              }
+              
+              // Initialize empty OpenRouter fields
+              project.settings.openRouterApiKey = '';
+              project.settings.openRouterBaseUrl = '';
             }
-            
-            // Initialize empty OpenRouter fields
-            project.settings.openRouterApiKey = '';
-            project.settings.openRouterBaseUrl = '';
 
             try {
               cursor.update(project);
@@ -177,6 +179,7 @@ const initDb = async (): Promise<KibitzDb> => {
           }
         };
 
+        // Add error handling for the cursor operation
         projectStore.openCursor().onerror = (error) => {
           console.error('Error during v5 migration:', error);
         };
