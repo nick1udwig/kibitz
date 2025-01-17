@@ -61,6 +61,9 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
     // Schedule new reconnection attempt
     const timeout = setTimeout(() => {
+      if (connectToServerRef.current == null) {
+        console.log(`{server.name}: scheduleReconnect can't reconnect because connectToServerRef is null`);
+      }
       connectToServerRef.current?.(server).catch(error => {
         console.error(`Reconnection failed for ${server.name}:`, error);
         // If reconnection fails, schedule another attempt with exponential backoff
@@ -197,6 +200,8 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       };
     }
   }, [cleanupServer, scheduleReconnect]);
+
+  connectToServerRef.current = connectToServer;
 
   const addServer = useCallback(async (server: McpServer) => {
     setServers(current => [...current, { ...server, status: 'connecting', error: undefined }]);
