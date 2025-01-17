@@ -3,7 +3,7 @@ import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 
 const DB_NAME = 'kibitz_db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 interface DbState {
   projects: Project[];
@@ -138,6 +138,52 @@ const initDb = async (): Promise<KibitzDb> => {
         projectStore.openCursor().onerror = (error) => {
           console.error('Error during v4 migration:', error);
         };
+      } else if (event.oldVersion < 5) {
+        // Add new providerConfig field to existing projects
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during upgrade');
+          return;
+        }
+        const projectStore = transaction.objectStore('projects');
+        
+        // Migrate existing projects
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const project = cursor.value;
+            
+            try {
+              // Convert legacy provider settings to new format
+              if (project.settings) {
+                if (project.settings.provider === 'anthropic' || !project.settings.provider) {
+                  project.settings.providerConfig = {
+                    type: 'anthropic',
+                    settings: {
+                      apiKey: project.settings.anthropicApiKey || project.settings.apiKey || '',
+                    }
+                  };
+                } else if (project.settings.provider === 'openrouter') {
+                  project.settings.providerConfig = {
+                    type: 'openrouter',
+                    settings: {
+                      apiKey: project.settings.openRouterApiKey || '',
+                      baseUrl: project.settings.openRouterBaseUrl || '',
+                    }
+                  };
+                }
+                cursor.update(project);
+              }
+            } catch (error) {
+              console.error('Error updating project during v5 migration:', error);
+            }
+            cursor.continue();
+          }
+        };
+
+        projectStore.openCursor().onerror = (error) => {
+          console.error('Error during v5 migration:', error);
+        };
       }
     };
   });
@@ -229,7 +275,17 @@ const sanitizeProjectForStorage = (project: Project): Project => {
         ...server,
         ws: undefined, // Remove WebSocket instance
         status: 'disconnected'
-      })) || []
+      })) || [],
+      // Ensure providerConfig exists by converting from legacy if needed
+      providerConfig: project.settings.providerConfig || {
+        type: project.settings.provider || 'anthropic',
+        settings: project.settings.provider === 'openrouter' ? {
+          apiKey: project.settings.openRouterApiKey || '',
+          baseUrl: project.settings.openRouterBaseUrl || '',
+        } : {
+          apiKey: project.settings.anthropicApiKey || project.settings.apiKey || '',
+        }
+      }
     },
     conversations: project.conversations.map(conv => ({
       ...conv,
