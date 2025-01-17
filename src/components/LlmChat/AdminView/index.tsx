@@ -93,7 +93,7 @@ export const AdminView = () => {
               >
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="openrouter">OpenRouter (Coming Soon)</option>
-                <option value="openai">OpenAI (GPT-4/3.5)</option>
+                <option value="openai">OpenAI</option>
               </select>
             </div>
 
@@ -193,7 +193,6 @@ export const AdminView = () => {
                   model: e.target.value
                 })}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                disabled={activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai'}
               >
                 {getProviderModels(activeProject.settings.provider || 'anthropic').map(model => (
                   <option key={model} value={model}>{model}</option>
@@ -240,6 +239,7 @@ export const AdminView = () => {
       <Card className="mt-6">
         <CardContent className="p-6">
           <h3 className="text-lg font-medium mb-4">Advanced Settings</h3>
+          <div className="text-xs text-muted-foreground mb-4">Database Version: 5</div>
           <Button
             variant="destructive"
             onClick={() => setShowResetConfirm(true)}
