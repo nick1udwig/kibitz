@@ -171,6 +171,15 @@ const initDb = async (): Promise<KibitzDb> => {
                       baseUrl: project.settings.openRouterBaseUrl || '',
                     }
                   };
+                } else if (project.settings.provider === 'openai') {
+                  project.settings.providerConfig = {
+                    type: 'openai',
+                    settings: {
+                      apiKey: project.settings.openaiApiKey || '',
+                      baseUrl: project.settings.openaiBaseUrl || 'https://api.openai.com/v1',
+                      organizationId: project.settings.openaiOrgId || '',
+                    }
+                  };
                 }
                 cursor.update(project);
               }

@@ -1,4 +1,4 @@
-export type LegacyProviderType = 'anthropic' | 'openrouter';
+export type LegacyProviderType = 'anthropic' | 'openrouter' | 'openai';
 
 export interface ProviderConfig {
   type: string;
@@ -10,6 +10,9 @@ export interface LegacyProviderSettings {
   anthropicApiKey?: string;
   openRouterApiKey?: string;
   openRouterBaseUrl?: string;
+  openaiApiKey?: string;
+  openaiBaseUrl?: string;
+  openaiOrgId?: string;
 }
 
 // Helper function to convert legacy settings to new format
@@ -32,6 +35,15 @@ export function convertLegacyToProviderConfig(
         baseUrl: settings.openRouterBaseUrl || '',
       }
     };
+  } else if (provider === 'openai') {
+    return {
+      type: 'openai',
+      settings: {
+        apiKey: settings.openaiApiKey || '',
+        baseUrl: settings.openaiBaseUrl || 'https://api.openai.com/v1',
+        organizationId: settings.openaiOrgId || '',
+      }
+    };
   }
   throw new Error(`Unknown provider type: ${provider}`);
 }
@@ -49,7 +61,43 @@ export function extractLegacySettings(config: ProviderConfig): LegacyProviderSet
         openRouterApiKey: config.settings.apiKey,
         openRouterBaseUrl: config.settings.baseUrl,
       };
+    case 'openai':
+      return {
+        openaiApiKey: config.settings.apiKey,
+        openaiBaseUrl: config.settings.baseUrl,
+        openaiOrgId: config.settings.organizationId,
+      };
     default:
       return {};
+  }
+}
+
+// Helper function to get provider-specific model options
+export function getProviderModels(type: string): string[] {
+  switch (type) {
+    case 'anthropic':
+      return [
+        'claude-3-opus-20240229',
+        'claude-3-sonnet-20240229',
+        'claude-3-haiku-20240307',
+        'claude-2.1',
+        'claude-2.0',
+      ];
+    case 'openai':
+      return [
+        'gpt-4-turbo-preview',
+        'gpt-4',
+        'gpt-3.5-turbo',
+      ];
+    case 'openrouter':
+      return [
+        'openai/gpt-4-turbo-preview',
+        'anthropic/claude-3-opus-20240229',
+        'anthropic/claude-3-sonnet-20240229',
+        'meta-llama/llama-2-70b-chat',
+        'google/gemini-pro',
+      ];
+    default:
+      return [];
   }
 }
