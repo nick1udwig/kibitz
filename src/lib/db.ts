@@ -91,14 +91,20 @@ const initDb = async (): Promise<KibitzDb> => {
           if (cursor) {
             const project = cursor.value;
             
-            // Always ensure settings object exists
-            if (!project.settings) {
-              project.settings = {
-                mcpServers: [],
-                model: 'claude-3-5-sonnet-20241022',
-                systemPrompt: '',
-                elideToolResults: false,
-              };
+          // Always ensure settings object exists and has current defaults
+          if (!project.settings) {
+            project.settings = {
+              mcpServers: [],
+              model: 'claude-3-5-sonnet-20241022',
+              systemPrompt: '',
+              elideToolResults: false,
+            };
+          } else {
+            // Update model if it's an old one
+            const oldModels = ['claude-2.0', 'claude-2.1', 'claude-2', 'claude-instant'];
+            if (oldModels.includes(project.settings.model) || !project.settings.model) {
+              project.settings.model = 'claude-3-5-sonnet-20241022';
+            }
             }
 
             // Always set provider if upgrading from v3
