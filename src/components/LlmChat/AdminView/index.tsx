@@ -41,13 +41,31 @@ export const AdminView = () => {
   }
 
   const handleSettingsChange = (settings: Partial<ProjectSettings>) => {
-    // Update to include settings in the correct nested structure
-    updateProjectSettings(activeProject.id, {
-      settings: {
-        ...activeProject.settings,
-        ...settings
-      }
-    });
+    // Special handling for provider changes to preserve API keys
+    if (settings.provider !== undefined && settings.provider !== activeProject.settings.provider) {
+      // When changing provider, ensure we preserve both API keys
+      updateProjectSettings(activeProject.id, {
+        settings: {
+          ...activeProject.settings,
+          ...settings,
+          // Preserve the API keys when switching providers
+          anthropicApiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey,
+          openRouterApiKey: activeProject.settings.openRouterApiKey || '',
+          // Keep legacy apiKey in sync with anthropicApiKey
+          apiKey: settings.provider === 'anthropic' 
+            ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey) 
+            : activeProject.settings.apiKey
+        }
+      });
+    } else {
+      // For non-provider changes, proceed normally
+      updateProjectSettings(activeProject.id, {
+        settings: {
+          ...activeProject.settings,
+          ...settings
+        }
+      });
+    }
   };
 
   return (
@@ -103,12 +121,37 @@ export const AdminView = () => {
               </p>
               <Input
                 type="password"
-                value={activeProject.settings.apiKey || ''}
-                onChange={(e) => handleSettingsChange({
-                  apiKey: e.target.value.trim()
-                })}
-                placeholder={`⚠️ Enter your ${activeProject.settings.provider === 'openrouter' ? 'OpenRouter' : 'Anthropic'} API key to use the chat`}
-                className={!activeProject.settings.apiKey?.trim() ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}
+                value={
+                  activeProject.settings.provider === 'openrouter'
+                    ? activeProject.settings.openRouterApiKey || ''
+                    : activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || ''  // Fallback for backward compatibility
+                }
+                onChange={(e) => {
+                  const value = e.target.value.trim();
+                  if (activeProject.settings.provider === 'openrouter') {
+                    handleSettingsChange({
+                      openRouterApiKey: value
+                    });
+                  } else {
+                    handleSettingsChange({
+                      anthropicApiKey: value,
+                      apiKey: value  // Keep apiKey in sync for backward compatibility
+                    });
+                  }
+                }}
+                placeholder={
+                  activeProject.settings.provider === 'openrouter'
+                    ? "⚠️ OpenRouter support coming soon"
+                    : "⚠️ Enter your Anthropic API key to use the chat"
+                }
+                className={
+                  activeProject.settings.provider === 'openrouter'
+                    ? ""
+                    : (!activeProject.settings.anthropicApiKey?.trim() && !activeProject.settings.apiKey?.trim())
+                    ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
+                    : ""
+                }
+                disabled={activeProject.settings.provider === 'openrouter'}
               />
             </div>
 

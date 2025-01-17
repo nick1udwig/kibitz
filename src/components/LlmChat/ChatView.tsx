@@ -160,8 +160,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError(null);
     setIsLoading(true);
 
-    if (!activeProject.settings.apiKey?.trim()) {
-      setError('API key not found. Please set your Anthropic API key in the Settings panel.');
+    const currentApiKey = activeProject.settings.provider === 'openrouter'
+      ? activeProject.settings.openRouterApiKey
+      : (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey);  // Fallback for backward compatibility
+
+    if (!currentApiKey?.trim()) {
+      setError(`API key not found. Please set your ${activeProject.settings.provider === 'openrouter' ? 'OpenRouter' : 'Anthropic'} API key in the Settings panel.`);
       setIsLoading(false);
       return;
     }
@@ -196,7 +200,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       // retry enough times to always push past 60s (the rate limit timer):
       //  https://github.com/anthropics/anthropic-sdk-typescript/blob/dc2591fcc8847d509760a61777fc1b79e0eab646/src/core.ts#L645
       const anthropic = new Anthropic({
-        apiKey: activeProject.settings.apiKey,
+        apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',  // Use anthropic key only
         dangerouslyAllowBrowser: true,
         maxRetries: 12,
       });

@@ -6,7 +6,9 @@ export type ProviderType = 'anthropic' | 'openrouter';
 
 export interface ProjectSettings {
   provider?: ProviderType;  // Optional for backward compatibility, defaults to 'anthropic'
-  apiKey: string;
+  anthropicApiKey?: string;  // Renamed from apiKey for clarity
+  openRouterApiKey?: string;  // Separate key for OpenRouter
+  apiKey?: string;  // Keep for backward compatibility
   model: string;
   systemPrompt: string;
   mcpServers: McpServer[];

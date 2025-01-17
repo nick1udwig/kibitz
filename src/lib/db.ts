@@ -76,7 +76,7 @@ const initDb = async (): Promise<KibitzDb> => {
         const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
         mcpStore.createIndex('name', 'name');
       } else if (event.oldVersion < 4) {
-        // Add provider field to existing projects
+        // Add provider field and separate API keys to existing projects
         const transaction = (event.target as IDBOpenDBRequest).transaction;
         if (!transaction) {
           console.error('No transaction available during upgrade');
@@ -84,17 +84,59 @@ const initDb = async (): Promise<KibitzDb> => {
         }
         const projectStore = transaction.objectStore('projects');
         
-        // Add provider field to existing projects
+        // Migrate existing projects
         projectStore.openCursor().onsuccess = (e) => {
           const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
           if (cursor) {
             const project = cursor.value;
-            if (!project.settings.provider) {
-              project.settings.provider = 'anthropic';
+            
+            // Always ensure settings object exists
+            if (!project.settings) {
+              project.settings = {
+                mcpServers: [],
+                model: 'claude-3-5-sonnet-20241022',
+                systemPrompt: '',
+                elideToolResults: false,
+              };
+            }
+
+            // Always set provider if upgrading from v3
+            project.settings.provider = 'anthropic';
+            
+            // Copy API key to anthropicApiKey if it exists
+            if (project.settings.apiKey) {
+              project.settings.anthropicApiKey = project.settings.apiKey;
+              // Keep original apiKey for backward compatibility
+            }
+            
+            // Initialize empty OpenRouter fields
+            project.settings.openRouterApiKey = '';
+            project.settings.openRouterBaseUrl = '';
+
+            try {
               cursor.update(project);
+            } catch (error) {
+              console.error('Error updating project during migration:', error);
+              // On error, try to at least save the provider field
+              try {
+                cursor.update({
+                  ...project,
+                  settings: {
+                    ...project.settings,
+                    provider: 'anthropic'
+                  }
+                });
+              } catch (fallbackError) {
+                console.error('Critical error during migration fallback:', fallbackError);
+              }
             }
             cursor.continue();
           }
+        };
+
+        // Add error handling for the cursor operation
+        projectStore.openCursor().onerror = (error) => {
+          console.error('Error during v4 migration:', error);
         };
       }
     };
