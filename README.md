@@ -36,3 +36,13 @@ npm run dev
 
 Note configuration is PER-PROJECT.
 When creating a new project, it will use some, but not all, of the current project's configuration: the API key, model, and system prompt will be copied over, but MCP servers will not.
+
+## Building for Kinode
+
+Add a base to the endpoint by building with the `NEXT_PUBLIC_BASE_PATH` like so:
+
+```bash
+NEXT_PUBLIC_BASE_PATH=/kibitz:kibitz:nick.kino npm run build
+```
+
+and then copy the contents of `out/` into the package's `pkg/ui/` dir.
