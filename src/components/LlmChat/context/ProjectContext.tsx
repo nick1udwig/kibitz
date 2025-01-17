@@ -3,13 +3,14 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { Project, ProjectSettings, ProjectState, ConversationBrief } from './types';
 import { loadState, saveState } from '../../../lib/db';
+import { LegacyProviderType } from '../types/provider';
 
 const ProjectContext = createContext<ProjectState | null>(null);
 
 const generateId = () => Math.random().toString(36).substring(7);
 
 // Get default model for a provider
-function getDefaultModelForProvider(provider?: ProviderType): string {
+function getDefaultModelForProvider(provider?: LegacyProviderType): string {
   switch (provider) {
     case 'openai':
       return 'gpt-4o';
