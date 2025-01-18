@@ -119,19 +119,25 @@ export const useStore = create<RootState>((set, get) => {
           }));
         };
 
-        ws.onclose = () => {
-          clearTimeout(timeout);
-          cleanupServer(server.id);
+          ws.onclose = () => {
+            clearTimeout(timeout);
+            cleanupServer(server.id);
 
-          set(state => ({
-            servers: state.servers.map(s => s.id === server.id
-              ? { ...s, status: 'disconnected', error: 'Connection closed' }
-              : s
-            )
-          }));
+            const updatedState = {
+              servers: get().servers.map(s => s.id === server.id
+                ? { ...s, status: 'disconnected' as const, error: 'Connection closed' }
+                : s
+              )
+            };
+            set(updatedState);
 
-          scheduleReconnect(server);
-        };
+            // Save state after disconnection
+            saveMcpServers(updatedState.servers).catch((err) => {
+              console.error('Error saving MCP servers on disconnect:', err);
+            });
+
+            scheduleReconnect(server);
+          };
 
         ws.onerror = () => {
           clearTimeout(timeout);
@@ -181,12 +187,13 @@ export const useStore = create<RootState>((set, get) => {
                 connection: ws
               };
 
-              set(state => ({
-                servers: state.servers.map(s => s.id === server.id ? connectedServer : s)
-              }));
+              const updatedState = {
+                servers: get().servers.map(s => s.id === server.id ? connectedServer : s)
+              };
+              set(updatedState);
 
-              saveMcpServers(get().servers).catch(() => {
-                console.error('Error saving MCP servers');
+              saveMcpServers(updatedState.servers).catch((err) => {
+                console.error('Error saving MCP servers:', err);
               });
 
               resolve(connectedServer);
@@ -224,39 +231,43 @@ export const useStore = create<RootState>((set, get) => {
       if (get().initialized) return;
 
       try {
-        // Initialize MCP servers
-        if (get().servers.length === 0) {
+        // Always try to load saved servers first
+        const savedServers = await loadMcpServers();
+        console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
+
+        const connectedServers: McpServerConnection[] = [];
+
+        // Attempt to connect to each saved server
+        for (const server of savedServers) {
           try {
-            const savedServers = await loadMcpServers();
-            console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
-
-            const connectedServers: McpServerConnection[] = [];
-            for (const server of savedServers) {
-              try {
-                const connectedServer = await connectToServer(server);
-                connectedServers.push(connectedServer);
-              } catch {
-                console.error(`Initial connection failed for ${server.name}`);
-                connectedServers.push({
-                  ...server,
-                  status: 'error',
-                  error: 'Failed to connect'
-                });
-              }
-            }
-
-            set({ servers: connectedServers });
-
-            // Attempt local MCP connection if no servers exist
-            if (connectedServers.length === 0) {
-              const localServer = await get().attemptLocalMcpConnection();
-              if (localServer) {
-                console.log('Connected to local MCP server');
-              }
-            }
-          } catch {
-            console.error('Error initializing MCP servers');
+            const connectedServer = await connectToServer(server);
+            connectedServers.push(connectedServer);
+          } catch (err) {
+            console.error(`Initial connection failed for ${server.name}:`, err);
+            connectedServers.push({
+              ...server,
+              status: 'error',
+              error: 'Failed to connect'
+            });
           }
+        }
+
+        // Update state with loaded servers
+        set({ servers: connectedServers });
+
+        // Only attempt local MCP connection if no saved servers exist
+        if (savedServers.length === 0) {
+          try {
+            const localServer = await get().attemptLocalMcpConnection();
+            if (localServer) {
+              console.log('Connected to local MCP server');
+              await saveMcpServers([...connectedServers, localServer]);
+            }
+          } catch (err) {
+            console.error('Failed to connect to local MCP:', err);
+          }
+        } else {
+            await saveMcpServers(connectedServers);
         }
 
         // Initialize project state
@@ -635,29 +646,35 @@ export const useStore = create<RootState>((set, get) => {
 
       try {
         const connectedServer = await connectToServer(server);
-        set(state => ({
-          servers: state.servers.map(s => s.id === server.id ? connectedServer : s)
-        }));
-        await saveMcpServers(get().servers);
+        const updatedState = {
+          servers: get().servers.map(s => s.id === server.id ? connectedServer : s)
+        };
+        set(updatedState);
+        await saveMcpServers(updatedState.servers);
         return connectedServer;
       } catch {
-        set(state => ({
-          servers: state.servers.map(s => s.id === server.id
-            ? { ...s, status: 'error', error: 'Connection failed' }
+        const updatedState = {
+          servers: get().servers.map(s => s.id === server.id
+            ? { ...s, status: 'error' as const, error: 'Connection failed' }
             : s
           )
-        }));
+        };
+        set(updatedState);
+        saveMcpServers(updatedState.servers).catch((saveErr) => {
+          console.error('Error saving MCP servers:', saveErr);
+        });
         return get().servers.find(s => s.id === server.id);
       }
     },
 
     removeServer: (serverId: string) => {
       cleanupServer(serverId);
-      set(state => ({
-        servers: state.servers.filter(s => s.id !== serverId)
-      }));
-      saveMcpServers(get().servers).catch(() => {
-        console.error('Error saving MCP servers');
+      const updatedState = {
+        servers: get().servers.filter(s => s.id !== serverId)
+      };
+      set(updatedState);
+      saveMcpServers(updatedState.servers).catch((err) => {
+        console.error('Error saving MCP servers:', err);
       });
     },
 
