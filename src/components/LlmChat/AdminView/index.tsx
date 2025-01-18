@@ -12,12 +12,10 @@ import { getProviderModels } from '../types/provider';
 import { McpServer } from '../types/mcp';
 import { McpConfiguration } from './McpConfiguration';
 import { ThemeToggle } from '../ThemeToggle';
-import { useProjectStore } from '@/stores/projectStore';
-import { useMcpStore } from '@/stores/mcpStore';
+import { useStore } from '@/stores/rootStore';
 
 export const AdminView = () => {
-  const { projects, activeProjectId, updateProjectSettings } = useProjectStore();
-  const { servers } = useMcpStore();
+  const { projects, activeProjectId, updateProjectSettings, servers } = useStore();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const activeProject = projects.find(p => p.id === activeProjectId);

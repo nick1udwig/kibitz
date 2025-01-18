@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { McpServer } from '../types/mcp';
 import { Trash2, RefreshCw } from 'lucide-react';
-import { useMcpStore } from '@/stores/mcpStore';
+import { useStore } from '@/stores/rootStore';
 
 interface McpConfigurationProps {
   servers: McpServer[];
@@ -20,7 +20,7 @@ export const McpConfiguration = ({
     name: '',
     uri: ''
   });
-  const { addServer, removeServer, reconnectServer } = useMcpStore();
+  const { addServer, removeServer, reconnectServer } = useStore();
 
   const handleAddServer = async () => {
     const server = {

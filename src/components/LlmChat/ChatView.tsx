@@ -12,9 +12,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from './types';
 import { ToolCallModal } from './ToolCallModal';
-import { useProjectStore } from '@/stores/projectStore';
 import { useFocusControl } from './context/useFocusControl';
-import { useMcpStore } from '@/stores/mcpStore';
+import { useStore } from '@/stores/rootStore';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -30,7 +29,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     activeConversationId,
     updateProjectSettings,
     renameConversation,
-  } = useProjectStore();
+    servers,
+    executeTool
+  } = useStore();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
   const activeConversation = activeProject?.conversations.find(
@@ -42,7 +43,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const [error, setError] = useState<string | null>(null);
   const shouldCancelRef = useRef<boolean>(false);
   const streamRef = useRef<{ abort: () => void } | null>(null);
-  const { servers, executeTool } = useMcpStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
