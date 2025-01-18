@@ -224,10 +224,46 @@ export const useStore = create<RootState>((set, get) => {
       if (get().initialized) return;
 
       try {
+        // Initialize MCP servers
+        if (get().servers.length === 0) {
+          try {
+            const savedServers = await loadMcpServers();
+            console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
+
+            const connectedServers: McpServerConnection[] = [];
+            for (const server of savedServers) {
+              try {
+                const connectedServer = await connectToServer(server);
+                connectedServers.push(connectedServer);
+              } catch {
+                console.error(`Initial connection failed for ${server.name}`);
+                connectedServers.push({
+                  ...server,
+                  status: 'error',
+                  error: 'Failed to connect'
+                });
+              }
+            }
+
+            set({ servers: connectedServers });
+
+            // Attempt local MCP connection if no servers exist
+            if (connectedServers.length === 0) {
+              const localServer = await get().attemptLocalMcpConnection();
+              if (localServer) {
+                console.log('Connected to local MCP server');
+              }
+            }
+          } catch {
+            console.error('Error initializing MCP servers');
+          }
+        }
+
         // Initialize project state
         const state = await loadState();
         const hasProjects = state.projects.length > 0;
-        
+        console.log('Loading projects from IndexedDB:', JSON.stringify(state));
+
         if (hasProjects) {
           set({
             projects: state.projects,
@@ -262,41 +298,6 @@ export const useStore = create<RootState>((set, get) => {
             activeProjectId: defaultProject.id,
             activeConversationId: defaultConversation.id,
           });
-        }
-
-        // Initialize MCP servers
-        if (get().servers.length === 0) {
-          try {
-            const savedServers = await loadMcpServers();
-            console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
-
-            const connectedServers: McpServerConnection[] = [];
-            for (const server of savedServers) {
-              try {
-                const connectedServer = await connectToServer(server);
-                connectedServers.push(connectedServer);
-              } catch {
-                console.error(`Initial connection failed for ${server.name}`);
-                connectedServers.push({
-                  ...server,
-                  status: 'error',
-                  error: 'Failed to connect'
-                });
-              }
-            }
-
-            set({ servers: connectedServers });
-
-            // Attempt local MCP connection if no servers exist
-            if (connectedServers.length === 0) {
-              const localServer = await get().attemptLocalMcpConnection();
-              if (localServer) {
-                console.log('Connected to local MCP server');
-              }
-            }
-          } catch {
-            console.error('Error initializing MCP servers');
-          }
         }
 
         set({ initialized: true });
@@ -399,7 +400,7 @@ export const useStore = create<RootState>((set, get) => {
     deleteProject: (id: string) => {
       const { projects, activeProjectId } = get();
       const newProject = projects.find(p => p.id !== id);
-      
+
       const newState = {
         projects: projects.filter(p => p.id !== id),
         activeProjectId: activeProjectId === id && newProject ? newProject.id : activeProjectId,
@@ -494,7 +495,7 @@ export const useStore = create<RootState>((set, get) => {
 
     deleteConversation: (projectId: string, conversationId: string) => {
       const newChatId = generateId();
-      
+
       set(state => {
         const updatedProjects = state.projects.map(p => {
           if (p.id !== projectId) return p;
@@ -593,7 +594,7 @@ export const useStore = create<RootState>((set, get) => {
     setActiveProject: (projectId: string | null) => {
       const { projects } = get();
       const project = projectId ? projects.find(p => p.id === projectId) : null;
-      
+
       set(state => {
         const newState = {
           ...state,
