@@ -18,7 +18,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="icon" href={`${PATH_PREFIX}/favicon.svg`} type="image/svg" />
       </head>
       <body className={`${inter.className} bg-background min-h-screen`}>
