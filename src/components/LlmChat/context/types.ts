@@ -11,7 +11,7 @@ export interface ProjectSettings extends LegacyProviderSettings {
   providerConfig?: ProviderConfig;  // New provider configuration
   model: string;
   systemPrompt: string;
-  mcpServers: McpServer[];
+  mcpServerIds: string[];  // Store server IDs instead of full server objects
   elideToolResults: boolean;
 }
 

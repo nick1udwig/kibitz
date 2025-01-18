@@ -268,13 +268,9 @@ const sanitizeProjectForStorage = (project: Project): Project => {
   // First convert to JSON to remove non-serializable properties
   const sanitizedProject = JSON.parse(JSON.stringify({
     ...project,
-    settings: {
-      ...project.settings,
-      mcpServers: project.settings.mcpServers?.map(server => ({
-        ...server,
-        ws: undefined, // Remove WebSocket instance
-        status: 'disconnected'
-      })) || [],
+      settings: {
+        ...project.settings,
+        mcpServerIds: project.settings.mcpServerIds || [],
       // Ensure providerConfig exists by converting from legacy if needed
       providerConfig: project.settings.providerConfig || convertLegacyToProviderConfig(
         project.settings.provider,

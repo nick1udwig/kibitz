@@ -3,17 +3,14 @@
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { type ThemeProviderProps } from "next-themes";
 import { useEffect } from 'react';
-import { useProjectStore } from '@/stores/projectStore';
-import { useMcpStore } from '@/stores/mcpStore';
+import { useStore } from '@/stores/rootStore';
 
 const StoreInitializer = () => {
-  const initializeProject = useProjectStore(state => state.initialize);
-  const initializeMcp = useMcpStore(state => state.initialize);
+  const initialize = useStore(state => state.initialize);
 
   useEffect(() => {
-    initializeProject();
-    initializeMcp();
-  }, [initializeProject, initializeMcp]);
+    initialize();
+  }, [initialize]);
 
   return null;
 };
