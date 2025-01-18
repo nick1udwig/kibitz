@@ -98,7 +98,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   }, [activeConversation?.messages, activeConversation?.lastUpdated]);
 
   const getUniqueTools = (should_cache: boolean) => {
-    if (!activeProject?.settings.mcpServers?.length) {
+    if (!activeProject?.settings.mcpServerIds?.length) {
       return [];
     }
 
@@ -106,9 +106,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
     servers
       .filter(server =>
-        activeProject.settings.mcpServers.some(
-          configuredServer => configuredServer.id === server.id
-        )
+        activeProject.settings.mcpServerIds.includes(server.id)
       )
       .flatMap(s => s.tools || [])
       .forEach((tool: Tool) => {

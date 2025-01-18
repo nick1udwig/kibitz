@@ -21,7 +21,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   apiKey: '',
   model: getDefaultModelForProvider('anthropic'),
   systemPrompt: '',
-  mcpServers: [],
+  mcpServerIds: [],
   elideToolResults: false,
 };
 
@@ -328,15 +328,10 @@ export const useStore = create<RootState>((set, get) => {
       const currentProject = projects.find(p => p.id === activeProjectId);
       const projectId = generateId();
 
-      // Get connected servers from state
-      const connectedServers = get().servers
+      // Get connected server IDs from state
+      const connectedServerIds = get().servers
         .filter(server => server.status === 'connected')
-        .map(server => ({
-          id: server.id,
-          name: server.name,
-          uri: server.uri,
-          status: 'connected' as const
-        }));
+        .map(server => server.id);
 
       const newProject: Project = {
         id: projectId,
@@ -347,7 +342,7 @@ export const useStore = create<RootState>((set, get) => {
             apiKey: currentProject.settings.apiKey,
             systemPrompt: '',
           }),
-          mcpServers: connectedServers,
+          mcpServerIds: connectedServerIds,
           ...settings,
         },
         conversations: [],
@@ -445,9 +440,9 @@ export const useStore = create<RootState>((set, get) => {
                 ? {
                     ...p.settings,
                     ...updates.settings,
-                    mcpServers: updates.settings.mcpServers !== undefined
-                      ? updates.settings.mcpServers
-                      : p.settings.mcpServers
+                    mcpServerIds: updates.settings.mcpServerIds !== undefined
+                      ? updates.settings.mcpServerIds
+                      : p.settings.mcpServerIds
                   }
                 : p.settings,
               conversations: updatedConversations,
