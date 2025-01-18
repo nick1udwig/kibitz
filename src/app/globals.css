@@ -104,7 +104,8 @@
   }
 
   input, textarea {
-    @apply font-['Kode_Mono'];
+    @apply font-['Kode_Mono'] text-base;
+    font-size: 16px;
   }
 }
 
