@@ -210,7 +210,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ...(currentProject && {
           apiKey: currentProject.settings.apiKey,
           systemPrompt: '',
-          mcpServers: [],
+          // Preserve default MCP server settings
+          mcpServers: currentProject.settings.mcpServers.filter(server =>
+            server.name === 'Local MCP' && server.id === 'localhost-mcp'
+          ),
         }),
         ...settings,
       },

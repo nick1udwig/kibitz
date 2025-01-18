@@ -49,7 +49,34 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       ws.close();
       connectionsRef.current.delete(serverId);
     }
+
+    // Update server status to disconnected
+    setServers(current =>
+      current.map(s => s.id === serverId
+        ? { ...s, status: 'disconnected', error: undefined }
+        : s
+      )
+    );
   }, []);
+
+  // Cleanup servers that are no longer referenced in any project
+  useEffect(() => {
+    const projectServerIds = new Set();
+    projects.forEach(project => {
+      project.settings.mcpServers.forEach(server => {
+        projectServerIds.add(server.id);
+      });
+    });
+
+    // Find servers that need cleanup
+    const serversToCleanup = servers.filter(server => !projectServerIds.has(server.id));
+
+    // Clean up unused servers
+    serversToCleanup.forEach(server => {
+      cleanupServer(server.id);
+      setServers(current => current.filter(s => s.id !== server.id));
+    });
+  }, [projects, servers, cleanupServer]);
 
   // use a ref to avoid circular dependencies between scheduleReconnect & connectToServer
   const connectToServerRef = useRef<(server: McpServer) => Promise<McpServerConnection>>(null!);
@@ -325,31 +352,28 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
     }
   }, [connectToServer, servers]);
 
+  // Try to connect to default MCP server for new or empty projects
   useEffect(() => {
-    if (projects.length == 0) {
-      return;
-    }
-    const project = projects[projects.length - 1]
-    if (project.settings.mcpServers.length > 0) {
-      return;
-    }
-    const createdAt = project.createdAt;
-    const updatedAt = project.updatedAt;
-    const now = new Date;
-    const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
-    if (!(createdAt >= oneMinuteAgo && createdAt <= now) || updatedAt > createdAt) {
+    if (projects.length === 0) {
       return;
     }
 
-    attemptLocalMcpConnection().then(server => {
-      if (server) {
-        updateProjectSettings(project.id, {
-          settings: {
-            ...project.settings,
-            mcpServers: [...project.settings.mcpServers, server]
-          }
-        });
+    // For each project that has no MCP servers
+    projects.forEach(project => {
+      if (project.settings.mcpServers.length > 0) {
+        return;
       }
+      // Attempt to connect to local MCP
+      attemptLocalMcpConnection().then(server => {
+        if (server) {
+          updateProjectSettings(project.id, {
+            settings: {
+              ...project.settings,
+              mcpServers: [...project.settings.mcpServers, server]
+            }
+          });
+        }
+      });
     });
   }, [projects, attemptLocalMcpConnection, updateProjectSettings]);
 
