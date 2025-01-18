@@ -231,38 +231,40 @@ export const useStore = create<RootState>((set, get) => {
       if (get().initialized) return;
 
       try {
-        // Initialize MCP servers
-        if (get().servers.length === 0) {
+        // Always try to load saved servers first
+        const savedServers = await loadMcpServers();
+        console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
+
+        const connectedServers: McpServerConnection[] = [];
+
+        // Attempt to connect to each saved server
+        for (const server of savedServers) {
           try {
-            const savedServers = await loadMcpServers();
-            console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
+            const connectedServer = await connectToServer(server);
+            connectedServers.push(connectedServer);
+          } catch (err) {
+            console.error(`Initial connection failed for ${server.name}:`, err);
+            connectedServers.push({
+              ...server,
+              status: 'error',
+              error: 'Failed to connect'
+            });
+          }
+        }
 
-            const connectedServers: McpServerConnection[] = [];
-            for (const server of savedServers) {
-              try {
-                const connectedServer = await connectToServer(server);
-                connectedServers.push(connectedServer);
-              } catch {
-                console.error(`Initial connection failed for ${server.name}`);
-                connectedServers.push({
-                  ...server,
-                  status: 'error',
-                  error: 'Failed to connect'
-                });
-              }
+        // Update state with loaded servers
+        set({ servers: connectedServers });
+
+        // Only attempt local MCP connection if no saved servers exist
+        if (savedServers.length === 0) {
+          try {
+            const localServer = await get().attemptLocalMcpConnection();
+            if (localServer) {
+              console.log('Connected to local MCP server');
+              await saveMcpServers([...connectedServers, localServer]);
             }
-
-            set({ servers: connectedServers });
-
-            // Attempt local MCP connection if no servers exist
-            if (connectedServers.length === 0) {
-              const localServer = await get().attemptLocalMcpConnection();
-              if (localServer) {
-                console.log('Connected to local MCP server');
-              }
-            }
-          } catch {
-            console.error('Error initializing MCP servers');
+          } catch (err) {
+            console.error('Failed to connect to local MCP:', err);
           }
         }
 

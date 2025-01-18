@@ -54,12 +54,12 @@ const initDb = async (): Promise<KibitzDb> => {
           return;
         }
         const projectStore = transaction.objectStore('projects');
-        
+
         // Only add the index if it doesn't exist
         if (!projectStore.indexNames.contains('order')) {
           projectStore.createIndex('order', 'order');
         }
-        
+
         // Add order field to existing projects
         projectStore.openCursor().onsuccess = (e) => {
           const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
@@ -84,13 +84,13 @@ const initDb = async (): Promise<KibitzDb> => {
           return;
         }
         const projectStore = transaction.objectStore('projects');
-        
+
         // Migrate existing projects
         projectStore.openCursor().onsuccess = (e) => {
           const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
           if (cursor) {
             const project = cursor.value;
-            
+
             // Always ensure settings object exists and has current defaults
             if (!project.settings) {
               project.settings = {
@@ -110,13 +110,13 @@ const initDb = async (): Promise<KibitzDb> => {
 
               // Always set provider if upgrading from v3
               project.settings.provider = 'anthropic';
-              
+
               // Copy API key to anthropicApiKey if it exists
               if (project.settings.apiKey) {
                 project.settings.anthropicApiKey = project.settings.apiKey;
                 // Keep original apiKey for backward compatibility
               }
-              
+
               // Initialize empty OpenRouter fields
               project.settings.openRouterApiKey = '';
               project.settings.openRouterBaseUrl = '';
@@ -155,13 +155,13 @@ const initDb = async (): Promise<KibitzDb> => {
           return;
         }
         const projectStore = transaction.objectStore('projects');
-        
+
         // Migrate existing projects
         projectStore.openCursor().onsuccess = (e) => {
           const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
           if (cursor) {
             const project = cursor.value;
-            
+
             try {
               // Convert legacy provider settings to new format
               if (project.settings) {
@@ -358,17 +358,40 @@ export const saveMcpServers = async (servers: McpServer[]): Promise<void> => {
     const transaction = db.transaction(['mcpServers'], 'readwrite');
     const store = transaction.objectStore('mcpServers');
 
-    // Clear existing servers
-    store.clear();
+    try {
+      // Clear existing servers in a controlled way
+      const clearRequest = store.clear();
+      clearRequest.onsuccess = () => {
+        // After clear succeeds, save all servers
+        const savePromises = servers.map(server => new Promise<void>((resolveServer, rejectServer) => {
+          const sanitizedServer = sanitizeMcpServerForStorage(server);
+          const request = store.add(sanitizedServer);
+          request.onsuccess = () => resolveServer();
+          request.onerror = () => rejectServer(request.error);
+        }));
 
-    // Save all servers
-    servers.forEach(server => {
-      const sanitizedServer = sanitizeMcpServerForStorage(server);
-      store.add(sanitizedServer);
-    });
+        // Wait for all saves to complete
+        Promise.all(savePromises)
+          .then(() => resolve())
+          .catch(error => {
+            console.error('Error saving servers:', error);
+            reject(error);
+          });
+      };
 
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
+      clearRequest.onerror = (event) => {
+        console.error('Error clearing servers:', event);
+        reject(clearRequest.error);
+      };
+    } catch (error) {
+      console.error('Error in saveMcpServers transaction:', error);
+      reject(error);
+    }
+
+    transaction.onerror = () => {
+      console.error('Transaction error in saveMcpServers:', transaction.error);
+      reject(transaction.error);
+    };
   });
 };
 
