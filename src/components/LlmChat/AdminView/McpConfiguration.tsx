@@ -3,24 +3,23 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { McpServer } from '../types/mcp';
 import { Trash2, RefreshCw } from 'lucide-react';
-import { useMcpStore } from '@/stores/mcpStore';
+import { useStore } from '@/stores/rootStore';
 
 interface McpConfigurationProps {
-  servers: McpServer[];
-  onServersChange: (servers: McpServer[]) => void;
+  serverIds: string[];
+  onServerIdsChange: (serverIds: string[]) => void;
 }
 
 export const McpConfiguration = ({
-  servers = [],
-  onServersChange
+  serverIds = [],
+  onServerIdsChange
 }: McpConfigurationProps) => {
   const [newServer, setNewServer] = useState({
     name: '',
     uri: ''
   });
-  const { addServer, removeServer, reconnectServer } = useMcpStore();
+  const { addServer, removeServer, reconnectServer, servers } = useStore();
 
   const handleAddServer = async () => {
     const server = {
@@ -30,35 +29,23 @@ export const McpConfiguration = ({
       status: 'connecting' as const
     };
 
-    // Add to project settings first
-    const updatedServers = Array.isArray(servers) ? [...servers, server] : [server];
-    onServersChange(updatedServers);
-
-    // Connect using MCP context
     try {
-      await addServer(server);
-      // Update the server status after successful connection
-      onServersChange(updatedServers.map(s =>
-        s.id === server.id
-          ? { ...s, status: 'connected' }
-          : s
-      ));
+      const connectedServer = await addServer(server);
+      // Add to project settings only if connection successful
+      if (connectedServer) {
+        const updatedServerIds = Array.isArray(serverIds) ? [...serverIds, server.id] : [server.id];
+        onServerIdsChange(updatedServerIds);
+      }
     } catch (error) {
       console.error('Failed to connect to server:', error);
-      // Update status to error in project settings
-      onServersChange(updatedServers.map(s =>
-        s.id === server.id
-          ? { ...s, status: 'error', error: error instanceof Error ? error.message : 'Failed to connect' }
-          : s
-      ));
     }
 
     setNewServer({ name: '', uri: '' });
   };
 
-  const handleRemoveServer = (id: string) => {
-    removeServer(id);
-    onServersChange(servers.filter(s => s.id !== id));
+  const handleRemoveServer = (serverId: string) => {
+    removeServer(serverId);
+    onServerIdsChange(serverIds.filter(id => id !== serverId));
   };
 
   const getStatusColor = (status: string) => {
@@ -81,7 +68,10 @@ export const McpConfiguration = ({
 
         {/* Server List */}
         <div className="space-y-3 mb-4">
-          {Array.isArray(servers) && servers.map(server => (
+          {Array.isArray(serverIds) && serverIds.map(serverId => {
+            const server = servers.find(s => s.id === serverId);
+            if (!server) return null;
+            return (
             <div key={server.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
               <div className="flex-1">
                 <div className="flex items-center gap-2">
@@ -114,7 +104,8 @@ export const McpConfiguration = ({
                 </Button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Add New Server Form */}
