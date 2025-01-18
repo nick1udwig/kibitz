@@ -7,28 +7,36 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { useProjects } from '../context/ProjectContext';
 import { ProjectSettings, ProviderType } from '../context/types';
 import { getProviderModels } from '../types/provider';
-import { McpServer } from '../types/mcp';
 import { McpConfiguration } from './McpConfiguration';
 import { ThemeToggle } from '../ThemeToggle';
-import { useMcp } from '../context/McpContext';
+import { useStore } from '@/stores/rootStore';
 
 export const AdminView = () => {
-  const { projects, activeProjectId, updateProjectSettings } = useProjects();
-  const { servers } = useMcp();
+  const { projects, activeProjectId, updateProjectSettings, servers } = useStore();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
   useEffect(() => {
     if (!activeProject) return;
-    handleSettingsChange({
-      mcpServers: servers.filter(s => (
-        activeProject.settings.mcpServers.find(mcpS => mcpS.id === s.id)
-      )) as McpServer[]
-    })
+
+    // Only update if server connections have changed to maintain ID references
+    const projectServerIds = activeProject.settings.mcpServerIds || [];
+    const activeServerIds = servers
+      .filter(s => s.status === 'connected')
+      .map(s => s.id);
+
+    const shouldUpdate = !projectServerIds.every(id =>
+      activeServerIds.includes(id)) ||
+      !activeServerIds.every(id => projectServerIds.includes(id));
+
+    if (shouldUpdate) {
+      handleSettingsChange({
+        mcpServerIds: activeServerIds
+      });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId, servers]);
 
@@ -53,8 +61,8 @@ export const AdminView = () => {
           anthropicApiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey,
           openRouterApiKey: activeProject.settings.openRouterApiKey || '',
           // Keep legacy apiKey in sync with anthropicApiKey
-          apiKey: settings.provider === 'anthropic' 
-            ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey) 
+          apiKey: settings.provider === 'anthropic'
+            ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey)
             : activeProject.settings.apiKey
         }
       });
@@ -233,8 +241,8 @@ export const AdminView = () => {
       </Card>
 
       <McpConfiguration
-        servers={activeProject.settings.mcpServers}
-        onServersChange={(mcpServers) => handleSettingsChange({ mcpServers })}
+        serverIds={activeProject.settings.mcpServerIds || []}
+        onServerIdsChange={(mcpServerIds) => handleSettingsChange({ mcpServerIds })}
       />
       <Card className="mt-6">
         <CardContent className="p-6">

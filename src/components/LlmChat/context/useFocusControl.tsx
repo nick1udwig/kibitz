@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { useProjects } from './ProjectContext';
+import { useStore } from '@/stores/rootStore';
 
 export const useFocusControl = () => {
   const {
@@ -8,7 +8,7 @@ export const useFocusControl = () => {
     createConversation,
     setActiveConversation,
     activeConversationId,
-  } = useProjects();
+  } = useStore();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
