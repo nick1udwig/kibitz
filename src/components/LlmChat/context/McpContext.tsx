@@ -49,7 +49,34 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
       ws.close();
       connectionsRef.current.delete(serverId);
     }
+
+    // Update server status to disconnected
+    setServers(current =>
+      current.map(s => s.id === serverId
+        ? { ...s, status: 'disconnected', error: undefined }
+        : s
+      )
+    );
   }, []);
+
+  // Cleanup servers that are no longer referenced in any project
+  useEffect(() => {
+    const projectServerIds = new Set();
+    projects.forEach(project => {
+      project.settings.mcpServers.forEach(server => {
+        projectServerIds.add(server.id);
+      });
+    });
+
+    // Find servers that need cleanup
+    const serversToCleanup = servers.filter(server => !projectServerIds.has(server.id));
+
+    // Clean up unused servers
+    serversToCleanup.forEach(server => {
+      cleanupServer(server.id);
+      setServers(current => current.filter(s => s.id !== server.id));
+    });
+  }, [projects, servers, cleanupServer]);
 
   // use a ref to avoid circular dependencies between scheduleReconnect & connectToServer
   const connectToServerRef = useRef<(server: McpServer) => Promise<McpServerConnection>>(null!);
@@ -296,13 +323,13 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
   }, [connectToServer, servers]);
 
   const attemptLocalMcpConnection = useCallback(async () => {
-    const id = 'localhost-mcp';
+    const id = 'default-mcp';
     const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
     const DEFAULT_WS_URI = !DEFAULT_WS_ENDPOINT ? 'ws://localhost:10125' :
       `${wsProtocol}://${window.location.host}${DEFAULT_WS_ENDPOINT}`;
     const server: McpServer = {
       id: id,
-      name: 'Local MCP',
+      name: 'Default WS MCP',
       uri: DEFAULT_WS_URI,
       status: 'disconnected',
     };
