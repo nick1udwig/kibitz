@@ -7,17 +7,17 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { useProjects } from '../context/ProjectContext';
 import { ProjectSettings, ProviderType } from '../context/types';
 import { getProviderModels } from '../types/provider';
 import { McpServer } from '../types/mcp';
 import { McpConfiguration } from './McpConfiguration';
 import { ThemeToggle } from '../ThemeToggle';
-import { useMcp } from '../context/McpContext';
+import { useProjectStore } from '@/stores/projectStore';
+import { useMcpStore } from '@/stores/mcpStore';
 
 export const AdminView = () => {
-  const { projects, activeProjectId, updateProjectSettings } = useProjects();
-  const { servers } = useMcp();
+  const { projects, activeProjectId, updateProjectSettings } = useProjectStore();
+  const { servers } = useMcpStore();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const activeProject = projects.find(p => p.id === activeProjectId);

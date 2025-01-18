@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useState, useEffect } from 'react';
-import { useProjects } from './context/ProjectContext';
+import { useProjectStore } from '@/stores/projectStore';
 
 interface ConversationSidebarProps {
   onExportConversation: (projectId: string, conversationId?: string) => void;
@@ -33,7 +33,7 @@ export const ConversationSidebar = ({
     renameProject,
     setActiveProject,
     setActiveConversation
-  } = useProjects();
+  } = useProjectStore();
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);

@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useState, useRef } from 'react';
-import { McpProvider } from './context/McpContext';
-import { ProjectProvider } from './context/ProjectContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -35,9 +33,7 @@ export const ChatApp = () => {
   };
 
   return (
-    <ProjectProvider>
-      <McpProvider>
-        <div className="min-h-screen bg-background text-foreground flex relative overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground flex relative overflow-x-hidden">
           {/* Mobile menu overlay */}
           {isMobileMenuOpen && (
             <div
@@ -99,9 +95,7 @@ export const ChatApp = () => {
               </div>
             </div>
           </div>
-        </div>
-      </McpProvider>
-    </ProjectProvider>
+    </div>
   );
 };
 
