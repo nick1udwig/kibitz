@@ -119,19 +119,26 @@ export const useStore = create<RootState>((set, get) => {
           }));
         };
 
-        ws.onclose = () => {
-          clearTimeout(timeout);
-          cleanupServer(server.id);
+          ws.onclose = async () => {
+            clearTimeout(timeout);
+            cleanupServer(server.id);
 
-          set(state => ({
-            servers: state.servers.map(s => s.id === server.id
-              ? { ...s, status: 'disconnected', error: 'Connection closed' }
-              : s
-            )
-          }));
+            const updatedState = {
+              servers: get().servers.map(s => s.id === server.id
+                ? { ...s, status: 'disconnected', error: 'Connection closed' }
+                : s
+              )
+            };
+            set(updatedState);
 
-          scheduleReconnect(server);
-        };
+            try {
+              await saveMcpServers(updatedState.servers);
+            } catch (error) {
+              console.error('Error saving MCP servers on disconnect:', error);
+            }
+
+            scheduleReconnect(server);
+          };
 
         ws.onerror = () => {
           clearTimeout(timeout);
@@ -181,13 +188,16 @@ export const useStore = create<RootState>((set, get) => {
                 connection: ws
               };
 
-              set(state => ({
-                servers: state.servers.map(s => s.id === server.id ? connectedServer : s)
-              }));
+              const updatedState = {
+                servers: get().servers.map(s => s.id === server.id ? connectedServer : s)
+              };
+              set(updatedState);
 
-              saveMcpServers(get().servers).catch(() => {
-                console.error('Error saving MCP servers');
-              });
+              try {
+                await saveMcpServers(updatedState.servers);
+              } catch (error) {
+                console.error('Error saving MCP servers:', error);
+              }
 
               resolve(connectedServer);
             }
@@ -640,25 +650,30 @@ export const useStore = create<RootState>((set, get) => {
         }));
         await saveMcpServers(get().servers);
         return connectedServer;
-      } catch {
-        set(state => ({
-          servers: state.servers.map(s => s.id === server.id
+      } catch (error) {
+        const updatedState = {
+          servers: get().servers.map(s => s.id === server.id
             ? { ...s, status: 'error', error: 'Connection failed' }
             : s
           )
-        }));
+        };
+        set(updatedState);
+        await saveMcpServers(updatedState.servers);
         return get().servers.find(s => s.id === server.id);
       }
     },
 
-    removeServer: (serverId: string) => {
+    removeServer: async (serverId: string) => {
       cleanupServer(serverId);
-      set(state => ({
-        servers: state.servers.filter(s => s.id !== serverId)
-      }));
-      saveMcpServers(get().servers).catch(() => {
-        console.error('Error saving MCP servers');
-      });
+      const updatedState = {
+        servers: get().servers.filter(s => s.id !== serverId)
+      };
+      set(updatedState);
+      try {
+        await saveMcpServers(updatedState.servers);
+      } catch (error) {
+        console.error('Error saving MCP servers:', error);
+      }
     },
 
     reconnectServer: async (serverId: string) => {
