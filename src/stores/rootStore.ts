@@ -266,6 +266,8 @@ export const useStore = create<RootState>((set, get) => {
           } catch (err) {
             console.error('Failed to connect to local MCP:', err);
           }
+        } else {
+            await saveMcpServers(connectedServers);
         }
 
         // Initialize project state
