@@ -7,6 +7,8 @@ import { useProjects } from './ProjectContext';
 import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { loadMcpServers, saveMcpServers } from '../../../lib/db';
 
+const DEFAULT_WS_ENDPOINT = process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT ?? undefined;
+
 const McpContext = createContext<McpState | null>(null);
 
 export const useMcp = () => {
@@ -295,10 +297,13 @@ export const McpProvider: React.FC<McpProviderProps> = ({ children, initialServe
 
   const attemptLocalMcpConnection = useCallback(async () => {
     const id = 'localhost-mcp';
+    const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
+    const DEFAULT_WS_URI = !DEFAULT_WS_ENDPOINT ? 'ws://localhost:10125' :
+      `${wsProtocol}://${window.location.host}${DEFAULT_WS_ENDPOINT}`;
     const server: McpServer = {
       id: id,
       name: 'Local MCP',
-      uri: 'ws://localhost:10125',
+      uri: DEFAULT_WS_URI,
       status: 'disconnected',
     };
 

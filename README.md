@@ -39,10 +39,12 @@ When creating a new project, it will use some, but not all, of the current proje
 
 ## Building for Kinode
 
-Add a base to the endpoint by building with the `NEXT_PUBLIC_BASE_PATH` like so:
+1. Add a base to the endpoint by building with the `NEXT_PUBLIC_BASE_PATH` (MUST start with a `/`),
+2. Change the default WS-MCP server URI by specifying `NEXT_PUBLIC_DEFAULT_WS_URI` (MUST start with a `/`),
 
+like so:
 ```bash
-NEXT_PUBLIC_BASE_PATH=/kibitz:kibitz:nick.kino npm run build
+NEXT_PUBLIC_BASE_PATH=/kibitz:kibitz:nick.kino NEXT_PUBLIC_DEFAULT_WS_URI=/fwd-ws:kibitz:nick.kino npm run build
 ```
 
 and then copy the contents of `out/` into the package's `pkg/ui/` dir.
