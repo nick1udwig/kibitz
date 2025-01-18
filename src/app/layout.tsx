@@ -9,6 +9,7 @@ export const metadata = {
   description: 'Chat with LLMs that use tools',
 };
 
+const PATH_PREFIX = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 export default function RootLayout({
   children,
 }: {
@@ -17,7 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="icon" href="/favicon.svg" type="image/svg" />
+        <link rel="icon" href={`${PATH_PREFIX}/favicon.svg`} type="image/svg" />
       </head>
       <body className={`${inter.className} bg-background min-h-screen`}>
         <ThemeProvider
