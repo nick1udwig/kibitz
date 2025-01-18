@@ -911,7 +911,9 @@ Example good titles:
                 : "Type your message"
             }
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
+              // Only send on Enter in desktop mode
+              const isMobile = window.matchMedia('(max-width: 768px)').matches;
+              if (e.key === 'Enter' && !e.shiftKey && !isLoading && !isMobile) {
                 e.preventDefault();
                 handleSendMessage();
               }
