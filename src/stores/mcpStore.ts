@@ -171,11 +171,25 @@ export const useMcpStore = create<McpStore>((set, get) => {
 
   return {
     servers: [],
-    initialize: async () => {
+  initialize: async () => {
+      if (get().servers.length > 0) {
+        // Already initialized, just reconnect existing servers
+        const reconnectPromises = get().servers.map(server =>
+          connectToServer(server).catch(() => ({
+            ...server,
+            status: 'error' as const,
+            error: 'Failed to connect'
+          }))
+        );
+        const connectedServers = await Promise.all(reconnectPromises);
+        set({ servers: connectedServers });
+        return;
+      }
+
       try {
         const savedServers = await loadMcpServers();
         console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
-        
+
         const connectedServers: McpServerConnection[] = [];
         for (const server of savedServers) {
           try {
@@ -192,6 +206,14 @@ export const useMcpStore = create<McpStore>((set, get) => {
         }
 
         set({ servers: connectedServers });
+
+        // Attempt local MCP connection if no servers exist
+        if (connectedServers.length === 0) {
+          const localServer = await get().attemptLocalMcpConnection();
+          if (localServer) {
+            console.log('Connected to local MCP server');
+          }
+        }
       } catch {
         console.error('Error initializing MCP servers');
       }

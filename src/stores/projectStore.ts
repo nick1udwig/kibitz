@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Project, ProjectSettings, ConversationBrief, ProjectState } from '../components/LlmChat/context/types';
 import { loadState, saveState } from '../lib/db';
+import { useMcpStore } from './mcpStore';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -104,6 +105,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const { projects, activeProjectId } = get();
     const currentProject = projects.find(p => p.id === activeProjectId);
     const projectId = generateId();
+
+    // Get connected servers from McpStore
+    const mcpStore = useMcpStore.getState();
+    const connectedServers = mcpStore.servers
+      .filter(server => server.status === 'connected')
+      .map(server => ({
+        id: server.id,
+        name: server.name,
+        uri: server.uri,
+        status: 'connected' as const
+      }));
+
     const newProject: Project = {
       id: projectId,
       name,
@@ -112,8 +125,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ...(currentProject && {
           apiKey: currentProject.settings.apiKey,
           systemPrompt: '',
-          mcpServers: [],
         }),
+        // Use connected servers for new projects
+        mcpServers: connectedServers,
         ...settings,
       },
       conversations: [],
