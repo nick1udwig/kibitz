@@ -743,8 +743,9 @@ export const useStore = create<RootState>((set, get) => {
     attemptLocalMcpConnection: async () => {
       const id = 'localhost-mcp';
       const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
-      const defaultWsUri = !process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT
-        ? 'ws://localhost:10125'
+      const isOnKinode = process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT;
+      const isOnLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const defaultWsUri = !isOnKinode || isOnLocalhost ? 'ws://localhost:10125'
         : `${wsProtocol}://${window.location.host}${process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT}`;
       const server: McpServer = {
         id: id,
