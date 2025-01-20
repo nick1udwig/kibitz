@@ -19,6 +19,7 @@ const getDefaultModelForProvider = (provider?: string): string => {
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   apiKey: '',
+  groqApiKey: '',
   model: getDefaultModelForProvider('anthropic'),
   systemPrompt: '',
   mcpServerIds: [],

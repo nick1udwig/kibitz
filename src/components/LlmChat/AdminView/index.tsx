@@ -193,6 +193,29 @@ export const AdminView = () => {
 
             <div>
               <label className="block text-sm font-medium mb-1">
+                GROQ API Key
+              </label>
+              <p className="text-sm text-muted-foreground mb-2">
+                Required for voice transcription. Get yours at{' '}
+                <a href="https://console.groq.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                  console.groq.com
+                </a>
+              </p>
+              <Input
+                type="password"
+                value={activeProject.settings.groqApiKey || ''}
+                onChange={(e) => {
+                  const value = e.target.value.trim();
+                  handleSettingsChange({
+                    groqApiKey: value
+                  });
+                }}
+                placeholder="Enter your GROQ API key for voice transcription"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
                 Model
               </label>
               <select
