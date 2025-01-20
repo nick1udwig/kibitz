@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from './types';
+import { wakeLock } from '@/lib/wakeLock';
 import { ToolCallModal } from './ToolCallModal';
 import { VoiceRecorder } from './VoiceRecorder';
 import { useFocusControl } from './context/useFocusControl';
@@ -173,6 +174,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       inputRef.current.style.height = '2.5em';
     }
 
+    await wakeLock.acquire();
     try {
       const userMessageContent: MessageContent[] = currentFileContent.map(c =>
         c.type === 'image' ? { ...c, fileName: undefined } : { ...c, fileName: undefined }
@@ -607,6 +609,7 @@ Example good titles:
       shouldCancelRef.current = false;
       setIsLoading(false);
       streamRef.current = null;
+      await wakeLock.release();
 
       // Focus the input field and reset height after the LLM finishes talking
       if (inputRef.current) {
