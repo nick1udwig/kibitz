@@ -194,7 +194,7 @@ export const ConversationSidebar = ({
                     <ChevronRight className="w-4 h-4" />
                   )}
                 </button>
-                <span className="truncate flex-1">{project.name}</span>
+                <span className="truncate flex-1" title={project.name}>{project.name}</span>
                 <Button
                   variant="ghost"
                   size="sm"
