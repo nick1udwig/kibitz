@@ -16,6 +16,13 @@ export const ChatApp = () => {
   const handleTabChange = (value: string) => {
     const newTab = value as 'chat' | 'settings';
     setActiveTab(newTab);
+
+    // Hide mobile menu when changing tabs on mobile
+    const isMobile = window.innerWidth < 768;
+    if (isMobile) {
+      setIsMobileMenuOpen(false);
+    }
+
     if (newTab === 'chat') {
       // Focus the input when switching to chat view
       setTimeout(() => {
