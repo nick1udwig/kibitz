@@ -16,6 +16,7 @@ import { ToolCallModal } from './ToolCallModal';
 import { VoiceRecorder } from './VoiceRecorder';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
+import { Spinner } from '@/components/ui/spinner';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -834,9 +835,7 @@ Example good titles:
   if (!activeConversation) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <p className="mb-4 text-muted-foreground">Select a conversation or start a new chat</p>
-        </div>
+        <Spinner />
       </div>
     );
   }
