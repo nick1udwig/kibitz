@@ -10,6 +10,7 @@ export interface ProjectSettings extends LegacyProviderSettings {
   provider?: LegacyProviderType;  // Optional for backward compatibility
   providerConfig?: ProviderConfig;  // New provider configuration
   model: string;
+  groqApiKey?: string;  // API key for GROQ services
   systemPrompt: string;
   mcpServerIds: string[];  // Store server IDs instead of full server objects
   elideToolResults: boolean;

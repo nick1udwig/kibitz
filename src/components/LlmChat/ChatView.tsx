@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from './types';
 import { ToolCallModal } from './ToolCallModal';
+import { VoiceRecorder } from './VoiceRecorder';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 
@@ -853,7 +854,7 @@ Example good titles:
           {error}
         </div>
       )}
-      
+
       {activeProject?.settings.provider === 'openrouter' && (
         <div className="px-4">
           <Alert>
@@ -886,7 +887,7 @@ Example good titles:
           </div>
         )}
         <div className="flex gap-2">
-          <div className="flex items-end">
+          <div className="flex items-end gap-1">
             <FileUpload
               onFileSelect={(content) => {
                 setCurrentFileContent(prev => [...prev, { ...content }]);
@@ -895,6 +896,14 @@ Example good titles:
                 if (inputRef.current) {
                   inputRef.current.focus();
                 }
+              }}
+            />
+            <VoiceRecorder
+              onTranscriptionComplete={(text) => {
+                setInputMessage(prev => {
+                  const newText = prev.trim() ? `${prev}\n${text}` : text;
+                  return newText;
+                });
               }}
             />
           </div>
