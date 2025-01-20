@@ -177,6 +177,8 @@ export const ConversationSidebar = ({
                   // Only set the active project if it's not already active
                   if (project.id !== activeProjectId) {
                     handleProjectSelect(project.id, true);
+                    // Close mobile menu after selecting project
+                    onMobileMenuToggle?.();
                   }
                 }}
               >
@@ -213,6 +215,8 @@ export const ConversationSidebar = ({
                     });
                     // Switch to chat view
                     onConversationSelect?.();
+                    // Close mobile menu after selecting new chat
+                    onMobileMenuToggle?.();
                   }}
                   title="New chat"
                 >
@@ -275,6 +279,8 @@ export const ConversationSidebar = ({
                           handleProjectSelect(project.id);
                           setActiveConversation(convo.id);
                           onConversationSelect?.();
+                          // Close mobile menu after selecting conversation
+                          onMobileMenuToggle?.();
                         }}
                       >
                         <span className="truncate flex-1" title={convo.name}>{convo.name}</span>
