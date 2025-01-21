@@ -2,6 +2,9 @@ import { ProtocolTranslator, MCPToolDefinition, OpenAIFunctionDefinition } from 
 
 export class DeepSeekProtocolTranslator implements ProtocolTranslator {
   translateToolDefinitions(mcpTools: MCPToolDefinition[]): OpenAIFunctionDefinition[] {
+    console.log('🔧 Converting MCP tools to OpenAI functions:', {
+      toolCount: mcpTools?.length
+    });
     // MCP and OpenAI function definitions are identical in structure
     return mcpTools;
   }
@@ -66,8 +69,12 @@ export class DeepSeekProtocolTranslator implements ProtocolTranslator {
   }
 
   translateRequest(mcpRequest: any): any {
+    console.log('📝 Translating MCP request to OpenAI format:', {
+      hasTools: !!mcpRequest.tools,
+      model: mcpRequest.model
+    });
     const { tools, ...rest } = mcpRequest;
-    return {
+    const translated = {
       ...rest,
       functions: tools,
       function_call: tools?.length > 0 ? "auto" : undefined,
@@ -78,5 +85,11 @@ export class DeepSeekProtocolTranslator implements ProtocolTranslator {
       frequency_penalty: rest.frequency_penalty ?? 0,
       presence_penalty: rest.presence_penalty ?? 0,
     };
+    console.log('📤 Translated request:', {
+      hasFunctions: !!translated.functions,
+      stream: translated.stream,
+      model: translated.model
+    });
+    return translated;
   }
 }

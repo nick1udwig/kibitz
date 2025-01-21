@@ -28,6 +28,7 @@ export class DeepSeekProvider extends EventEmitter {
     super();
     this.config = config;
     this.translator = new DeepSeekProtocolTranslator();
+    console.log('🔧 DeepSeek provider initialized with model:', config.settings.model);
   }
 
   private getHeaders(): Record<string, string> {
@@ -52,9 +53,13 @@ export class DeepSeekProvider extends EventEmitter {
     let buffer = '';
 
     try {
+      console.log('📡 DeepSeek stream started');
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log('✅ DeepSeek stream complete');
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -73,8 +78,13 @@ export class DeepSeekProvider extends EventEmitter {
           try {
             const parsed = JSON.parse(data);
             const translated = this.translator.translateResponse(parsed);
+            console.log('📩 DeepSeek chunk:', {
+              hasContent: !!translated.choices?.[0]?.delta?.content,
+              hasFunctionCall: !!translated.choices?.[0]?.delta?.function_call
+            });
             this.emit('chunk', translated);
           } catch (e) {
+            console.warn('⚠️ Failed to parse DeepSeek chunk:', e);
             console.warn('Failed to parse chunk:', e);
           }
         }
@@ -85,6 +95,13 @@ export class DeepSeekProvider extends EventEmitter {
   }
 
   async sendMessage(messages: Message[], tools?: MCPToolDefinition[], options: ChatOptions = {}) {
+    console.log('📤 DeepSeek sending message:', {
+      messageCount: messages.length,
+      hasTools: !!tools,
+      toolCount: tools?.length,
+      options
+    });
+    
     const opts = { ...this.defaultOptions, ...options };
     
     const translatedRequest = this.translator.translateRequest({
@@ -96,6 +113,12 @@ export class DeepSeekProvider extends EventEmitter {
       stream: opts.stream,
     });
 
+    console.log('🔄 DeepSeek request:', {
+      model: translatedRequest.model,
+      stream: translatedRequest.stream,
+      hasFunctions: !!translatedRequest.functions
+    });
+
     const response = await fetch(this.getEndpoint(), {
       method: 'POST',
       headers: this.getHeaders(),
@@ -103,6 +126,7 @@ export class DeepSeekProvider extends EventEmitter {
     });
 
     if (!response.ok) {
+      console.error('❌ DeepSeek API error:', response.status, response.statusText);
       const error = await response.json();
       throw new Error(`DeepSeek API error: ${error.message || response.statusText}`);
     }

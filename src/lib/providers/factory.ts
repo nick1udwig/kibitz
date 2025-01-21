@@ -11,6 +11,12 @@ export interface LLMProvider extends EventEmitter {
 }
 
 export function createProvider(config: ProviderConfig): LLMProvider {
+  console.log('🏭 Creating provider:', {
+    type: config.type,
+    hasApiKey: !!config.settings.apiKey,
+    model: config.settings.model
+  });
+  
   switch (config.type) {
     case 'deepseek':
       return new DeepSeekProvider(config);
