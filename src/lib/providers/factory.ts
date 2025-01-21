@@ -11,6 +11,18 @@ export interface LLMProvider extends EventEmitter {
 }
 
 export function createProvider(config: ProviderConfig): LLMProvider {
+  // Validate config
+  if (!config.settings.apiKey) {
+    throw new Error(`API key required for ${config.type} provider`);
+  }
+
+  // Make sure we have the right model for the provider
+  const models = getProviderModels(config.type);
+  if (!models.includes(config.settings.model)) {
+    console.warn(`Invalid model ${config.settings.model} for ${config.type}, using default: ${models[0]}`);
+    config.settings.model = models[0];
+  }
+
   console.log('🏭 Creating provider:', {
     type: config.type,
     hasApiKey: !!config.settings.apiKey,

@@ -52,11 +52,17 @@ export const AdminView = () => {
   const handleSettingsChange = (settings: Partial<ProjectSettings>) => {
     // Special handling for provider changes to preserve API keys
     if (settings.provider !== undefined && settings.provider !== activeProject.settings.provider) {
-      // When changing provider, ensure we preserve both API keys
+      // Get default model for new provider
+      const newProviderModels = getProviderModels(settings.provider);
+      const defaultModel = newProviderModels[0];
+
+      // When changing provider, ensure we preserve keys and set correct model
       updateProjectSettings(activeProject.id, {
         settings: {
           ...activeProject.settings,
           ...settings,
+          // Set default model for new provider
+          model: defaultModel,
           // Preserve the API keys when switching providers
           anthropicApiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey,
           openRouterApiKey: activeProject.settings.openRouterApiKey || '',

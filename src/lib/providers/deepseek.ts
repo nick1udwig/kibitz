@@ -1,8 +1,3 @@
-import { Message } from '../../components/LlmChat/types';
-import { ProviderConfig } from '../../components/LlmChat/types/provider';
-import { MCPToolDefinition } from '../protocol/types';
-import { DeepSeekProtocolTranslator } from '../protocol/deepseek';
-
 import EventEmitter from 'events';
 import { Message } from '../../components/LlmChat/types';
 import { ProviderConfig } from '../../components/LlmChat/types/provider';
@@ -26,9 +21,27 @@ export class DeepSeekProvider extends EventEmitter {
 
   constructor(config: ProviderConfig) {
     super();
+    
+    // Validate and ensure we have required settings
+    if (!config.settings.apiKey) {
+      throw new Error('DeepSeek API key is required');
+    }
+
+    // Validate and set model
+    config.settings.model = this.validateModel(config.settings.model);
+    
     this.config = config;
     this.translator = new DeepSeekProtocolTranslator();
     console.log('🔧 DeepSeek provider initialized with model:', config.settings.model);
+  }
+
+  private validateModel(model: string): string {
+    const validModels = ['deepseek-reasoner', 'deepseek-chat', 'deepseek-coder'];
+    if (!model || !validModels.includes(model)) {
+      console.warn(`Invalid DeepSeek model: ${model}, falling back to deepseek-reasoner`);
+      return 'deepseek-reasoner';
+    }
+    return model;
   }
 
   private getHeaders(): Record<string, string> {
@@ -85,11 +98,11 @@ export class DeepSeekProvider extends EventEmitter {
             this.emit('chunk', translated);
           } catch (e) {
             console.warn('⚠️ Failed to parse DeepSeek chunk:', e);
-            console.warn('Failed to parse chunk:', e);
           }
         }
       }
     } catch (error) {
+      console.error('❌ DeepSeek streaming error:', error);
       this.emit('error', error);
     }
   }
@@ -127,8 +140,8 @@ export class DeepSeekProvider extends EventEmitter {
 
     if (!response.ok) {
       console.error('❌ DeepSeek API error:', response.status, response.statusText);
-      const error = await response.json();
-      throw new Error(`DeepSeek API error: ${error.message || response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`DeepSeek API error: ${errorText || response.statusText}`);
     }
 
     if (opts.stream) {
