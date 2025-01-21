@@ -1,4 +1,4 @@
-export type LegacyProviderType = 'anthropic' | 'openrouter' | 'openai';
+export type LegacyProviderType = 'anthropic' | 'openrouter' | 'openai' | 'deepseek';
 
 export interface ProviderConfig {
   type: string;
@@ -13,6 +13,8 @@ export interface LegacyProviderSettings {
   openaiApiKey?: string;
   openaiBaseUrl?: string;
   openaiOrgId?: string;
+  deepseekApiKey?: string;
+  deepseekBaseUrl?: string;
 }
 
 // Helper function to convert legacy settings to new format
@@ -44,6 +46,14 @@ export function convertLegacyToProviderConfig(
         organizationId: settings.openaiOrgId || '',
       }
     };
+  } else if (provider === 'deepseek') {
+    return {
+      type: 'deepseek',
+      settings: {
+        apiKey: settings.deepseekApiKey || '',
+        baseUrl: settings.deepseekBaseUrl || 'https://api.deepseek.com/v1',
+      }
+    };
   }
   throw new Error(`Unknown provider type: ${provider}`);
 }
@@ -67,6 +77,11 @@ export function extractLegacySettings(config: ProviderConfig): LegacyProviderSet
         openaiBaseUrl: config.settings.baseUrl,
         openaiOrgId: config.settings.organizationId,
       };
+    case 'deepseek':
+      return {
+        deepseekApiKey: config.settings.apiKey,
+        deepseekBaseUrl: config.settings.baseUrl,
+      };
     default:
       return {};
   }
@@ -82,6 +97,12 @@ export function getProviderModels(type: string): string[] {
         'claude-3-haiku-20240307',
         'claude-3-5-sonnet-20241022',
         'claude-3-5-haiku-20241022',
+      ];
+    case 'deepseek':
+      return [
+        'deepseek-reasoner',  // Most capable for general use
+        'deepseek-chat',
+        'deepseek-coder'
       ];
     case 'openai':
       return [

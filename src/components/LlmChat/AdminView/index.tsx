@@ -102,6 +102,7 @@ export const AdminView = () => {
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="openrouter">OpenRouter (Coming Soon)</option>
                 <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
               </select>
             </div>
 
@@ -135,6 +136,12 @@ export const AdminView = () => {
                           platform.openai.com
                         </a>
                       );
+                    case 'deepseek':
+                      return (
+                        <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                          platform.deepseek.com
+                        </a>
+                      );
                     default:
                       return (
                         <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
@@ -151,6 +158,8 @@ export const AdminView = () => {
                     ? activeProject.settings.openRouterApiKey || ''
                     : activeProject.settings.provider === 'openai'
                     ? activeProject.settings.openaiApiKey || ''
+                    : activeProject.settings.provider === 'deepseek'
+                    ? activeProject.settings.deepseekApiKey || ''
                     : activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || ''  // Fallback for backward compatibility
                 }
                 onChange={(e) => {
@@ -166,6 +175,11 @@ export const AdminView = () => {
                         openaiApiKey: value
                       });
                       break;
+                    case 'deepseek':
+                      handleSettingsChange({
+                        deepseekApiKey: value
+                      });
+                      break;
                     default:
                       handleSettingsChange({
                         anthropicApiKey: value,
@@ -178,6 +192,8 @@ export const AdminView = () => {
                     ? "⚠️ OpenRouter support coming soon"
                     : activeProject.settings.provider === 'openai'
                     ? "⚠️ OpenAI support coming soon"
+                    : activeProject.settings.provider === 'deepseek'
+                    ? "Enter your DeepSeek API key to chat"
                     : "⚠️ Enter your Anthropic API key to use the chat"
                 }
                 className={
