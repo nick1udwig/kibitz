@@ -48,15 +48,12 @@ export class DeepSeekProvider extends EventEmitter {
     return {
       'Authorization': `Bearer ${this.config.settings.apiKey}`,
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'X-DeepSeek-Client': 'kibitz',  // Add client identifier
+      'Accept': 'application/json'
     };
   }
 
   private getEndpoint(): string {
-    // DeepSeek's API endpoint structure may be different
-    const baseUrl = this.config.settings.baseUrl || 'https://api.deepseek.ai';
-    return `${baseUrl}/v1/chat/completions`;
+    return (this.config.settings.baseUrl || 'https://api.deepseek.com') + '/v1/chat/completions';
   }
 
   async streamResponse(response: Response): Promise<void> {
@@ -74,6 +71,7 @@ export class DeepSeekProvider extends EventEmitter {
         const { done, value } = await reader.read();
         if (done) {
           console.log('✅ DeepSeek stream complete');
+          this.emit('done');
           break;
         }
 
@@ -93,20 +91,25 @@ export class DeepSeekProvider extends EventEmitter {
 
           try {
             const parsed = JSON.parse(data);
-            const translated = this.translator.translateResponse(parsed);
+            if (parsed.error) {
+              throw new Error(`DeepSeek API error: ${JSON.stringify(parsed.error)}`);
+            }
+            // No need to translate since DeepSeek follows OpenAI format
             console.log('📩 DeepSeek chunk:', {
-              hasContent: !!translated.choices?.[0]?.delta?.content,
-              hasFunctionCall: !!translated.choices?.[0]?.delta?.function_call
+              hasContent: !!parsed.choices?.[0]?.delta?.content,
+              hasFunctionCall: !!parsed.choices?.[0]?.delta?.function_call
             });
-            this.emit('chunk', translated);
+            this.emit('text', parsed.choices?.[0]?.delta?.content || '');
           } catch (e) {
             console.warn('⚠️ Failed to parse DeepSeek chunk:', e);
+            throw e;
           }
         }
       }
     } catch (error) {
       console.error('❌ DeepSeek streaming error:', error);
       this.emit('error', error);
+      throw error;
     }
   }
 

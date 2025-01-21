@@ -92,10 +92,10 @@ export function getProviderModels(type: string): string[] {
   switch (type) {
     case 'anthropic':
       return [
-        'claude-3-opus-20240229',
+        'claude-3-5-sonnet-20241022',  // Default/most stable
+        'claude-3-opus-20240229',      // Most powerful
         'claude-3-sonnet-20240229',
         'claude-3-haiku-20240307',
-        'claude-3-5-sonnet-20241022',
         'claude-3-5-haiku-20241022',
       ];
     case 'deepseek':

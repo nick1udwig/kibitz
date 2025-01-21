@@ -10,59 +10,23 @@ export class DeepSeekProtocolTranslator implements ProtocolTranslator {
   }
 
   translateResponse(deepseekResponse: any): any {
+    // If no choices, return as-is
     if (!deepseekResponse.choices?.[0]) {
       return deepseekResponse;
     }
 
-    const originalChoice = deepseekResponse.choices[0];
+    const choice = deepseekResponse.choices[0];
     
-    // Handle delta for streaming
-    if (originalChoice.delta) {
-      if (originalChoice.delta.function_call) {
-        return {
-          ...deepseekResponse,
-          choices: [{
-            ...originalChoice,
-            delta: {
-              ...originalChoice.delta,
-              tool_calls: [{
-                type: "function",
-                function: {
-                  name: originalChoice.delta.function_call.name,
-                  arguments: originalChoice.delta.function_call.arguments 
-                    ? JSON.parse(originalChoice.delta.function_call.arguments)
-                    : {}
-                }
-              }],
-              function_call: undefined
-            }
-          }]
-        };
-      }
+    // For streaming responses
+    if (choice.delta) {
+      // Just return as-is since DeepSeek follows OpenAI format
       return deepseekResponse;
     }
 
-    // Handle regular response
-    if (originalChoice.message?.function_call) {
-      const functionCall = originalChoice.message.function_call;
-      return {
-        ...deepseekResponse,
-        choices: [{
-          ...originalChoice,
-          message: {
-            role: originalChoice.message.role,
-            content: originalChoice.message.content,
-            tool_calls: [{
-              type: "function",
-              function: {
-                name: functionCall.name,
-                arguments: JSON.parse(functionCall.arguments)
-              }
-            }],
-            function_call: undefined
-          }
-        }]
-      };
+    // For regular responses
+    if (choice.message) {
+      // The function_call format matches OpenAI's format, just return as-is
+      return deepseekResponse;
     }
 
     return deepseekResponse;
@@ -73,22 +37,34 @@ export class DeepSeekProtocolTranslator implements ProtocolTranslator {
       hasTools: !!mcpRequest.tools,
       model: mcpRequest.model
     });
-    const { tools, ...rest } = mcpRequest;
+
+    // Transform system prompt if present
+    let messages = mcpRequest.messages;
+    if (mcpRequest.system) {
+      messages = [
+        { role: 'system', content: mcpRequest.system[0].text },
+        ...messages
+      ];
+    }
+
     const translated = {
-      ...rest,
-      functions: tools,
-      function_call: tools?.length > 0 ? "auto" : undefined,
-      // DeepSeek-specific settings
-      temperature: rest.temperature ?? 0.7,
-      max_tokens: rest.max_tokens ?? 4096,
-      top_p: rest.top_p ?? 1,
-      frequency_penalty: rest.frequency_penalty ?? 0,
-      presence_penalty: rest.presence_penalty ?? 0,
+      model: mcpRequest.model,
+      messages,
+      stream: mcpRequest.stream ?? true,
+      temperature: mcpRequest.temperature ?? 0.7,
+      max_tokens: mcpRequest.max_tokens ?? 4096,
+      // Only include function calling if tools are present
+      ...(mcpRequest.tools && mcpRequest.tools.length > 0 ? {
+        functions: mcpRequest.tools,
+        function_call: 'auto'
+      } : {})
     };
+
     console.log('📤 Translated request:', {
       hasFunctions: !!translated.functions,
       stream: translated.stream,
-      model: translated.model
+      model: translated.model,
+      messageCount: messages.length
     });
     return translated;
   }

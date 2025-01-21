@@ -177,12 +177,24 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError(null);
     setIsLoading(true);
 
-    const currentApiKey = activeProject.settings.provider === 'openrouter'
-      ? activeProject.settings.openRouterApiKey
-      : (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey);  // Fallback for backward compatibility
+    let currentApiKey;
+    switch (activeProject.settings.provider) {
+      case 'openrouter':
+        currentApiKey = activeProject.settings.openRouterApiKey;
+        break;
+      case 'deepseek':
+        currentApiKey = activeProject.settings.deepseekApiKey || activeProject.settings.apiKey;
+        break;
+      default:
+        currentApiKey = activeProject.settings.anthropicApiKey || activeProject.settings.apiKey;
+    }
 
     if (!currentApiKey?.trim()) {
-      setError(`API key not found. Please set your ${activeProject.settings.provider === 'openrouter' ? 'OpenRouter' : 'Anthropic'} API key in the Settings panel.`);
+      setError(`API key not found. Please set your ${
+        activeProject.settings.provider === 'openrouter' ? 'OpenRouter' :
+        activeProject.settings.provider === 'deepseek' ? 'DeepSeek' :
+        'Anthropic'
+      } API key in the Settings panel.`);
       setIsLoading(false);
       return;
     }
