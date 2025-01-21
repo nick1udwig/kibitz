@@ -199,6 +199,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       setInputMessage('');
       setCurrentFileContent([]);
 
+      console.log('🤖 Using Anthropic with model:', activeProject.settings.model || DEFAULT_MODEL);
+
       // retry enough times to always push past 60s (the rate limit timer):
       //  https://github.com/anthropics/anthropic-sdk-typescript/blob/dc2591fcc8847d509760a61777fc1b79e0eab646/src/core.ts#L645
       const anthropic = new Anthropic({
@@ -393,6 +395,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         };
         currentStreamMessage.content.push(textContent);
 
+        console.log('📤 Anthropic sending message:', {
+          messageCount: apiMessagesToSend.length,
+          hasTools: tools.length > 0,
+          toolCount: tools.length
+        });
+
         const stream = await anthropic.messages.stream({
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
@@ -418,6 +426,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           // Update conversation with streaming message
           const updatedMessages = [...currentMessages, currentStreamMessage];
           updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+
+          if (text.trim()) {
+            console.log('📩 Anthropic chunk received');
+          }
         });
 
         // Handle tool use in the final response if any

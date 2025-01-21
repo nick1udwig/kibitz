@@ -274,7 +274,6 @@ export const useStore = create<RootState>((set, get) => {
         // Initialize project state
         const state = await loadState();
         const hasProjects = state.projects.length > 0;
-        console.log('Loading projects from IndexedDB:', JSON.stringify(state));
 
         if (hasProjects) {
           set({
