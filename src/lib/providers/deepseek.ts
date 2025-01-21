@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 import { Message } from '../../components/LlmChat/types';
-import { ProviderConfig } from '../../components/LlmChat/types/provider';
+import { ProviderConfig, getProviderModels } from '../../components/LlmChat/types/provider';
 import { MCPToolDefinition } from '../protocol/types';
 import { DeepSeekProtocolTranslator } from '../protocol/deepseek';
 
@@ -36,10 +36,10 @@ export class DeepSeekProvider extends EventEmitter {
   }
 
   private validateModel(model: string): string {
-    const validModels = ['deepseek-reasoner', 'deepseek-chat', 'deepseek-coder'];
+    const validModels = getProviderModels('deepseek');
     if (!model || !validModels.includes(model)) {
-      console.warn(`Invalid DeepSeek model: ${model}, falling back to deepseek-reasoner`);
-      return 'deepseek-reasoner';
+      console.warn(`Invalid DeepSeek model: ${model}, falling back to ${validModels[0]}`);
+      return validModels[0];
     }
     return model;
   }
@@ -49,11 +49,14 @@ export class DeepSeekProvider extends EventEmitter {
       'Authorization': `Bearer ${this.config.settings.apiKey}`,
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'X-DeepSeek-Client': 'kibitz',  // Add client identifier
     };
   }
 
   private getEndpoint(): string {
-    return (this.config.settings.baseUrl || 'https://api.deepseek.com/v1') + '/chat/completions';
+    // DeepSeek's API endpoint structure may be different
+    const baseUrl = this.config.settings.baseUrl || 'https://api.deepseek.ai';
+    return `${baseUrl}/v1/chat/completions`;
   }
 
   async streamResponse(response: Response): Promise<void> {

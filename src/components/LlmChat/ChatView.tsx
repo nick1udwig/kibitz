@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } 
 import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
+import { createProvider } from '@/lib/providers/factory';
 import { Send, Square, X } from 'lucide-react';
 import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,21 @@ import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+
+const VALID_CLAUDE_MODELS = [
+  'claude-3-opus-20240229',
+  'claude-3-sonnet-20240229',
+  'claude-3-haiku-20240307',
+  'claude-3-5-sonnet-20241022'
+];
+
+const validateClaudeModel = (model: string): string => {
+  if (!model || !VALID_CLAUDE_MODELS.includes(model)) {
+    console.warn(`Invalid Claude model: ${model}, falling back to ${DEFAULT_MODEL}`);
+    return DEFAULT_MODEL;
+  }
+  return model;
+};
 
 export interface ChatViewRef {
   focus: () => void;
@@ -199,16 +215,36 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       setInputMessage('');
       setCurrentFileContent([]);
 
-      console.log('🤖 Using Anthropic with model:', activeProject.settings.model || DEFAULT_MODEL);
-
-      // retry enough times to always push past 60s (the rate limit timer):
-      //  https://github.com/anthropics/anthropic-sdk-typescript/blob/dc2591fcc8847d509760a61777fc1b79e0eab646/src/core.ts#L645
-      console.log('🤖 Using Anthropic with model:', activeProject.settings.model || DEFAULT_MODEL);
-      const anthropic = new Anthropic({
-        apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',  // Use anthropic key only
-        dangerouslyAllowBrowser: true,
-        maxRetries: 12,
+      console.log('🤖 Using provider:', {
+        type: activeProject.settings.provider,
+        model: activeProject.settings.model,
       });
+
+      let llm;
+      if (activeProject.settings.provider === 'deepseek') {
+        try {
+          llm = createProvider({
+            type: 'deepseek',
+            settings: {
+              apiKey: currentApiKey,
+              model: activeProject.settings.model || 'deepseek-reasoner',
+              baseUrl: activeProject.settings.baseUrl,
+            },
+          });
+        } catch (error) {
+          console.error('Failed to create DeepSeek provider:', error);
+          setError('Failed to initialize DeepSeek provider. Check your API key and settings.');
+          setIsLoading(false);
+          return;
+        }
+      } else {
+        // Use Anthropic as default
+        llm = new Anthropic({
+          apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',
+          dangerouslyAllowBrowser: true,
+          maxRetries: 12,
+        });
+      }
 
       const savedToolResults = new Set<string>();
 
@@ -408,17 +444,19 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           toolCount: tools.length
         });
 
-        const stream = await anthropic.messages.stream({
-          model: activeProject.settings.model || DEFAULT_MODEL,
-          max_tokens: 8192,
-          messages: apiMessagesToSend,
-          ...(systemPromptContent && systemPromptContent.length > 0 && {
-            system: systemPromptContent
-          }),
-          ...(tools.length > 0 && {
-            tools: toolsCached
-          })
-        });
+        const stream = activeProject.settings.provider === 'deepseek'
+          ? await (llm as any).sendStreamingMessage(apiMessagesToSend, tools.length > 0 ? toolsCached : undefined)
+          : await (llm as Anthropic).messages.stream({
+              model: validateClaudeModel(activeProject.settings.model || DEFAULT_MODEL),
+              max_tokens: 8192,
+              messages: apiMessagesToSend,
+              ...(systemPromptContent && systemPromptContent.length > 0 && {
+                system: systemPromptContent
+              }),
+              ...(tools.length > 0 && {
+                tools: toolsCached
+              })
+            });
 
         streamRef.current = stream;
 

@@ -1,7 +1,4 @@
-import { ProviderConfig } from '../../components/LlmChat/types/provider';
-import { DeepSeekProvider } from './deepseek';
-
-import { ProviderConfig } from '../../components/LlmChat/types/provider';
+import { ProviderConfig, getProviderModels } from '../../components/LlmChat/types/provider';
 import { DeepSeekProvider } from './deepseek';
 import EventEmitter from 'events';
 
