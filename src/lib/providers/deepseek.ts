@@ -56,7 +56,7 @@ export class DeepSeekProvider extends EventEmitter {
     return (this.config.settings.baseUrl || 'https://api.deepseek.com') + '/v1/chat/completions';
   }
 
-  async streamResponse(response: Response): Promise<void> {
+  async streamResponse(response: Response): Promise<any> {
     if (!response.body) {
       throw new Error('No response body');
     }
@@ -65,52 +65,88 @@ export class DeepSeekProvider extends EventEmitter {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    try {
-      console.log('📡 DeepSeek stream started');
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          console.log('✅ DeepSeek stream complete');
-          this.emit('done');
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.trim() === '') continue;
-          if (!line.startsWith('data: ')) continue;
-
-          const data = line.slice(6);
-          if (data === '[DONE]') {
-            this.emit('done');
-            return;
+    const stream = new EventEmitter();
+    
+    // Start reading the stream
+    (async () => {
+      try {
+        console.log('📡 DeepSeek stream started');
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            console.log('✅ DeepSeek stream complete');
+            stream.emit('end');
+            break;
           }
 
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.error) {
-              throw new Error(`DeepSeek API error: ${JSON.stringify(parsed.error)}`);
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.trim() === '') continue;
+            if (!line.startsWith('data: ')) continue;
+
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              stream.emit('end');
+              return;
             }
-            // No need to translate since DeepSeek follows OpenAI format
-            console.log('📩 DeepSeek chunk:', {
-              hasContent: !!parsed.choices?.[0]?.delta?.content,
-              hasFunctionCall: !!parsed.choices?.[0]?.delta?.function_call
-            });
-            this.emit('text', parsed.choices?.[0]?.delta?.content || '');
-          } catch (e) {
-            console.warn('⚠️ Failed to parse DeepSeek chunk:', e);
-            throw e;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.error) {
+                throw new Error(`DeepSeek API error: ${JSON.stringify(parsed.error)}`);
+              }
+              
+              console.log('📩 DeepSeek chunk:', {
+                hasContent: !!parsed.choices?.[0]?.delta?.content,
+                hasFunctionCall: !!parsed.choices?.[0]?.delta?.function_call
+              });
+
+              if (parsed.choices?.[0]?.delta?.content) {
+                stream.emit('text', parsed.choices[0].delta.content);
+              }
+            } catch (e) {
+              console.warn('⚠️ Failed to parse DeepSeek chunk:', e);
+              stream.emit('error', e);
+            }
           }
         }
+      } catch (error) {
+        console.error('❌ DeepSeek streaming error:', error);
+        stream.emit('error', error);
       }
-    } catch (error) {
-      console.error('❌ DeepSeek streaming error:', error);
-      this.emit('error', error);
-      throw error;
-    }
+    })();
+
+    return {
+      on: (event: string, handler: (...args: any[]) => void) => {
+        stream.on(event, handler);
+        return stream;
+      },
+      removeAllListeners: () => {
+        stream.removeAllListeners();
+        return stream;
+      },
+      finalMessage: async () => {
+        return new Promise((resolve) => {
+          let finalContent = '';
+          stream.on('text', (text) => {
+            finalContent += text;
+          });
+          stream.on('end', () => {
+            resolve({
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: finalContent
+                }
+              }]
+            });
+          });
+        });
+      }
+    };
   }
 
   async sendMessage(messages: Message[], tools?: MCPToolDefinition[], options: ChatOptions = {}) {
@@ -138,21 +174,31 @@ export class DeepSeekProvider extends EventEmitter {
       hasFunctions: !!translatedRequest.functions
     });
 
+    const requestBody = JSON.stringify(translatedRequest);
+    console.log('🔍 DeepSeek request body:', requestBody);
+
     const response = await fetch(this.getEndpoint(), {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(translatedRequest)
+      body: requestBody
     });
 
     if (!response.ok) {
       console.error('❌ DeepSeek API error:', response.status, response.statusText);
-      const errorText = await response.text();
-      throw new Error(`DeepSeek API error: ${errorText || response.statusText}`);
+      let errorMessage = response.statusText;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error?.message || JSON.stringify(errorData);
+      } catch {
+        const errorText = await response.text();
+        errorMessage = errorText || response.statusText;
+      }
+      console.error('DeepSeek detailed error:', errorMessage);
+      throw new Error(`DeepSeek API error: ${errorMessage}`);
     }
 
     if (opts.stream) {
-      await this.streamResponse(response);
-      return null;
+      return this.streamResponse(response);
     } else {
       const data = await response.json();
       return this.translator.translateResponse(data);

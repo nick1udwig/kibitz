@@ -47,6 +47,29 @@ export class DeepSeekProtocolTranslator implements ProtocolTranslator {
       ];
     }
 
+    // Ensure messages alternate between user and assistant
+    messages = messages.reduce((acc: any[], msg: any, index: number) => {
+      if (index === 0 || 
+          msg.role !== messages[index - 1].role ||
+          msg.role === 'system') {
+        acc.push(msg);
+      } else {
+        // Combine with previous message of same role
+        const prevMsg = acc[acc.length - 1];
+        if (typeof prevMsg.content === 'string' && typeof msg.content === 'string') {
+          prevMsg.content += '\n' + msg.content;
+        } else {
+          // If either message has complex content (arrays, etc), just concatenate arrays
+          prevMsg.content = Array.isArray(prevMsg.content) ? prevMsg.content : [prevMsg.content];
+          const newContent = Array.isArray(msg.content) ? msg.content : [msg.content];
+          prevMsg.content = [...prevMsg.content, ...newContent];
+        }
+      }
+      return acc;
+    }, []);
+
+    console.log('Messages after alternating:', messages);
+
     const translated = {
       model: mcpRequest.model,
       messages,
