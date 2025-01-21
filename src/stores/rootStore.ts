@@ -353,6 +353,7 @@ export const useStore = create<RootState>((set, get) => {
           ...DEFAULT_PROJECT_SETTINGS,
           ...(currentProject && {
             apiKey: currentProject.settings.apiKey,
+            groqApiKey: currentProject.settings.groqApiKey,
             systemPrompt: '',
           }),
           mcpServerIds: connectedServerIds,
