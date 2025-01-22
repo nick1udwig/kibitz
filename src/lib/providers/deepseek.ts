@@ -99,10 +99,7 @@ export class DeepSeekProvider extends EventEmitter {
                 throw new Error(`DeepSeek API error: ${JSON.stringify(parsed.error)}`);
               }
               
-              console.log('📩 DeepSeek chunk:', {
-                hasContent: !!parsed.choices?.[0]?.delta?.content,
-                hasFunctionCall: !!parsed.choices?.[0]?.delta?.function_call
-              });
+            // Removed chunk logging
 
               if (parsed.choices?.[0]?.delta?.content) {
                 stream.emit('text', parsed.choices[0].delta.content);
@@ -141,6 +138,10 @@ export class DeepSeekProvider extends EventEmitter {
                   role: 'assistant',
                   content: finalContent
                 }
+              }],
+              content: [{
+                type: 'text',
+                text: finalContent
               }]
             });
           });
@@ -185,15 +186,18 @@ export class DeepSeekProvider extends EventEmitter {
 
     if (!response.ok) {
       console.error('❌ DeepSeek API error:', response.status, response.statusText);
+      // Clone the response before reading it
+      const responseClone = response.clone();
       let errorMessage = response.statusText;
       try {
-        const errorData = await response.json();
+        const errorData = await responseClone.json();
         errorMessage = errorData.error?.message || JSON.stringify(errorData);
-      } catch {
+        console.error('DeepSeek detailed error:', errorMessage);
+        console.error('DeepSeek request that failed:', requestBody);
+      } catch (e) {
         const errorText = await response.text();
         errorMessage = errorText || response.statusText;
       }
-      console.error('DeepSeek detailed error:', errorMessage);
       throw new Error(`DeepSeek API error: ${errorMessage}`);
     }
 

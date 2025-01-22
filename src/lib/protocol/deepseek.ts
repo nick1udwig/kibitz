@@ -33,13 +33,35 @@ export class DeepSeekProtocolTranslator implements ProtocolTranslator {
   }
 
   translateRequest(mcpRequest: any): any {
-    console.log('📝 Translating MCP request to OpenAI format:', {
+    // Clean up logging with more detail
+    console.log('📝 DeepSeek request:', {
+      model: mcpRequest.model,
+      messageCount: mcpRequest.messages?.length,
       hasTools: !!mcpRequest.tools,
-      model: mcpRequest.model
+      systemPrompt: !!mcpRequest.system
     });
 
-    // Transform system prompt if present
-    let messages = mcpRequest.messages;
+    // Transform messages to DeepSeek format
+    let messages = mcpRequest.messages.map(msg => {
+      // Convert complex content to string
+      let content = '';
+      if (typeof msg.content === 'string') {
+        content = msg.content;
+      } else if (Array.isArray(msg.content)) {
+        content = msg.content
+          .filter(c => c.type === 'text')
+          .map(c => c.type === 'text' ? c.text : '')
+          .join('\n')
+          .trim();
+      }
+
+      return {
+        role: msg.role,
+        content: content
+      };
+    });
+
+    // Add system message if present
     if (mcpRequest.system) {
       messages = [
         { role: 'system', content: mcpRequest.system[0].text },
@@ -47,28 +69,22 @@ export class DeepSeekProtocolTranslator implements ProtocolTranslator {
       ];
     }
 
-    // Ensure messages alternate between user and assistant
-    messages = messages.reduce((acc: any[], msg: any, index: number) => {
-      if (index === 0 || 
-          msg.role !== messages[index - 1].role ||
-          msg.role === 'system') {
-        acc.push(msg);
-      } else {
-        // Combine with previous message of same role
-        const prevMsg = acc[acc.length - 1];
-        if (typeof prevMsg.content === 'string' && typeof msg.content === 'string') {
-          prevMsg.content += '\n' + msg.content;
+    // Filter out empty messages and ensure they alternate
+    messages = messages
+      .filter(msg => msg.content.trim() !== '')
+      .reduce((acc: any[], msg: any, index: number) => {
+        if (index === 0 || 
+            msg.role !== acc[acc.length - 1].role ||
+            msg.role === 'system') {
+          acc.push(msg);
         } else {
-          // If either message has complex content (arrays, etc), just concatenate arrays
-          prevMsg.content = Array.isArray(prevMsg.content) ? prevMsg.content : [prevMsg.content];
-          const newContent = Array.isArray(msg.content) ? msg.content : [msg.content];
-          prevMsg.content = [...prevMsg.content, ...newContent];
+          // Combine with previous message
+          acc[acc.length - 1].content += '\n' + msg.content;
         }
-      }
-      return acc;
-    }, []);
+        return acc;
+      }, []);
 
-    console.log('Messages after alternating:', messages);
+    console.log('Messages prepared for DeepSeek:', messages);
 
     const translated = {
       model: mcpRequest.model,
@@ -76,9 +92,14 @@ export class DeepSeekProtocolTranslator implements ProtocolTranslator {
       stream: mcpRequest.stream ?? true,
       temperature: mcpRequest.temperature ?? 0.7,
       max_tokens: mcpRequest.max_tokens ?? 4096,
+      top_p: 1,
       // Only include function calling if tools are present
       ...(mcpRequest.tools && mcpRequest.tools.length > 0 ? {
-        functions: mcpRequest.tools,
+        functions: mcpRequest.tools.map(t => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.input_schema
+        })),
         function_call: 'auto'
       } : {})
     };

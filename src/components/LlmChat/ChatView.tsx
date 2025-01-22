@@ -138,8 +138,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         }
       });
 
-    const tools = Array.from(toolMap.values());
-    return !should_cache ? tools : tools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: { type: 'ephemeral' } as CacheControlEphemeral });
+    const tools = Array.from(toolMap?.values() || []);
+    return !should_cache ? tools : (tools || []).map((t, index, array) => 
+      index != array.length - 1 ? t : { ...t, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }
+    );
   };
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
@@ -222,7 +224,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         timestamp: new Date()
       };
 
-      const currentMessages = [...(activeConversation?.messages || []), userMessage];
+      const currentMessages = [...(activeConversation?.messages || []), userMessage].filter(Boolean);
       updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
       setInputMessage('');
       setCurrentFileContent([]);
@@ -292,16 +294,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           // If next message has string content, can't have tool_result
           if (typeof nextMessage.content === 'string') return false;
 
-          const nextMessageContent = nextMessage.content as MessageContent[];
+          const nextMessageContent = (nextMessage?.content || []) as MessageContent[];
 
           // Check if any tool_use in current message has matching tool_result in next message
-          return messageContent.every(content => {
-            if (content.type !== 'tool_use') return true;
+          return (messageContent || []).every(content => {
+            if (content?.type !== 'tool_use') return true;
             if (!('id' in content)) return true; // Skip if no id present
             const toolId = content.id;
-            return nextMessageContent.some(
+            return (nextMessageContent || []).some(
               nextContent =>
-                nextContent.type === 'tool_result' &&
+                nextContent?.type === 'tool_result' &&
                 'tool_use_id' in nextContent &&
                 nextContent.tool_use_id === toolId
             );
@@ -444,13 +446,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         };
         currentStreamMessage.content.push(textContent);
 
-        console.log('📤 Anthropic sending message:', {
-          messageCount: apiMessagesToSend.length,
-          hasTools: tools.length > 0,
-          toolCount: tools.length
-        });
-
-        console.log('📤 Anthropic sending message:', {
+        console.log('📤 Sending message:', {
+          provider: activeProject.settings.provider,
           messageCount: apiMessagesToSend.length,
           hasTools: tools.length > 0,
           toolCount: tools.length
@@ -484,13 +481,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           const updatedMessages = [...currentMessages, currentStreamMessage];
           updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
 
-          if (text.trim()) {
-            console.log('📩 Anthropic chunk received');
-          }
-
-          if (text.trim()) {
-            console.log('📩 Anthropic chunk received');
-          }
+          // Removed chunk logging
         });
 
         // Handle tool use in the final response if any
@@ -498,28 +489,46 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         const finalResponse = await stream.finalMessage();
 
         // Process content to handle empty text blocks
-        const processedContent = finalResponse.content.map((content: MessageContent) => {
-          if (!content['type']) {
-            return content;
-          }
-          // Keep non-text content
-          if (content.type !== 'text') {
-            return content;
-          }
+        // Handle different response formats from different providers
+        let processedResponse;
+        if (activeProject.settings.provider === 'deepseek') {
+          // DeepSeek returns a simpler format, convert it to our expected format
+          const content = {
+            type: 'text' as const,
+            text: Array.isArray(finalResponse.content) 
+              ? finalResponse.content.join('\n')
+              : (typeof finalResponse.content === 'string' 
+                ? finalResponse.content 
+                : finalResponse.choices?.[0]?.message?.content || 'empty')
+          };
 
-          // Check if text content is purely whitespace
-          const isWhitespace = content.text.trim().length === 0;
+          processedResponse = {
+            ...finalResponse,
+            content: [content]
+          };
+        } else {
+          // Process Anthropic's response format
+          const processedContent = finalResponse.content?.map((content: MessageContent) => {
+            if (!content['type']) {
+              return content;
+            }
+            // Keep non-text content
+            if (content.type !== 'text') {
+              return content;
+            }
 
-          // If there's only one content block and it's whitespace, replace with "empty"
-          if (isWhitespace && finalResponse.content.length === 1) {
-            return {
-              ...content,
-              text: 'empty',
-            } as MessageContent;
-          }
-          return content;
-        })
-          .filter((content: MessageContent) => {
+            // Check if text content is purely whitespace
+            const isWhitespace = content.text.trim().length === 0;
+
+            // If there's only one content block and it's whitespace, replace with "empty"
+            if (isWhitespace && finalResponse.content?.length === 1) {
+              return {
+                ...content,
+                text: 'empty',
+              } as MessageContent;
+            }
+            return content;
+          })?.filter((content: MessageContent) => {
             if (!content['type']) {
               return true;
             }
@@ -532,7 +541,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             const isWhitespace = content.text.trim().length === 0;
 
             // If there's only one content block and it's whitespace, replace with "empty"
-            if (isWhitespace && finalResponse.content.length === 1) {
+            if (isWhitespace && finalResponse.content?.length === 1) {
               console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
               content.text = 'empty';
               return true;
@@ -540,12 +549,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
             // For multiple content blocks, drop purely whitespace ones
             return !isWhitespace;
-          });
+          }) || [];
 
-        const processedResponse = {
-          ...finalResponse,
-          content: processedContent
-        };
+          processedResponse = {
+            ...finalResponse,
+            content: processedContent
+          };
+        }
 
         currentMessages.push(processedResponse);
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
