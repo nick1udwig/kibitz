@@ -3,6 +3,7 @@ import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square, X } from 'lucide-react';
+import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
 import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
@@ -393,7 +394,31 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         };
         currentStreamMessage.content.push(textContent);
 
-        const stream = await anthropic.messages.stream({
+        // Helper function to handle stream with retries
+        const streamWithRetry = async (params: MessageCreateParams) => {
+          let lastError: unknown;
+          for (let attempt = 0; attempt < 12; attempt++) { // Try for 1 minute (12 * 5 seconds)
+            try {
+              const stream = await anthropic.messages.stream(params);
+              return stream;
+            } catch (error) {
+              lastError = error;
+              // Check if error has overloaded_error type
+              if (typeof error === 'object' && error !== null) {
+                const errorObj = error as { error?: { type?: string }; status?: number };
+                const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
+                if (isOverloaded && attempt < 11) { // Don't wait on last attempt
+                  await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+                  continue;
+                }
+              }
+              throw error; // Throw non-overloaded errors immediately
+            }
+          }
+          throw lastError; // Throw last error if all retries failed
+        };
+
+        const stream = await streamWithRetry({
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
           messages: apiMessagesToSend,
@@ -600,6 +625,22 @@ Example good titles:
     } catch (error) {
       if (error && typeof error === 'object' && 'message' in error && error.message === 'Request was aborted.') {
         console.log('Request was cancelled by user');
+      } else if (typeof error === 'object' && error !== null) {
+        // Cast error to object with optional error and status properties
+        const errorObj = error as { error?: { type?: string }; status?: number };
+        const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
+
+        if (isOverloaded) {
+          console.error('Server overloaded, all retries failed:', error);
+          if (!shouldCancelRef.current) {
+            setError('Server is currently overloaded. Message sending failed after multiple retries. Please try again later.');
+          }
+        } else {
+          console.error('Failed to send message:', error);
+          if (!shouldCancelRef.current) {
+            setError(error instanceof Error ? error.message : 'An error occurred');
+          }
+        }
       } else {
         console.error('Failed to send message:', error);
         if (!shouldCancelRef.current) {
