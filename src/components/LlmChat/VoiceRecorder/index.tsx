@@ -2,6 +2,7 @@ import { useStore } from '@/stores/rootStore';
 import { Button } from '@/components/ui/button';
 import { Mic } from 'lucide-react';
 import React, { useState, useRef } from 'react';
+import { Spinner } from '@/components/ui/spinner';
 
 interface VoiceRecorderProps {
   onTranscriptionComplete: (text: string) => void;
@@ -9,6 +10,7 @@ interface VoiceRecorderProps {
 
 export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionComplete }) => {
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const { projects, activeProjectId } = useStore();
@@ -29,7 +31,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        setIsProcessing(true);
         await sendToGroqWhisper(audioBlob);
+        setIsProcessing(false);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -77,6 +81,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
       }
     } catch (err) {
       console.error('Error transcribing audio:', err);
+      setIsProcessing(false);
       alert('Error transcribing audio. Please check your GROQ API key and try again.');
     }
   };
@@ -92,7 +97,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
         ? (isRecording ? 'Stop Recording' : 'Start Recording')
         : 'Set GROQ API key in settings to enable voice recording'}
     >
-      <Mic className="h-4 w-4" />
+      <div className="relative">
+        <Mic className="h-4 w-4" />
+        {isProcessing && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Spinner />
+          </div>
+        )}
+      </div>
     </Button>
   );
 };
