@@ -574,8 +574,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           const userFirstMessage = currentMessages[0].content;
           const assistantFirstMessage = currentMessages[1].content;
 
-          const summaryResponse = await anthropic.messages.create({
-            model: activeProject.settings.model || DEFAULT_MODEL,
+          const titleClient = new Anthropic({
+            apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',
+            dangerouslyAllowBrowser: true,
+          });
+          
+          const summaryResponse = await titleClient.messages.create({
+            model: validateClaudeModel(activeProject.settings.model || DEFAULT_MODEL),
             max_tokens: 20,
             messages: [{
               role: "user",
