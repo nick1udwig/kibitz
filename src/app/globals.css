@@ -7,7 +7,7 @@
 @layer base {
   :root {
     --font-family-main: 'Kode Mono', monospace;
-    
+
     --orange: 17 100% 50%;
     --dark-orange: 17 100% 40%;
     --blue: 207 68% 51%;

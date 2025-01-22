@@ -90,7 +90,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
     <Button
       variant="ghost"
       size="icon"
-      className={`${isRecording ? 'text-red-500' : ''} hover:bg-accent hover:text-accent-foreground`}
+      className={`h-7 w-7 ${isRecording ? 'text-red-500' : ''} hover:bg-accent hover:text-accent-foreground`}
       onClick={isRecording ? stopRecording : startRecording}
       disabled={!activeProject?.settings.groqApiKey}
       title={activeProject?.settings.groqApiKey

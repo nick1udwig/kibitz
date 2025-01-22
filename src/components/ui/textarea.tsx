@@ -14,13 +14,15 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     const handleChange = React.useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
       const textarea = textareaRef.current;
       if (textarea) {
-        textarea.style.height = 'auto';
-        const newHeight = Math.min(
-          textarea.scrollHeight,
-          maxRows * parseInt(getComputedStyle(textarea).lineHeight)
-        );
-        // Only change height if content requires more than one line
-        textarea.style.height = textarea.value ? `${newHeight}px` : '2.5em';
+        textarea.style.height = '2.5em';
+
+        if (textarea.scrollHeight > textarea.clientHeight) {
+          const newHeight = Math.min(
+            textarea.scrollHeight,
+            maxRows * parseInt(getComputedStyle(textarea).lineHeight)
+          );
+          textarea.style.height = `${newHeight}px`;
+        }
       }
       onChange?.(event);
     }, [maxRows, onChange]);
@@ -29,6 +31,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     React.useEffect(() => {
       if (textareaRef.current) {
         textareaRef.current.style.height = '2.5em';
+        textareaRef.current.style.lineHeight = '1em';
       }
     }, []);
 

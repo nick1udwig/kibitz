@@ -889,51 +889,53 @@ Example good titles:
           </div>
         )}
         <div className="flex gap-2">
-          <div className="flex items-end gap-1">
-            <FileUpload
-              onFileSelect={(content) => {
-                setCurrentFileContent(prev => [...prev, { ...content }]);
-              }}
-              onUploadComplete={() => {
-                if (inputRef.current) {
-                  inputRef.current.focus();
+          <div className="relative flex-1">
+            <Textarea
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              placeholder={
+                activeProject?.settings.provider === 'openrouter'
+                  ? "⚠️ OpenRouter support coming soon"
+                  : !activeProject?.settings.apiKey?.trim()
+                  ? "⚠️ Set your API key in Settings to start chatting"
+                  : isLoading
+                  ? "Processing response..."
+                  : "Type your message"
+              }
+              onKeyDown={(e) => {
+                // Only send on Enter in desktop mode
+                const isMobile = window.matchMedia('(max-width: 768px)').matches;
+                if (e.key === 'Enter' && !e.shiftKey && !isLoading && !isMobile) {
+                  e.preventDefault();
+                  handleSendMessage();
                 }
               }}
+              ref={inputRef}
+              className={`pr-20 ${!activeProject?.settings.apiKey?.trim() ? "placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}`}
+              maxRows={8}
+              disabled={isLoading || !activeProject?.settings.apiKey?.trim() || activeProject?.settings.provider === 'openrouter'}
             />
-            <VoiceRecorder
-              onTranscriptionComplete={(text) => {
-                setInputMessage(prev => {
-                  const newText = prev.trim() ? `${prev}\n${text}` : text;
-                  return newText;
-                });
-              }}
-            />
+            <div className="absolute right-2 bottom-2 flex gap-1">
+              <FileUpload
+                onFileSelect={(content) => {
+                  setCurrentFileContent(prev => [...prev, { ...content }]);
+                }}
+                onUploadComplete={() => {
+                  if (inputRef.current) {
+                    inputRef.current.focus();
+                  }
+                }}
+              />
+              <VoiceRecorder
+                onTranscriptionComplete={(text) => {
+                  setInputMessage(prev => {
+                    const newText = prev.trim() ? `${prev}\n${text}` : text;
+                    return newText;
+                  });
+                }}
+              />
+            </div>
           </div>
-          <Textarea
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            placeholder={
-              activeProject?.settings.provider === 'openrouter'
-                ? "⚠️ OpenRouter support coming soon"
-                : !activeProject?.settings.apiKey?.trim()
-                ? "⚠️ Set your API key in Settings to start chatting"
-                : isLoading
-                ? "Processing response..."
-                : "Type your message"
-            }
-            onKeyDown={(e) => {
-              // Only send on Enter in desktop mode
-              const isMobile = window.matchMedia('(max-width: 768px)').matches;
-              if (e.key === 'Enter' && !e.shiftKey && !isLoading && !isMobile) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-            ref={inputRef}
-            className={`flex-1 ${!activeProject?.settings.apiKey?.trim() ? "placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}`}
-            maxRows={8}
-            disabled={isLoading || !activeProject?.settings.apiKey?.trim() || activeProject?.settings.provider === 'openrouter'}
-          />
           <Button
             onClick={isLoading ? cancelCurrentCall : handleSendMessage}
             disabled={!activeProjectId || !activeConversationId || activeProject?.settings.provider === 'openrouter'}
