@@ -105,7 +105,7 @@
 
   input, textarea, select {
     @apply font-['Kode_Mono'];
-    /*font-size: 16px !important;*/
+    font-size: 16px !important;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
     touch-action: manipulation;
@@ -128,14 +128,14 @@
   input[type="week"],
   select,
   textarea {
-    /*font-size: 16px !important;*/
+    font-size: 16px !important;
     transform: scale(1);
   }
 
   /* Ensure placeholders also have correct size */
   input::placeholder,
   textarea::placeholder {
-    /*font-size: 16px !important;*/
+    font-size: 16px !important;
   }
 }
 
