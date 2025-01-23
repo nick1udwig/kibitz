@@ -1,8 +1,9 @@
 import { useStore } from '@/stores/rootStore';
 import { Button } from '@/components/ui/button';
 import { Mic } from 'lucide-react';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Spinner } from '@/components/ui/spinner';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 interface VoiceRecorderProps {
   onTranscriptionComplete: (text: string) => void;
@@ -15,10 +16,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
   const chunksRef = useRef<Blob[]>([]);
   const { projects, activeProjectId } = useStore();
   const activeProject = projects.find(p => p.id === activeProjectId);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Set up audio context and analyser for visualization
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      analyser.fftSize = 256;
+      analyserRef.current = analyser;
+      audioContextRef.current = audioContext;
+
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
@@ -49,8 +64,71 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     }
   };
+
+  // Audio visualization
+  const drawVisualization = React.useCallback(() => {
+    if (!analyserRef.current || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const canvasCtx = canvas.getContext('2d');
+    if (!canvasCtx) return;
+
+    const bufferLength = analyserRef.current.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const draw = () => {
+      if (!isRecording) return;
+
+      animationFrameRef.current = requestAnimationFrame(draw);
+      analyserRef.current?.getByteTimeDomainData(dataArray);
+
+      canvasCtx.fillStyle = 'rgb(200, 200, 200)';
+      canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+      canvasCtx.lineWidth = 2;
+      canvasCtx.strokeStyle = 'rgb(0, 0, 0)';
+      canvasCtx.beginPath();
+
+      const sliceWidth = canvas.width * 1.0 / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * canvas.height / 2;
+
+        if (i === 0) {
+          canvasCtx.moveTo(x, y);
+        } else {
+          canvasCtx.lineTo(x, y);
+        }
+
+        x += sliceWidth;
+      }
+
+      canvasCtx.lineTo(canvas.width, canvas.height / 2);
+      canvasCtx.stroke();
+    };
+
+    draw();
+  }, [isRecording]);
+
+  useEffect(() => {
+    if (isRecording) {
+      drawVisualization();
+    }
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [isRecording, drawVisualization]);
 
   const sendToGroqWhisper = async (audioBlob: Blob) => {
     if (!activeProject?.settings.groqApiKey) {
@@ -87,24 +165,41 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
   };
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className={`h-7 w-7 ${isRecording ? 'text-red-500' : ''} hover:bg-accent hover:text-accent-foreground`}
-      onClick={isRecording ? stopRecording : startRecording}
-      disabled={!activeProject?.settings.groqApiKey}
-      title={activeProject?.settings.groqApiKey
-        ? (isRecording ? 'Stop Recording' : 'Start Recording')
-        : 'Set GROQ API key in settings to enable voice recording'}
-    >
-      <div className="relative">
-        <Mic className="h-4 w-4" />
-        {isProcessing && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Spinner />
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        className={`h-7 w-7 ${isRecording ? 'text-red-500' : ''} hover:bg-accent hover:text-accent-foreground`}
+        onClick={isRecording ? stopRecording : startRecording}
+        disabled={!activeProject?.settings.groqApiKey || isProcessing}
+        title={activeProject?.settings.groqApiKey
+          ? (isRecording ? 'Stop Recording' : 'Start Recording')
+          : 'Set GROQ API key in settings to enable voice recording'}
+      >
+        <div className="relative">
+          <Mic className="h-4 w-4" />
+          {isProcessing && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Spinner />
+            </div>
+          )}
+        </div>
+      </Button>
+
+      <Dialog open={isRecording} onOpenChange={(open) => !open && stopRecording()}>
+        <DialogContent className="sm:max-w-[425px]" onPointerDown={stopRecording}>
+          <div className="text-center mb-4">
+            <h3 className="text-lg font-semibold">Listening</h3>
+            <p className="text-sm text-muted-foreground">Tap anywhere to transcribe</p>
           </div>
-        )}
-      </div>
-    </Button>
+          <canvas
+            ref={canvasRef}
+            className="w-full h-32 bg-gray-100 rounded-md"
+            width={400}
+            height={128}
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
