@@ -40,7 +40,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
       const analyser = audioContext.createAnalyser();
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
+      // Don't connect to destination to avoid feedback
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.7;
       analyserRef.current = analyser;
       audioContextRef.current = audioContext;
 
@@ -116,45 +118,79 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
       animationFrameRef.current = requestAnimationFrame(draw);
       analyserRef.current?.getByteFrequencyData(dataArray);
 
-      canvasCtx.clearRect(0, 0, rect.width, rect.height);
+      // Scale for device pixel ratio
+      const dpr = window.devicePixelRatio || 1;
+      canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const barWidth = (rect.width / bufferLength) * 2.5;
+      // Calculate bar width based on canvas width and buffer length
+      const width = rect.width;
+      const height = rect.height;
+      const barWidth = (width / (bufferLength / 2)) * 0.8; // Show only half the frequencies
+      const gap = 2; // Gap between bars
       let x = 0;
 
-      for (let i = 0; i < bufferLength; i++) {
-        const barHeight = (dataArray[i] / 255) * rect.height;
+      // Draw frequency bars
+      for (let i = 0; i < bufferLength / 2; i++) {
+        const barHeight = (dataArray[i] / 255) * height;
 
-        const gradient = canvasCtx.createLinearGradient(0, rect.height - barHeight, 0, rect.height);
-        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.8)'); // Blue-500
-        gradient.addColorStop(1, 'rgba(37, 99, 235, 0.5)'); // Blue-600
+        // Create gradient for each bar
+        const gradient = canvasCtx.createLinearGradient(
+          0,
+          height - barHeight * dpr,
+          0,
+          height
+        );
+        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.9)'); // Blue-500
+        gradient.addColorStop(1, 'rgba(37, 99, 235, 0.7)'); // Blue-600
 
         canvasCtx.fillStyle = gradient;
-        canvasCtx.fillRect(x, rect.height - barHeight, barWidth, barHeight);
+        canvasCtx.fillRect(
+          x * dpr,
+          (height - barHeight) * dpr,
+          barWidth * dpr,
+          barHeight * dpr
+        );
 
-        x += barWidth + 1;
+        x += barWidth + gap;
       }
     };
 
     draw();
   }, [isRecording]);
 
+  // Initialize visualization when recording starts
   useEffect(() => {
+    let resizeObserver: ResizeObserver;
+
     if (isRecording) {
+      // Initial setup
       updateCanvasSize();
       drawVisualization();
 
-      const resizeObserver = new ResizeObserver(() => {
+      // Handle resize
+      resizeObserver = new ResizeObserver(() => {
         updateCanvasSize();
       });
 
       if (canvasRef.current) {
         resizeObserver.observe(canvasRef.current);
       }
+
+      // Start animation
+      animationFrameRef.current = requestAnimationFrame(function animate() {
+        drawVisualization();
+        if (isRecording) {
+          animationFrameRef.current = requestAnimationFrame(animate);
+        }
+      });
     }
 
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (resizeObserver) {
+        resizeObserver.disconnect();
       }
     };
   }, [isRecording, drawVisualization, updateCanvasSize]);
