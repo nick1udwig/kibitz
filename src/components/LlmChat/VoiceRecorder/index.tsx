@@ -260,7 +260,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
             }
           }}
         >
-          <DialogContent className="sm:max-w-[425px] min-h-0">
+          <DialogContent>
             <DialogHeader className="pb-2">
               <DialogTitle className="sr-only">
                 Voice Recording in Progress
