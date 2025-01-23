@@ -92,7 +92,7 @@ module.exports = {
         }
       },
       fontFamily: {
-        'kode': ['Kode Mono', 'monospace'],
+        'jetbrains': ['JetBrains Mono', 'monospace'],
       },
       borderRadius: {
         lg: "var(--radius)",
