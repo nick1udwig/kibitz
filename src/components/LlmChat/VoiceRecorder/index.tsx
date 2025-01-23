@@ -83,6 +83,21 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
     }
   };
 
+  const updateCanvasSize = React.useCallback(() => {
+    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.scale(dpr, dpr);
+    }
+  }, []);
+
   // Audio visualization
   const drawVisualization = React.useCallback(() => {
     if (!analyserRef.current || !canvasRef.current) return;
@@ -91,6 +106,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
     const canvasCtx = canvas.getContext('2d');
     if (!canvasCtx) return;
 
+    const rect = canvas.getBoundingClientRect();
     const bufferLength = analyserRef.current.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
@@ -98,32 +114,25 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
       if (!isRecording) return;
 
       animationFrameRef.current = requestAnimationFrame(draw);
-      analyserRef.current?.getByteTimeDomainData(dataArray);
+      analyserRef.current?.getByteFrequencyData(dataArray);
 
-      canvasCtx.fillStyle = 'rgb(200, 200, 200)';
-      canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
-      canvasCtx.lineWidth = 2;
-      canvasCtx.strokeStyle = 'rgb(0, 0, 0)';
-      canvasCtx.beginPath();
+      canvasCtx.clearRect(0, 0, rect.width, rect.height);
 
-      const sliceWidth = canvas.width * 1.0 / bufferLength;
+      const barWidth = (rect.width / bufferLength) * 2.5;
       let x = 0;
 
       for (let i = 0; i < bufferLength; i++) {
-        const v = dataArray[i] / 128.0;
-        const y = v * canvas.height / 2;
+        const barHeight = (dataArray[i] / 255) * rect.height;
 
-        if (i === 0) {
-          canvasCtx.moveTo(x, y);
-        } else {
-          canvasCtx.lineTo(x, y);
-        }
+        const gradient = canvasCtx.createLinearGradient(0, rect.height - barHeight, 0, rect.height);
+        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.8)'); // Blue-500
+        gradient.addColorStop(1, 'rgba(37, 99, 235, 0.5)'); // Blue-600
 
-        x += sliceWidth;
+        canvasCtx.fillStyle = gradient;
+        canvasCtx.fillRect(x, rect.height - barHeight, barWidth, barHeight);
+
+        x += barWidth + 1;
       }
-
-      canvasCtx.lineTo(canvas.width, canvas.height / 2);
-      canvasCtx.stroke();
     };
 
     draw();
@@ -131,14 +140,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
 
   useEffect(() => {
     if (isRecording) {
+      updateCanvasSize();
       drawVisualization();
+
+      const resizeObserver = new ResizeObserver(() => {
+        updateCanvasSize();
+      });
+
+      if (canvasRef.current) {
+        resizeObserver.observe(canvasRef.current);
+      }
     }
+
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isRecording, drawVisualization]);
+  }, [isRecording, drawVisualization, updateCanvasSize]);
 
   const sendToGroqWhisper = async (audioBlob: Blob) => {
     if (!activeProject?.settings.groqApiKey) {
@@ -219,9 +238,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
             <div className="mt-4" onClick={stopRecording}>
               <canvas
                 ref={canvasRef}
-                className="w-full h-32 bg-gray-100 rounded-md"
-                width={400}
-                height={128}
+                className="w-full h-32 bg-background border rounded-md"
+                style={{ touchAction: 'none' }}
               />
             </div>
           </DialogContent>
