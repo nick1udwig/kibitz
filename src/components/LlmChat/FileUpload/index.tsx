@@ -46,6 +46,7 @@ function decodeBase64ToUtf8String(base64: string): string {
 export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onUploadComplete }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Create a reusable process file function
   const processFile = useCallback(async (file: File) => {
     if (!(ACCEPTED_IMAGE_TYPES.includes(file.type) || ACCEPTED_DOCUMENT_TYPES.includes(file.type) || file.type.startsWith('text/') || ADDITIONAL_ACCEPTED_TEXT_TYPES.includes(file.type))) {
       alert('Unsupported file type. Please upload an image (JPEG, PNG, GIF, WebP), a PDF, or a plaintext document.');
@@ -91,17 +92,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onUploadCo
     reader.readAsDataURL(file);
   }, [onFileSelect, onUploadComplete]);
 
-  const handleFileDrop = useCallback(
-    async (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      const files = Array.from(e.dataTransfer.files);
-      for (const file of files) {
-        await processFile(file);
-      }
-    },
-    [processFile]
-  );
-
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
@@ -112,21 +102,43 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onUploadCo
     [processFile]
   );
 
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  };
-
   const triggerFileInput = () => {
     fileInputRef.current?.click();
   };
 
+  // Add a handler for global drag events
+  const handleGlobalDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleGlobalDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      const files = Array.from(e.dataTransfer.files);
+      files.forEach(processFile);
+    }
+  }, [processFile]);
+
+  // Setup and cleanup global drag-drop handlers
+  React.useEffect(() => {
+    const textarea = document.querySelector('textarea');
+    if (textarea) {
+      textarea.addEventListener('dragover', handleGlobalDragOver);
+      textarea.addEventListener('drop', handleGlobalDrop);
+    }
+
+    return () => {
+      if (textarea) {
+        textarea.removeEventListener('dragover', handleGlobalDragOver);
+        textarea.removeEventListener('drop', handleGlobalDrop);
+      }
+    };
+  }, [handleGlobalDragOver, handleGlobalDrop]);
+
   return (
-    <div
-      onDrop={handleFileDrop}
-      onDragOver={handleDragOver}
-      className="relative"
-    >
+    <div className="relative">
       <input
         type="file"
         ref={fileInputRef}
@@ -139,10 +151,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onUploadCo
         onClick={triggerFileInput}
         variant="ghost"
         size="icon"
-        className="h-8 w-8"
+        className="h-7 w-7"
         title="Upload files (Images or PDFs)"
       >
-        <UploadCloud className="h-5 w-5" />
+        <UploadCloud className="h-4 w-4" />
       </Button>
     </div>
   );
