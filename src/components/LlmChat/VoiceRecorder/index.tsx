@@ -41,8 +41,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
       // Don't connect to destination to avoid feedback
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.7;
+      analyser.fftSize = 128; // Reduced from 256 for better performance
+      analyser.smoothingTimeConstant = 0.8; // Increased smoothing to reduce jitter
       analyserRef.current = analyser;
       audioContextRef.current = audioContext;
 
@@ -112,10 +112,29 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
     const bufferLength = analyserRef.current.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
+    // Pre-compute gradients
+    const precomputedGradients: string[] = [];
+    for (let i = 0; i <= 255; i += 8) { // Create 32 gradient levels
+      const alpha = i / 255;
+      precomputedGradients.push(`rgba(59, 130, 246, ${alpha})`);
+    }
+
+    let lastDrawTime = 0;
+    const targetFps = 30;
+    const frameInterval = 1000 / targetFps;
+
     const draw = () => {
       if (!isRecording) return;
 
-      animationFrameRef.current = requestAnimationFrame(draw);
+      const currentTime = performance.now();
+      const deltaTime = currentTime - lastDrawTime;
+
+      if (deltaTime < frameInterval) {
+        animationFrameRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
+      lastDrawTime = currentTime;
       analyserRef.current?.getByteFrequencyData(dataArray);
 
       // Scale for device pixel ratio
@@ -125,25 +144,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
       // Calculate bar width based on canvas width and buffer length
       const width = rect.width;
       const height = rect.height;
-      const barWidth = (width / (bufferLength / 2)) * 0.8; // Show only half the frequencies
-      const gap = 2; // Gap between bars
+      const numBars = 32; // Fixed number of bars for better performance
+      const barWidth = (width / numBars) * 0.8;
+      const gap = 2;
       let x = 0;
 
-      // Draw frequency bars
-      for (let i = 0; i < bufferLength / 2; i++) {
-        const barHeight = (dataArray[i] / 255) * height;
+      // Draw frequency bars with optimized sampling
+      for (let i = 0; i < numBars; i++) {
+        // Sample frequencies logarithmically
+        const dataIndex = Math.floor((i / numBars) * (bufferLength / 4));
+        const barHeight = (dataArray[dataIndex] / 255) * height;
 
-        // Create gradient for each bar
-        const gradient = canvasCtx.createLinearGradient(
-          0,
-          height - barHeight * dpr,
-          0,
-          height
-        );
-        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.9)'); // Blue-500
-        gradient.addColorStop(1, 'rgba(37, 99, 235, 0.7)'); // Blue-600
-
-        canvasCtx.fillStyle = gradient;
+        // Use precomputed gradients
+        const gradientIndex = Math.floor((dataArray[dataIndex] / 255) * (precomputedGradients.length - 1));
+        canvasCtx.fillStyle = precomputedGradients[gradientIndex];
         canvasCtx.fillRect(
           x * dpr,
           (height - barHeight) * dpr,
