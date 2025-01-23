@@ -3,8 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Mic } from 'lucide-react';
 import React, { useState, useRef, useEffect } from 'react';
 import { Spinner } from '@/components/ui/spinner';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { VisuallyHidden } from '@/components/ui/visually-hidden';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface VoiceRecorderProps {
   onTranscriptionComplete: (text: string) => void;
@@ -21,6 +20,16 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
   const animationFrameRef = useRef<number | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  const handleButtonClick = async (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isRecording) {
+      stopRecording();
+    } else {
+      await startRecording();
+    }
+  };
 
   const startRecording = async () => {
     try {
@@ -167,43 +176,57 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="icon"
-        className={`h-7 w-7 ${isRecording ? 'text-red-500' : ''} hover:bg-accent hover:text-accent-foreground`}
-        onClick={isRecording ? stopRecording : startRecording}
-        disabled={!activeProject?.settings.groqApiKey || isProcessing}
-        title={activeProject?.settings.groqApiKey
-          ? (isRecording ? 'Stop Recording' : 'Start Recording')
-          : 'Set GROQ API key in settings to enable voice recording'}
-      >
-        <div className="relative">
-          <Mic className="h-4 w-4" />
-          {isProcessing && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Spinner />
-            </div>
-          )}
-        </div>
-      </Button>
-
-      <Dialog open={isRecording} onOpenChange={(open) => !open && stopRecording()}>
-        <DialogContent className="sm:max-w-[425px]" onPointerDown={stopRecording}>
-          <DialogTitle asChild>
-            <VisuallyHidden>Voice Recording in Progress</VisuallyHidden>
-          </DialogTitle>
-          <div className="text-center mb-4">
-            <h3 className="text-lg font-semibold">Listening</h3>
-            <p className="text-sm text-muted-foreground">Tap anywhere to transcribe</p>
+      <div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${isRecording ? 'text-red-500' : ''} hover:bg-accent hover:text-accent-foreground`}
+          onClick={handleButtonClick}
+          disabled={!activeProject?.settings.groqApiKey || isProcessing}
+          title={activeProject?.settings.groqApiKey
+            ? (isRecording ? 'Stop Recording' : 'Start Recording')
+            : 'Set GROQ API key in settings to enable voice recording'}
+        >
+          <div className="relative">
+            <Mic className="h-4 w-4" />
+            {isProcessing && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Spinner />
+              </div>
+            )}
           </div>
-          <canvas
-            ref={canvasRef}
-            className="w-full h-32 bg-gray-100 rounded-md"
-            width={400}
-            height={128}
-          />
-        </DialogContent>
-      </Dialog>
+        </Button>
+
+        <Dialog
+          open={isRecording}
+          onOpenChange={(open) => {
+            if (!open && isRecording) {
+              stopRecording();
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="sr-only">
+                Voice Recording in Progress
+              </DialogTitle>
+              <div className="text-center">
+                <h3 className="text-lg font-semibold">Listening</h3>
+                <p className="text-sm text-muted-foreground">Tap anywhere to transcribe</p>
+              </div>
+            </DialogHeader>
+
+            <div className="mt-4" onClick={stopRecording}>
+              <canvas
+                ref={canvasRef}
+                className="w-full h-32 bg-gray-100 rounded-md"
+                width={400}
+                height={128}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
     </>
   );
 };
