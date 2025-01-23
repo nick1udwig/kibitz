@@ -260,8 +260,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
             }
           }}
         >
-          <DialogContent>
-            <DialogHeader>
+          <DialogContent className="sm:max-w-[425px] min-h-0">
+            <DialogHeader className="pb-2">
               <DialogTitle className="sr-only">
                 Voice Recording in Progress
               </DialogTitle>
@@ -271,10 +271,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
               </div>
             </DialogHeader>
 
-            <div className="mt-4" onClick={stopRecording}>
+            <div className="mt-2" onClick={stopRecording}>
               <canvas
                 ref={canvasRef}
-                className="w-full h-32 bg-background border rounded-md"
+                className="w-full h-24 sm:h-32 bg-background border rounded-md"
                 style={{ touchAction: 'none' }}
               />
             </div>
