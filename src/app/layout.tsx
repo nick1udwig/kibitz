@@ -1,8 +1,5 @@
-import { Inter } from "next/font/google";
 import { ThemeProvider } from "./providers";
 import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: 'Kibitz',
@@ -22,7 +19,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="icon" href={`${PATH_PREFIX}/favicon.svg`} type="image/svg" />
       </head>
-      <body className={`${inter.className} bg-background min-h-screen`}>
+      <body className={`bg-background min-h-screen`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
