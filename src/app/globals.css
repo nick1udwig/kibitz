@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Kode+Mono:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,8 +6,8 @@
 
 @layer base {
   :root {
-    --font-family-main: 'Kode Mono', monospace;
-    
+    --font-family-main: 'JetBrains Mono', monospace;
+
     --orange: 17 100% 50%;
     --dark-orange: 17 100% 40%;
     --blue: 207 68% 51%;
@@ -89,7 +89,7 @@
   }
 
   body {
-    @apply bg-background text-foreground font-['Kode_Mono'];
+    @apply bg-background text-foreground font-['JetBrains_Mono'];
     background-image: radial-gradient(circle at -1% -47%, rgba(71, 0, 0, 0.17) 7%, transparent 58.05%), radial-gradient(circle at 81% 210%, rgba(214, 67, 5, 0.31) 17%, transparent 77.05%);
     min-width: 100vw;
     min-height: 100vh;
@@ -100,11 +100,11 @@
   }
 
   button {
-    @apply font-['Kode_Mono'];
+    @apply font-['JetBrains_Mono'];
   }
 
   input, textarea, select {
-    @apply font-['Kode_Mono'];
+    @apply font-['JetBrains_Mono'];
     font-size: 16px !important;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
