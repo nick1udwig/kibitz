@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Mic } from 'lucide-react';
 import React, { useState, useRef, useEffect } from 'react';
 import { Spinner } from '@/components/ui/spinner';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@/components/ui/visually-hidden';
 
 interface VoiceRecorderProps {
   onTranscriptionComplete: (text: string) => void;
@@ -188,6 +189,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTranscriptionCom
 
       <Dialog open={isRecording} onOpenChange={(open) => !open && stopRecording()}>
         <DialogContent className="sm:max-w-[425px]" onPointerDown={stopRecording}>
+          <DialogTitle asChild>
+            <VisuallyHidden>Voice Recording in Progress</VisuallyHidden>
+          </DialogTitle>
           <div className="text-center mb-4">
             <h3 className="text-lg font-semibold">Listening</h3>
             <p className="text-sm text-muted-foreground">Tap anywhere to transcribe</p>
