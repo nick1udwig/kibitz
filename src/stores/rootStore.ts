@@ -28,6 +28,9 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
 
 interface RootState extends ProjectState, McpState {
   initialized: boolean;
+  apiKeys: Record<string, string>;
+  hasLoadedApiKeysFromServer: boolean;
+  saveApiKeysToServer: (keys: Record<string, string>) => void;
   initialize: () => Promise<void>;
   // Project methods
   createProject: (name: string, settings?: Partial<ProjectSettings>) => void;
@@ -54,6 +57,19 @@ export const useStore = create<RootState>((set, get) => {
   // Using refs outside the store to maintain WebSocket connections
   const connectionsRef = new Map<string, WebSocket>();
   const reconnectTimeoutsRef = new Map<string, NodeJS.Timeout>();
+
+  // Helper function to save API keys to server
+  const saveApiKeysToServer = (keys: Record<string, string>) => {
+    console.log(`saving ${JSON.stringify({ keys })}`);
+    const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    fetch(`${BASE_PATH}/api/keys`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys }),
+    }).catch(error => {
+      console.error('Failed to save API keys:', error);
+    });
+  };
 
   const cleanupServer = (serverId: string) => {
     const existingTimeout = reconnectTimeoutsRef.get(serverId);
@@ -120,25 +136,24 @@ export const useStore = create<RootState>((set, get) => {
           }));
         };
 
-          ws.onclose = () => {
-            clearTimeout(timeout);
-            cleanupServer(server.id);
+        ws.onclose = () => {
+          clearTimeout(timeout);
+          cleanupServer(server.id);
 
-            const updatedState = {
-              servers: get().servers.map(s => s.id === server.id
-                ? { ...s, status: 'disconnected' as const, error: 'Connection closed' }
-                : s
-              )
-            };
-            set(updatedState);
-
-            // Save state after disconnection
-            saveMcpServers(updatedState.servers).catch((err) => {
-              console.error('Error saving MCP servers on disconnect:', err);
-            });
-
-            scheduleReconnect(server);
+          const updatedState = {
+            servers: get().servers.map(s => s.id === server.id
+              ? { ...s, status: 'disconnected' as const, error: 'Connection closed' }
+              : s
+            )
           };
+          set(updatedState);
+
+          saveMcpServers(updatedState.servers).catch((err) => {
+            console.error('Error saving MCP servers on disconnect:', err);
+          });
+
+          scheduleReconnect(server);
+        };
 
         ws.onerror = () => {
           clearTimeout(timeout);
@@ -226,12 +241,32 @@ export const useStore = create<RootState>((set, get) => {
     activeConversationId: null,
     initialized: false,
     servers: [],
+    apiKeys: {},
+    hasLoadedApiKeysFromServer: false,
+    saveApiKeysToServer,
 
     // Initialization
     initialize: async () => {
       if (get().initialized) return;
 
       try {
+        // Try to load API keys from server if none exist locally
+        const { apiKeys } = get();
+        if (Object.keys(apiKeys).length === 0 && !get().hasLoadedApiKeysFromServer) {
+          try {
+            const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+            const response = await fetch(`${BASE_PATH}/api/keys`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.keys) {
+                set({ apiKeys: data.keys, hasLoadedApiKeysFromServer: true });
+              }
+            }
+          } catch (error) {
+            console.error('Failed to load API keys:', error);
+          }
+        }
+
         // Always try to load saved servers first
         const savedServers = await loadMcpServers();
         console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
@@ -268,7 +303,7 @@ export const useStore = create<RootState>((set, get) => {
             console.error('Failed to connect to local MCP:', err);
           }
         } else {
-            await saveMcpServers(connectedServers);
+          await saveMcpServers(connectedServers);
         }
 
         // Initialize project state
@@ -293,11 +328,14 @@ export const useStore = create<RootState>((set, get) => {
             messages: [],
             createdAt: new Date()
           };
+          const { apiKeys } = get();
           const defaultProject = {
             id: generateId(),
             name: 'Default Project',
             settings: {
               ...DEFAULT_PROJECT_SETTINGS,
+              apiKey: apiKeys.apiKey ?? '',
+              groqApiKey: apiKeys.groqApiKey ?? '',
               mcpServers: []
             },
             conversations: [defaultConversation],
@@ -410,31 +448,30 @@ export const useStore = create<RootState>((set, get) => {
       });
     },
 
-    deleteProject: (id: string) => {
-      const { projects, activeProjectId } = get();
-      const newProject = projects.find(p => p.id !== id);
-
-      const newState = {
-        projects: projects.filter(p => p.id !== id),
-        activeProjectId: activeProjectId === id && newProject ? newProject.id : activeProjectId,
-        activeConversationId: activeProjectId === id && newProject
-          ? newProject.conversations[0]?.id ?? null
-          : get().activeConversationId,
-      };
-
-      set(newState);
-      saveState(newState).catch(error => {
-        console.error('Error saving state:', error);
-      });
-    },
-
     updateProjectSettings: (id: string, updates: {
       settings?: Partial<ProjectSettings>;
       conversations?: ConversationBrief[];
     }) => {
       set(state => {
+        const projectToUpdate = state.projects.find(p => p.id === id);
+        const apiKeysToUpdate = { ...state.apiKeys };
+        let shouldUpdateApiKeys = false;
+
+        // Check for API key changes before updating project
+        if (projectToUpdate && updates.settings) {
+          if (updates.settings.apiKey !== projectToUpdate.settings.apiKey) {
+            apiKeysToUpdate.apiKey = updates.settings.apiKey || '';
+            shouldUpdateApiKeys = true;
+          }
+          if (updates.settings.groqApiKey !== projectToUpdate.settings.groqApiKey) {
+            apiKeysToUpdate.groqApiKey = updates.settings.groqApiKey || '';
+            shouldUpdateApiKeys = true;
+          }
+        }
+
         const newState = {
           ...state,
+          apiKeys: shouldUpdateApiKeys ? apiKeysToUpdate : state.apiKeys,
           projects: state.projects.map(p => {
             if (p.id !== id) return p;
 
@@ -465,11 +502,35 @@ export const useStore = create<RootState>((set, get) => {
           })
         };
 
+        // Save state to IndexedDB
         saveState(newState).catch(error => {
           console.error('Error saving state:', error);
         });
 
+        // If API keys were updated, set them locally & save them to server
+        if (shouldUpdateApiKeys) {
+          saveApiKeysToServer(apiKeysToUpdate);
+        }
+
         return newState;
+      });
+    },
+
+    deleteProject: (id: string) => {
+      const { projects, activeProjectId } = get();
+      const newProject = projects.find(p => p.id !== id);
+
+      const newState = {
+        projects: projects.filter(p => p.id !== id),
+        activeProjectId: activeProjectId === id && newProject ? newProject.id : activeProjectId,
+        activeConversationId: activeProjectId === id && newProject
+          ? newProject.conversations[0]?.id ?? null
+          : get().activeConversationId,
+      };
+
+      set(newState);
+      saveState(newState).catch(error => {
+        console.error('Error saving state:', error);
       });
     },
 
