@@ -1,8 +1,15 @@
 export type LegacyProviderType = 'anthropic' | 'openrouter' | 'openai';
 
 export interface ProviderConfig {
-  type: string;
+  type: LegacyProviderType;
   settings: Record<string, string>;
+}
+
+export interface ProviderCapabilities {
+  supportedModels: string[];
+  maxContextLength: number;
+  supportsStreaming: boolean;
+  supportsSystemPrompt: boolean;
 }
 
 export interface LegacyProviderSettings {

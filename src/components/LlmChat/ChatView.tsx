@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
 import Image from 'next/image';
-import { Anthropic } from '@anthropic-ai/sdk';
+import { ChatProviderFactory } from './providers/factory';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square, X, ChevronDown } from 'lucide-react';
 import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
@@ -20,7 +20,8 @@ import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
 
-const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+// Create provider factory singleton
+const providerFactory = new ChatProviderFactory();
 
 export interface ChatViewRef {
   focus: () => void;
@@ -202,15 +203,34 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError(null);
     setIsLoading(true);
 
-    const currentApiKey = activeProject.settings.provider === 'openrouter'
-      ? activeProject.settings.openRouterApiKey
-      : (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey);  // Fallback for backward compatibility
+    const provider = activeProject.settings.provider || 'anthropic';
+    const config = {
+      type: provider,
+      settings: {
+        apiKey: provider === 'anthropic' 
+          ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey) // Fallback for compatibility
+          : provider === 'openai'
+          ? activeProject.settings.openaiApiKey
+          : activeProject.settings.openRouterApiKey,
+        ...(provider === 'openai' && {
+          baseUrl: activeProject.settings.openaiBaseUrl,
+          organizationId: activeProject.settings.openaiOrgId,
+        }),
+        ...(provider === 'openrouter' && {
+          baseUrl: activeProject.settings.openRouterBaseUrl,
+        }),
+      }
+    };
 
-    if (!currentApiKey?.trim()) {
-      setError(`API key not found. Please set your ${activeProject.settings.provider === 'openrouter' ? 'OpenRouter' : 'Anthropic'} API key in the Settings panel.`);
+    providerFactory.validateConfig(config);
+
+    // Verify API key
+    if (!config.settings.apiKey?.trim()) {
+      setError(`API key not found. Please set your ${provider} API key in the Settings panel.`);
       setIsLoading(false);
       return;
     }
+
     // Reset the textarea height immediately after sending
     if (inputRef.current) {
       inputRef.current.style.height = '2.5em';
@@ -240,427 +260,53 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       setInputMessage('');
       setCurrentFileContent([]);
 
-      // retry enough times to always push past 60s (the rate limit timer):
-      //  https://github.com/anthropics/anthropic-sdk-typescript/blob/dc2591fcc8847d509760a61777fc1b79e0eab646/src/core.ts#L645
-      const anthropic = new Anthropic({
-        apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',  // Use anthropic key only
-        dangerouslyAllowBrowser: true,
-        maxRetries: 12,
-      });
+      // Create appropriate provider instance
+      const chatProvider = providerFactory.createProvider(config);
 
       const savedToolResults = new Set<string>();
-
-      const toolsCached = getUniqueTools(true);
       const tools = getUniqueTools(false);
-
-      // Only include system content if there is a non-empty system prompt
       const systemPrompt = activeProject.settings.systemPrompt?.trim();
-      const systemPromptContent = systemPrompt ? [
-        {
-          type: "text",
-          text: systemPrompt,
-        },
-      ] as TextBlockParam[] : undefined;
 
-      while (true) {
-        const cachedApiMessages = currentMessages.filter((message, index, array) => {
-          // Process messages and remove incomplete tool use interactions
-          // If content is a string, keep it
-          if (typeof message.content === 'string') return true;
+      try {
+        // Create appropriate provider instance
+        await chatProvider.sendMessage(
+          currentMessages,
+          tools,
+          systemPrompt,
+          (text) => {
+            // Update conversation with streaming message
+            const streamMessage = {
+              role: 'assistant' as const,
+              content: [{ type: 'text' as const, text }],
+              timestamp: new Date(),
+            };
+            const updatedMessages = [...currentMessages, streamMessage];
+            updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+          },
+          (error) => {
+            console.error('Error from provider:', error);
+            setError(error.message);
+          },
+          async (finalResponse) => {
 
-          // At this point we know message.content is an array
-          const messageContent = message.content as MessageContent[];
+            // Update messages
+            updateConversationMessages(activeProject.id, activeConversationId, [...currentMessages, finalResponse]);
 
-          // Check if this message has a tool_use
-          const hasToolUse = messageContent.some(c => c.type === 'tool_use');
-          if (!hasToolUse) return true;
-
-          // Look for matching tool_result in next message
-          const nextMessage = array[index + 1];
-          if (!nextMessage) return false;
-
-          // If next message has string content, can't have tool_result
-          if (typeof nextMessage.content === 'string') return false;
-
-          const nextMessageContent = nextMessage.content as MessageContent[];
-
-          // Check if any tool_use in current message has matching tool_result in next message
-          return messageContent.every(content => {
-            if (content.type !== 'tool_use') return true;
-            if (!('id' in content)) return true; // Skip if no id present
-            const toolId = content.id;
-            return nextMessageContent.some(
-              nextContent =>
-                nextContent.type === 'tool_result' &&
-                'tool_use_id' in nextContent &&
-                nextContent.tool_use_id === toolId
-            );
-          });
-        })
-        .map((m, index, array) =>
-          index < array.length - 3 ?
-            {
-              role: m.role,
-              content: m.content,
-              toolInput: m.toolInput ? m.toolInput : undefined,
-            } :
-            {
-              role: m.role,
-              content: (typeof m.content === 'string' ?
-                [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }]
-                : m.content.map((c, index, array) =>
-                  index != array.length - 1 ? c :
-                    {
-                      ...c,
-                      cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
-                    }
-                )) as MessageContent[],
-              toolInput: m.toolInput ? m.toolInput : undefined,
+            // Generate title for new chats
+            if (currentMessages.length === 2 && activeConversation?.name === '(New Chat)') {
+              const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+              if (currentConversation?.name === '(New Chat)') {
+                const title = await chatProvider.generateTitle(currentMessages[0].content, finalResponse.content);
+                if (title) {
+                  renameConversation(activeProject.id, activeConversationId, title);
+                }
+              }
             }
+          },
+          shouldCancelRef
         );
 
-        const newestToolResultId = currentMessages
-          .filter((msg): msg is Message & { content: MessageContent[] } =>
-            Array.isArray(msg.content)
-          )
-          .flatMap(msg => msg.content)
-          .filter((content): content is MessageContent & { tool_use_id: string } =>
-            'tool_use_id' in content && content.type === 'tool_result'
-          )
-          .map(content => content.tool_use_id)
-          .pop();
-
-        if (activeProject.settings.elideToolResults) {
-          if ((cachedApiMessages[cachedApiMessages.length - 1].content as MessageContent[])[0].type === 'tool_result') {
-            const keepToolResponse = await anthropic.messages.create({
-              model: DEFAULT_MODEL,
-              max_tokens: 8192,
-              messages: [
-                ...cachedApiMessages.filter(msg => {
-                  if (!Array.isArray(msg.content)) return false;
-                  const toolResult = msg.content.find(c =>
-                    c.type === 'tool_use' || c.type === 'tool_result'
-                  );
-                  return toolResult;
-                }).map(msg =>
-                  !(msg.content as MessageContent[]).find(c => c.type === 'tool_result') ?
-                    {
-                      ...msg,
-                      content: [
-                        msg.content[0],
-                        {
-                          type: 'text' as const,
-                          text: `${JSON.stringify(msg.content[1])}`,
-                        },
-                      ],
-                    } :
-                    {
-                      ...msg,
-                      content: [
-                        {
-                          type: 'text' as const,
-                          text: `${JSON.stringify({ ...(msg.content as MessageContent[])[0], content: 'elided' })}`,
-                        },
-                      ],
-                    }
-                ),
-                {
-                  role: 'user' as const,
-                  content: [{
-                    type: 'text' as const,
-                    text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
-                    cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
-                  }],
-                },
-              ] as Message[],
-              system: [{
-                type: 'text' as const,
-                text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
-                cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
-              }],
-            });
-
-            if (keepToolResponse.content[0].type === 'text') {
-              console.log('a');
-              const lines = keepToolResponse.content[0].text.split('\n');
-
-              for (const line of lines) {
-                const [key, value] = line.split(': ');
-
-                if (value.trim() === 'Yes') {
-                  console.log('b');
-                  savedToolResults.add(key);
-                } else if (value.trim() === 'No') {
-                  console.log('c');
-                  savedToolResults.delete(key);
-                }
-              }
-            }
-            console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}\n${JSON.stringify(savedToolResults)}`);
-          }
-        }
-
-        const apiMessagesToSend = !activeProject.settings.elideToolResults ? cachedApiMessages :
-          cachedApiMessages
-            .map(msg => {
-              if (!Array.isArray(msg.content)) return msg;
-
-              const toolResult = msg.content.find(c =>
-                c.type === 'tool_result'
-              );
-              if (!toolResult) return msg;
-
-              const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
-              return toolUseId === newestToolResultId || savedToolResults.has(toolUseId) ?
-                msg :
-                {
-                  ...msg,
-                  content: [{
-                    ...msg.content[0],
-                    content: 'elided',
-                  }],
-                };
-            });
-
-        const currentStreamMessage = {
-          role: 'assistant' as const,
-          content: [] as MessageContent[],
-          timestamp: new Date(),
-        };
-
-        const textContent: MessageContent = {
-          type: 'text',
-          text: '',
-        };
-        currentStreamMessage.content.push(textContent);
-
-        // Helper function to handle stream with retries
-        const streamWithRetry = async (params: MessageCreateParams) => {
-          let lastError: unknown;
-          for (let attempt = 0; attempt < 12; attempt++) { // Try for 1 minute (12 * 5 seconds)
-            try {
-              const stream = await anthropic.messages.stream(params);
-              return stream;
-            } catch (error) {
-              lastError = error;
-              // Check if error has overloaded_error type
-              if (typeof error === 'object' && error !== null) {
-                const errorObj = error as { error?: { type?: string }; status?: number };
-                const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-                if (isOverloaded && attempt < 11) { // Don't wait on last attempt
-                  await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-                  continue;
-                }
-              }
-              throw error; // Throw non-overloaded errors immediately
-            }
-          }
-          throw lastError; // Throw last error if all retries failed
-        };
-
-        const stream = await streamWithRetry({
-          model: activeProject.settings.model || DEFAULT_MODEL,
-          max_tokens: 8192,
-          messages: apiMessagesToSend,
-          ...(systemPromptContent && systemPromptContent.length > 0 && {
-            system: systemPromptContent
-          }),
-          ...(tools.length > 0 && {
-            tools: toolsCached
-          })
-        });
-
-        streamRef.current = stream;
-
-        // Break if cancel was requested during setup
-        if (shouldCancelRef.current) {
-          break;
-        }
-
-        stream.on('text', (text) => {
-          textContent.text += text;
-
-          // Update conversation with streaming message
-          const updatedMessages = [...currentMessages, currentStreamMessage];
-          updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
-        });
-
-        // Handle tool use in the final response if any
-        // Filter and validate text content in the final response
-        const finalResponse = await stream.finalMessage();
-
-        // Process content to handle empty text blocks
-        const processedContent = finalResponse.content.map((content: MessageContent) => {
-          if (!content['type']) {
-            return content;
-          }
-          // Keep non-text content
-          if (content.type !== 'text') {
-            return content;
-          }
-
-          // Check if text content is purely whitespace
-          const isWhitespace = content.text.trim().length === 0;
-
-          // If there's only one content block and it's whitespace, replace with "empty"
-          if (isWhitespace && finalResponse.content.length === 1) {
-            return {
-              ...content,
-              text: 'empty',
-            } as MessageContent;
-          }
-          return content;
-        })
-          .filter((content: MessageContent) => {
-            if (!content['type']) {
-              return true;
-            }
-            // Keep non-text content
-            if (content.type !== 'text') {
-              return true;
-            }
-
-            // Check if text content is purely whitespace
-            const isWhitespace = content.text.trim().length === 0;
-
-            // If there's only one content block and it's whitespace, replace with "empty"
-            if (isWhitespace && finalResponse.content.length === 1) {
-              console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
-              content.text = 'empty';
-              return true;
-            }
-
-            // For multiple content blocks, drop purely whitespace ones
-            return !isWhitespace;
-          });
-
-        const processedResponse = {
-          ...finalResponse,
-          content: processedContent
-        };
-
-        currentMessages.push(processedResponse);
-        updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-          // Only rename if this is a new chat getting its first messages
-          // Get the current conversation state directly from projects
-          const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-          if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
-          // Double check the name hasn't changed while we were processing
-          const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-          if (latestConversation?.name !== '(New Chat)') {
-            console.log('Title already changed, skipping generation');
-            return;
-          }
-
-          const userFirstMessage = currentMessages[0].content;
-          const assistantFirstMessage = currentMessages[1].content;
-
-          const summaryResponse = await anthropic.messages.create({
-            model: activeProject.settings.model || DEFAULT_MODEL,
-            max_tokens: 20,
-            messages: [{
-              role: "user",
-              content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
-
-User message: ${JSON.stringify(userFirstMessage)}
-Assistant response: ${Array.isArray(assistantFirstMessage)
-  ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-  : assistantFirstMessage}
-
-Format: Only output the title, no quotes or explanation
-Example good titles:
-- React Router Setup
-- Python Script Optimization
-- Database Schema Design
-- ML Model Training
-- Docker Container Networking`
-            }]
-          });
-
-          const type = summaryResponse.content[0].type;
-          if (type == 'text') {
-            const suggestedTitle = summaryResponse.content[0].text
-              .replace(/["']/g, '')
-              .replace('title:', '')
-              .replace('Title:', '')
-              .replace('title', '')
-              .replace('Title', '')
-              .trim();
-            if (suggestedTitle) {
-              renameConversation(activeProject.id, activeConversationId, suggestedTitle);
-            }
-          }
-        }
-
-        // Check for and handle tool use
-        const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
-        if (toolUseContent && toolUseContent.type === 'tool_use') {
-          try {
-            // Break if cancel was requested before tool execution
-            if (shouldCancelRef.current) {
-              break;
-            }
-
-            const serverWithTool = servers.find(s =>
-              s.tools?.some(t => t.name === toolUseContent.name)
-            );
-
-            if (!serverWithTool) {
-              throw new Error(`No server found for tool ${toolUseContent.name}`);
-            }
-
-            const result = await executeTool(
-              serverWithTool.id,
-              toolUseContent.name,
-              toolUseContent.input as Record<string, unknown>,
-            );
-
-            // Check cancel after tool execution
-            if (shouldCancelRef.current) {
-              break;
-            }
-
-            const toolResultMessage: Message = {
-              role: 'user',
-              content: [{
-                type: 'tool_result',
-                tool_use_id: toolUseContent.id,
-                content: result,
-              }],
-              timestamp: new Date()
-            };
-
-            currentMessages.push(toolResultMessage);
-            updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-            // Continue the conversation with the tool result if not cancelled
-            if (!shouldCancelRef.current) {
-              continue;
-            }
-            break;
-          } catch (error) {
-            const errorMessage: Message = {
-              role: 'user',
-              content: [{
-                type: 'tool_result',
-                tool_use_id: toolUseContent.id,
-                content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                is_error: true,
-              }],
-              timestamp: new Date()
-            };
-
-            currentMessages.push(errorMessage);
-            updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-          }
-        }
-
-        // Break the loop if no tool use or should cancel
-        if (shouldCancelRef.current || !toolUseContent) {
-          break;
-        }
-      }
+      } catch (error) {
 
     } catch (error) {
       if (error && typeof error === 'object' && 'message' in error && error.message === 'Request was aborted.') {

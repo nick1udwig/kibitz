@@ -49,9 +49,18 @@ export const AdminView = () => {
     );
   }
 
+  const hasChatMessages = activeProject.conversations.some(
+    conv => conv.messages.length > 0
+  );
+
   const handleSettingsChange = (settings: Partial<ProjectSettings>) => {
-    // Special handling for provider changes to preserve API keys
+    // Prevent provider changes if there are existing chats
     if (settings.provider !== undefined && settings.provider !== activeProject.settings.provider) {
+      if (hasChatMessages) {
+        // Provider can't be changed when chats exist
+        return;
+      }
+
       // When changing provider, ensure we preserve both API keys
       updateProjectSettings(activeProject.id, {
         settings: {
@@ -92,17 +101,25 @@ export const AdminView = () => {
               <label className="block text-sm font-medium mb-1">
                 Provider
               </label>
-              <select
-                value={activeProject.settings.provider || 'anthropic'}
-                onChange={(e) => handleSettingsChange({
-                  provider: e.target.value as ProviderType
-                })}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openrouter">OpenRouter (Coming Soon)</option>
-                <option value="openai">OpenAI</option>
-              </select>
+              <div>
+                <select
+                  value={activeProject.settings.provider || 'anthropic'}
+                  onChange={(e) => handleSettingsChange({
+                    provider: e.target.value as ProviderType
+                  })}
+                  className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${hasChatMessages ? 'opacity-50' : ''}`}
+                  disabled={hasChatMessages}
+                >
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="openrouter">OpenRouter (Coming Soon)</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+                {hasChatMessages && (
+                  <p className="text-sm text-yellow-500 mt-1">
+                    Provider can only be changed when there are no chats.
+                  </p>
+                )}
+              </div>
             </div>
 
             {(activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai') && (

@@ -5,22 +5,17 @@ import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db'
 
 const generateId = () => Math.random().toString(36).substring(7);
 
-const getDefaultModelForProvider = (provider?: string): string => {
-  switch (provider) {
-    case 'openai':
-      return 'gpt-4o';
-    case 'openrouter':
-      return 'openai/gpt-4-turbo-preview';
-    case 'anthropic':
-    default:
-      return 'claude-3-5-sonnet-20241022';
-  }
-};
-
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   apiKey: '',
   groqApiKey: '',
-  model: getDefaultModelForProvider('anthropic'),
+  anthropicApiKey: '',
+  openaiApiKey: '',
+  openaiOrgId: '',
+  openaiBaseUrl: 'https://api.openai.com/v1',
+  openRouterApiKey: '',
+  openRouterBaseUrl: '',
+  provider: 'anthropic',
+  model: 'claude-3-5-sonnet-20241022',
   systemPrompt: '',
   mcpServerIds: [],
   elideToolResults: false,
