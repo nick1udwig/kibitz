@@ -18,6 +18,7 @@ import { VoiceRecorder } from './VoiceRecorder';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
+import { throttle } from 'lodash';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -79,29 +80,39 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     }
   }, [activeConversation]);
 
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
   // Scroll handling logic
   useEffect(() => {
-    if (!chatContainerRef.current) return;
-    const container = chatContainerRef.current;
+    const makeHandleScroll = async () => {
+      while (!chatContainerRef.current) {
+        console.log(`no chatContainerRef`);
+        await sleep(250);
+      }
+      console.log(`got chatContainerRef`);
+      const container = chatContainerRef.current;
 
-    // Only force scroll on initial load
-    if (container.scrollTop === 0) {
-      container.scrollTop = container.scrollHeight;
-    }
+      // Only force scroll on initial load
+      if (container.scrollTop === 0) {
+        container.scrollTop = container.scrollHeight;
+      }
 
-    // Add scroll event listener
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const bottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
-      console.log(`isAtBottom: ${bottom}`);
-      setIsAtBottom(bottom);
+      // Add scroll event listener
+      const handleScroll = throttle(() => {
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        const bottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
+        console.log(`isAtBottom: ${bottom}`);
+        setIsAtBottom(bottom);
+      }, 100);
+
+      // Check initial scroll position
+      handleScroll();
+
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
     };
 
-    // Check initial scroll position
-    handleScroll();
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
+    makeHandleScroll();
   }, []);
 
   // Handle message updates
