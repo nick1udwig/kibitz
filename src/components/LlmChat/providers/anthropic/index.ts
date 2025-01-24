@@ -7,6 +7,7 @@ const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
 export class AnthropicProvider implements ChatProvider {
   private client: Anthropic;
+  private shouldCancel: { current: boolean } | undefined;
 
   constructor(apiKey: string) {
     this.client = new Anthropic({
@@ -25,8 +26,15 @@ export class AnthropicProvider implements ChatProvider {
     onCompletion?: (response: Message) => void,
     shouldCancel?: { current: boolean }
   ): Promise<void> {
+    this.shouldCancel = shouldCancel;
+
     try {
-      const systemContent = systemPrompt?.trim() ? [{ type: 'text', text: systemPrompt }] : undefined;
+      // Create system message if provided
+      const systemContent = systemPrompt?.trim()
+        ? [{ type: 'text' as const, text: systemPrompt }]
+        : undefined;
+
+      // Setup streaming
       const stream = await this.client.messages.stream({
         model: DEFAULT_MODEL,
         max_tokens: 8192,
@@ -35,24 +43,23 @@ export class AnthropicProvider implements ChatProvider {
         ...(tools.length > 0 && { tools }),
       });
 
-      const textContent: MessageContent = {
-        type: 'text',
-        text: '',
-      };
-
-      const currentStreamMessage: Message = {
-        role: 'assistant',
-        content: [textContent],
-        timestamp: new Date(),
-      };
-
+      // Handle text streaming
+      let currentText = '';
       stream.on('text', (text) => {
-        textContent.text += text;
-        if (onText) onText(textContent.text);
+        if (this.shouldCancel?.current) {
+          stream.abort();
+          return;
+        }
+
+        currentText += text;
+        if (onText) onText(currentText);
       });
 
-      const finalResponse = await stream.finalMessage();
-      if (onCompletion) onCompletion(finalResponse);
+      // Get final response unless cancelled
+      if (!this.shouldCancel?.current) {
+        const finalResponse = await stream.finalMessage();
+        if (onCompletion) onCompletion(finalResponse);
+      }
 
     } catch (error) {
       if (onError) onError(error as Error);

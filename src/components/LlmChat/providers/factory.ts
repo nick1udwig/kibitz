@@ -1,4 +1,4 @@
-import { ProviderConfig, LegacyProviderSettings } from '../types/provider';
+import { ProviderConfig } from '../types/provider';
 import { ProviderFactory, ChatProvider } from './types';
 import { AnthropicProvider } from './anthropic';
 

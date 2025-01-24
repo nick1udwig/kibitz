@@ -1,9 +1,11 @@
 import type { Message, MessageContent } from '../types';
+import type { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
+import type { ProviderConfig } from '../types/provider';
 
 export interface ChatProvider {
   sendMessage(
     messages: Message[],
-    tools: any[],
+    tools: Tool[],
     systemPrompt?: string,
     onText?: (text: string) => void,
     onError?: (error: Error) => void,

@@ -1,9 +1,10 @@
+"use client";
+
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
 import Image from 'next/image';
 import { ChatProviderFactory } from './providers/factory';
-import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
+import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square, X, ChevronDown } from 'lucide-react';
-import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
 import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
@@ -19,6 +20,7 @@ import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
+import type { LegacyProviderType } from './types/provider';
 
 // Create provider factory singleton
 const providerFactory = new ChatProviderFactory();
@@ -36,8 +38,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     activeConversationId,
     updateProjectSettings,
     renameConversation,
-    servers,
-    executeTool
   } = useStore();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -142,30 +142,15 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     }
   }, []);
 
-  const getUniqueTools = (should_cache: boolean) => {
+  const getUniqueTools = () => {
     if (!activeProject?.settings.mcpServerIds?.length) {
       return [];
     }
 
     const toolMap = new Map<string, Tool>();
 
-    servers
-      .filter(server =>
-        activeProject.settings.mcpServerIds.includes(server.id)
-      )
-      .flatMap(s => s.tools || [])
-      .forEach((tool: Tool) => {
-        if (!toolMap.has(tool.name)) {
-          toolMap.set(tool.name, {
-            name: tool.name,
-            description: tool.description,
-            input_schema: tool.input_schema
-          });
-        }
-      });
-
     const tools = Array.from(toolMap.values());
-    return !should_cache ? tools : tools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: { type: 'ephemeral' } as CacheControlEphemeral });
+    return tools;
   };
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {
@@ -203,26 +188,36 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError(null);
     setIsLoading(true);
 
+    // Determine provider and API key
     const provider = activeProject.settings.provider || 'anthropic';
+    const apiKey = provider === 'anthropic' 
+      ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey) || ''
+      : provider === 'openai'
+      ? activeProject.settings.openaiApiKey || ''
+      : activeProject.settings.openRouterApiKey || '';
+
+    // Create provider config
     const config = {
-      type: provider,
+      type: provider as LegacyProviderType,
       settings: {
-        apiKey: provider === 'anthropic' 
-          ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey) // Fallback for compatibility
-          : provider === 'openai'
-          ? activeProject.settings.openaiApiKey
-          : activeProject.settings.openRouterApiKey,
+        apiKey,
         ...(provider === 'openai' && {
-          baseUrl: activeProject.settings.openaiBaseUrl,
-          organizationId: activeProject.settings.openaiOrgId,
+          baseUrl: activeProject.settings.openaiBaseUrl || 'https://api.openai.com/v1',
+          organizationId: activeProject.settings.openaiOrgId || '',
         }),
         ...(provider === 'openrouter' && {
-          baseUrl: activeProject.settings.openRouterBaseUrl,
+          baseUrl: activeProject.settings.openRouterBaseUrl || '',
         }),
       }
     };
 
-    providerFactory.validateConfig(config);
+    try {
+      providerFactory.validateConfig(config);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Invalid provider configuration');
+      setIsLoading(false);
+      return;
+    }
 
     // Verify API key
     if (!config.settings.apiKey?.trim()) {
@@ -231,13 +226,14 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       return;
     }
 
-    // Reset the textarea height immediately after sending
+    // Reset textarea height
     if (inputRef.current) {
       inputRef.current.style.height = '2.5em';
     }
 
     await wakeLock.acquire();
     try {
+      // Create user message
       const userMessageContent: MessageContent[] = currentFileContent.map(c =>
         c.type === 'image' ? { ...c, fileName: undefined } : { ...c, fileName: undefined }
       );
@@ -260,53 +256,54 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       setInputMessage('');
       setCurrentFileContent([]);
 
-      // Create appropriate provider instance
+      // Create provider instance and send message
       const chatProvider = providerFactory.createProvider(config);
-
-      const savedToolResults = new Set<string>();
-      const tools = getUniqueTools(false);
+      const tools = getUniqueTools();
       const systemPrompt = activeProject.settings.systemPrompt?.trim();
 
-      try {
-        // Create appropriate provider instance
-        await chatProvider.sendMessage(
-          currentMessages,
-          tools,
-          systemPrompt,
-          (text) => {
-            // Update conversation with streaming message
-            const streamMessage = {
-              role: 'assistant' as const,
-              content: [{ type: 'text' as const, text }],
-              timestamp: new Date(),
-            };
-            const updatedMessages = [...currentMessages, streamMessage];
-            updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
-          },
-          (error) => {
-            console.error('Error from provider:', error);
-            setError(error.message);
-          },
-          async (finalResponse) => {
+      await chatProvider.sendMessage(
+        currentMessages,
+        tools,
+        systemPrompt,
+        // Text handler
+        (text) => {
+          const streamMessage: Message = {
+            role: 'assistant',
+            content: [{ type: 'text', text }],
+            timestamp: new Date(),
+          };
+          const updatedMessages = [...currentMessages, streamMessage];
+          updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+        },
+        // Error handler
+        (error) => {
+          console.error('Error from provider:', error);
+          setError(error.message);
+        },
+        // Completion handler
+        async (finalResponse) => {
+          // Update messages
+          updateConversationMessages(
+            activeProject.id, 
+            activeConversationId,
+            [...currentMessages, finalResponse]
+          );
 
-            // Update messages
-            updateConversationMessages(activeProject.id, activeConversationId, [...currentMessages, finalResponse]);
-
-            // Generate title for new chats
-            if (currentMessages.length === 2 && activeConversation?.name === '(New Chat)') {
-              const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-              if (currentConversation?.name === '(New Chat)') {
-                const title = await chatProvider.generateTitle(currentMessages[0].content, finalResponse.content);
-                if (title) {
-                  renameConversation(activeProject.id, activeConversationId, title);
-                }
+          // Handle chat title generation
+          const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+          if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
+            // Double check name hasn't changed
+            const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+            if (latestConversation?.name === '(New Chat)') {
+              const title = await chatProvider.generateTitle(currentMessages[0].content, finalResponse.content);
+              if (title) {
+                renameConversation(activeProject.id, activeConversationId, title);
               }
             }
-          },
-          shouldCancelRef
-        );
-
-      } catch (error) {
+          }
+        },
+        shouldCancelRef
+      );
 
     } catch (error) {
       if (error && typeof error === 'object' && 'message' in error && error.message === 'Request was aborted.') {
@@ -339,7 +336,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       streamRef.current = null;
       await wakeLock.release();
 
-      // Focus the input field and reset height after the LLM finishes talking
+      // Focus the input field and reset height
       if (inputRef.current) {
         inputRef.current.focus();
         inputRef.current.style.height = '2.5em';
@@ -447,7 +444,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             >
               <div
                 className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'bg-accent !text-accent-foreground'
                   : 'bg-muted text-foreground'
                   }`}
               >
@@ -469,7 +466,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             >
               <div
                 className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'bg-accent !text-accent-foreground'
                   : 'bg-muted text-foreground'
                   }`}
               >
@@ -503,7 +500,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               <div
                 key={`message-${index}-content-${contentIndex}`}
                 className={`w-full rounded-lg px-4 py-2 relative group ${message.role === 'user'
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'bg-accent !text-accent-foreground'
                   : 'bg-muted text-foreground'
                   }`}
               >
@@ -532,7 +529,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       >
         <div
           className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
-            ? 'bg-accent text-accent-foreground'
+            ? 'bg-accent !text-accent-foreground'
             : 'bg-muted text-foreground'
             }`}
         >
@@ -697,8 +694,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   );
 });
 
-// Display name for debugging purposes
 ChatViewComponent.displayName = 'ChatView';
 
-// Export a memo'd version for better performance
 export const ChatView = React.memo(ChatViewComponent);
