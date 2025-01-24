@@ -64,6 +64,118 @@ export class AnthropicProvider implements ChatProvider {
     throw lastError;
   }
 
+  private filterToolMessages(messages: Message[]): Pick<Message, 'role' | 'content'>[] {
+    return messages.filter((message, index, array) => {
+      // Keep non-array content messages
+      if (typeof message.content === 'string') return true;
+
+      // Keep messages without tool use
+      const hasToolUse = message.content.some(c => c.type === 'tool_use');
+      if (!hasToolUse) return true;
+
+      // Look for matching tool_result in next message
+      const nextMessage = array[index + 1];
+      if (!nextMessage) return false;
+
+      // If next message is string or doesn't exist, can't have tool_result
+      if (typeof nextMessage.content === 'string') return false;
+      const nextMessageContents = nextMessage.content as MessageContent[];
+
+      // Check that all tool_use messages have matching tool_result
+      return message.content.every(content => {
+        if (content.type !== 'tool_use') return true;
+        if (!('id' in content)) return true;
+        const toolId = content.id;
+        return nextMessageContents.some(
+          nextContent =>
+            nextContent.type === 'tool_result' &&
+            'tool_use_id' in nextContent &&
+            nextContent.tool_use_id === toolId
+        );
+      });
+    });
+  }
+
+  private addCachingHints(messages: Pick<Message, 'role' | 'content'>[]) {
+    return messages.map((m, index, array): Pick<Message, 'role' | 'content'> =>
+      index < array.length - 3 ?
+        {
+          role: m.role,
+          content: m.content
+        } :
+        {
+          role: m.role,
+          content: typeof m.content === 'string' ?
+            [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } }] :
+            m.content.map((c, contentIndex, contentArray) =>
+              contentIndex !== contentArray.length - 1 ? c :
+                {
+                  ...c,
+                  cache_control: { type: 'ephemeral' }
+                }
+            )
+        }
+    );
+  }
+
+  private formatMessagesForApi(messages: Pick<Message, 'role' | 'content'>[]): { role: 'user' | 'assistant'; content: MessageContent[] }[] {
+    return messages.map(msg => {
+      // Convert string content to proper format first
+      const content = typeof msg.content === 'string' ?
+        [{ type: 'text' as const, text: msg.content }] :
+        msg.content;
+
+      // Filter content to only those fields API expects
+      const filteredContent = content.map(c => {
+        if (c.type === 'text') {
+          return {
+            type: 'text' as const,
+            text: c.text,
+            ...(c.cache_control && { cache_control: c.cache_control })
+          };
+        }
+        if (c.type === 'tool_use') {
+          return {
+            type: 'tool_use' as const,
+            id: c.id,
+            name: c.name,
+            input: c.input,
+            ...(c.cache_control && { cache_control: c.cache_control })
+          };
+        }
+        if (c.type === 'tool_result') {
+          return {
+            type: 'tool_result' as const,
+            tool_use_id: c.tool_use_id,
+            content: c.content,
+            ...(c.is_error && { is_error: c.is_error }),
+            ...(c.cache_control && { cache_control: c.cache_control })
+          };
+        }
+        if (c.type === 'image') {
+          return {
+            type: 'image' as const,
+            source: c.source,
+            ...(c.cache_control && { cache_control: c.cache_control })
+          };
+        }
+        if (c.type === 'document') {
+          return {
+            type: 'document' as const,
+            source: c.source,
+            ...(c.cache_control && { cache_control: c.cache_control })
+          };
+        }
+        return c;
+      });
+
+      return {
+        role: msg.role,
+        content: filteredContent
+      };
+    });
+  }
+
   async sendMessage(
     messages: Message[],
     tools: Tool[],
@@ -91,19 +203,16 @@ export class AnthropicProvider implements ChatProvider {
         timestamp: new Date(),
       };
 
+      // Filter and prepare messages for the API
+      const filteredMessages = this.filterToolMessages(messages);
+      const cachedMessages = this.addCachingHints(filteredMessages);
+      const apiMessages = this.formatMessagesForApi(cachedMessages);
+
       // Setup and start streaming
       const stream = await this.streamWithRetry({
         model: DEFAULT_MODEL,
         max_tokens: 8192,
-        messages: messages.map(msg => ({
-          role: msg.role,
-          content: typeof msg.content === 'string' ? 
-            [{ type: 'text' as const, text: msg.content }] :
-            msg.content.map(c => ({
-              ...c,
-              fileName: undefined // Strip filename as API doesn't expect it
-            }))
-        })),
+        messages: apiMessages,
         ...(systemContent && systemContent.length > 0 && {
           system: systemContent
         }),
