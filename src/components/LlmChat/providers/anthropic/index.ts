@@ -95,7 +95,15 @@ export class AnthropicProvider implements ChatProvider {
       const stream = await this.streamWithRetry({
         model: DEFAULT_MODEL,
         max_tokens: 8192,
-        messages: messages,
+        messages: messages.map(msg => ({
+          role: msg.role,
+          content: typeof msg.content === 'string' ? 
+            [{ type: 'text' as const, text: msg.content }] :
+            msg.content.map(c => ({
+              ...c,
+              fileName: undefined // Strip filename as API doesn't expect it
+            }))
+        })),
         ...(systemContent && systemContent.length > 0 && {
           system: systemContent
         }),
