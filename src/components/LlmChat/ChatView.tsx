@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } 
 import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
-import { Send, Square, X } from 'lucide-react';
+import { Send, Square, X, ChevronDown } from 'lucide-react';
 import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
 import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { VoiceRecorder } from './VoiceRecorder';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
+import { throttle } from 'lodash';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -27,6 +28,7 @@ export interface ChatViewRef {
 
 const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const [currentFileContent, setCurrentFileContent] = useState<MessageContent[]>([]);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const {
     projects,
     activeProjectId,
@@ -47,7 +49,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const [error, setError] = useState<string | null>(null);
   const shouldCancelRef = useRef<boolean>(false);
   const streamRef = useRef<{ abort: () => void } | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedToolCall, setSelectedToolCall] = useState<{
@@ -79,11 +80,38 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     }
   }, [activeConversation]);
 
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
   // Scroll handling logic
   useEffect(() => {
-    if (!chatContainerRef.current) return;
-    const container = chatContainerRef.current;
-    container.scrollTop = container.scrollHeight;
+    const makeHandleScroll = async () => {
+      while (!chatContainerRef.current) {
+        console.log(`no chatContainerRef`);
+        await sleep(250);
+      }
+      console.log(`got chatContainerRef`);
+      const container = chatContainerRef.current;
+
+      // Only force scroll on initial load
+      if (container.scrollTop === 0) {
+        container.scrollTop = container.scrollHeight;
+      }
+
+      // Add scroll event listener
+      const handleScroll = throttle(() => {
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        const bottom = container.scrollHeight < container.clientHeight || Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
+        setIsAtBottom(bottom);
+      }, 100);
+
+      // Check initial scroll position
+      handleScroll();
+
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    };
+
+    makeHandleScroll();
   }, []);
 
   // Handle message updates
@@ -94,12 +122,24 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
     const lastMessage = activeConversation.messages[activeConversation.messages.length - 1];
 
-    if (lastMessage.role === 'assistant' || lastMessage.role === 'user') {
+    // Only scroll to bottom if already at bottom or if it's the first message
+    const isInitialMessage = activeConversation.messages.length <= 1;
+    if ((lastMessage.role === 'assistant' || lastMessage.role === 'user') && (isAtBottom || isInitialMessage)) {
       requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        const container = chatContainerRef.current;
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
       });
     }
-  }, [activeConversation?.messages, activeConversation?.lastUpdated]);
+  }, [activeConversation?.messages, activeConversation?.lastUpdated, isAtBottom]);
+
+  const scrollToBottom = useCallback(() => {
+    const container = chatContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, []);
 
   const getUniqueTools = (should_cache: boolean) => {
     if (!activeProject?.settings.mcpServerIds?.length) {
@@ -888,9 +928,19 @@ Example good titles:
           {activeConversation.messages.map((message, index) => (
             renderMessage(message, index)
           ))}
-          <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Scroll to bottom button */}
+      {!isAtBottom && (
+        <button
+          onClick={scrollToBottom}
+          className="fixed bottom-[60px] right-2 md:right-8 z-[100] bg-primary/70 text-primary-foreground rounded-full p-3 shadow-lg hover:bg-primary/90 transition-all hover:scale-110 animate-in fade-in slide-in-from-right-2"
+          aria-label="Scroll to bottom"
+        >
+          <ChevronDown className="w-6 h-6" />
+        </button>
+      )}
 
       {error && (
         <div className="px-4 py-2 text-sm text-red-500">
