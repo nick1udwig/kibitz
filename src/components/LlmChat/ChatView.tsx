@@ -84,14 +84,21 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   useEffect(() => {
     if (!chatContainerRef.current) return;
     const container = chatContainerRef.current;
-    container.scrollTop = container.scrollHeight;
+
+    // Only force scroll on initial load
+    if (container.scrollTop === 0) {
+      container.scrollTop = container.scrollHeight;
+    }
 
     // Add scroll event listener
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
-      const bottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 10;
+      const bottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
       setIsAtBottom(bottom);
     };
+
+    // Check initial scroll position
+    handleScroll();
 
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
@@ -105,12 +112,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
     const lastMessage = activeConversation.messages[activeConversation.messages.length - 1];
 
-    if (lastMessage.role === 'assistant' || lastMessage.role === 'user') {
-      if (isAtBottom) {
-        requestAnimationFrame(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        });
-      }
+    // Only scroll to bottom if already at bottom or if it's the first message
+    const isInitialMessage = activeConversation.messages.length <= 1;
+    if ((lastMessage.role === 'assistant' || lastMessage.role === 'user') && (isAtBottom || isInitialMessage)) {
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      });
     }
   }, [activeConversation?.messages, activeConversation?.lastUpdated, isAtBottom]);
 
@@ -913,10 +920,10 @@ Example good titles:
       {!isAtBottom && (
         <button
           onClick={scrollToBottom}
-          className="fixed bottom-[120px] right-4 md:right-8 z-[100] bg-primary/90 text-primary-foreground rounded-full p-2 shadow-lg hover:bg-primary transition-all hover:scale-110"
+          className="fixed bottom-[120px] right-4 md:right-8 z-[100] bg-primary text-primary-foreground rounded-full p-3 shadow-lg hover:bg-primary/90 transition-all hover:scale-110 animate-in fade-in slide-in-from-right-2"
           aria-label="Scroll to bottom"
         >
-          <ChevronDown className="w-5 h-5" />
+          <ChevronDown className="w-6 h-6" />
         </button>
       )}
 
