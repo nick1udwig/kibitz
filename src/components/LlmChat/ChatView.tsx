@@ -936,7 +936,7 @@ Example good titles:
       {!isAtBottom && (
         <button
           onClick={scrollToBottom}
-          className="fixed bottom-[60px] right-4 md:right-8 z-[100] bg-primary text-primary-foreground rounded-full p-3 shadow-lg hover:bg-primary/90 transition-all hover:scale-110 animate-in fade-in slide-in-from-right-2"
+          className="fixed bottom-[60px] right-4 md:right-8 z-[100] bg-primary/70 text-primary-foreground rounded-full p-3 shadow-lg hover:bg-primary/90 transition-all hover:scale-110 animate-in fade-in slide-in-from-right-2"
           aria-label="Scroll to bottom"
         >
           <ChevronDown className="w-6 h-6" />
