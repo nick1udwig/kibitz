@@ -1,4 +1,4 @@
-export type LegacyProviderType = 'anthropic' | 'openrouter' | 'openai';
+export type LegacyProviderType = 'anthropic' | 'openai' | 'openrouter';
 
 export interface ProviderConfig {
   type: string;
@@ -16,23 +16,19 @@ export interface LegacyProviderSettings {
 }
 
 // Helper function to convert legacy settings to new format
+export function isAnthropicProvider(provider: LegacyProviderType | undefined): boolean {
+  return !provider || provider === 'anthropic';
+}
+
 export function convertLegacyToProviderConfig(
   provider: LegacyProviderType | undefined,
   settings: LegacyProviderSettings
 ): ProviderConfig {
-  if (!provider || provider === 'anthropic') {
+  if (isAnthropicProvider(provider)) {
     return {
       type: 'anthropic',
       settings: {
         apiKey: settings.anthropicApiKey || settings.apiKey || '',
-      }
-    };
-  } else if (provider === 'openrouter') {
-    return {
-      type: 'openrouter',
-      settings: {
-        apiKey: settings.openRouterApiKey || '',
-        baseUrl: settings.openRouterBaseUrl || '',
       }
     };
   } else if (provider === 'openai') {
@@ -55,11 +51,6 @@ export function extractLegacySettings(config: ProviderConfig): LegacyProviderSet
       return {
         anthropicApiKey: config.settings.apiKey,
         apiKey: config.settings.apiKey, // For maximum compatibility
-      };
-    case 'openrouter':
-      return {
-        openRouterApiKey: config.settings.apiKey,
-        openRouterBaseUrl: config.settings.baseUrl,
       };
     case 'openai':
       return {
@@ -92,15 +83,107 @@ export function getProviderModels(type: string): string[] {
         'gpt-3.5-turbo',    // Fast, cost-effective
         'gpt-3.5-turbo-16k' // Larger context
       ];
-    case 'openrouter':
-      return [
-        'openai/gpt-4-turbo-preview',
-        'anthropic/claude-3-opus-20240229',
-        'anthropic/claude-3-sonnet-20240229',
-        'meta-llama/llama-2-70b-chat',
-        'google/gemini-pro',
-      ];
     default:
       return [];
   }
+}
+
+export interface OpenAIMessage {
+  role: 'user' | 'assistant' | 'system' | 'function';
+  content: string | MessageContent[];
+}
+
+export interface AnthropicMessage {
+  role: 'user' | 'assistant';
+  content: string | MessageContent[];
+}
+
+import { Message, MessageContent } from '../types';
+
+// Interfaces for each provider's stream
+export interface AnthropicStream {
+  on(event: 'text', callback: (text: string) => void): void;
+  finalMessage(): Promise<{
+    role: string;
+    content: MessageContent[];
+  }>;
+  abort?(): void;
+}
+
+export interface OpenAIStream {
+  content(): AsyncGenerator<string, void, unknown>;
+  finalMessage(): Promise<{
+    role: string;
+    content: MessageContent[] | {
+      type: string;
+      name: string;
+      input: Record<string, unknown>;
+      id: string;
+    }[];
+  }>;
+  abort?(): void;
+}
+
+// Generic stream interface that works for both providers
+export type MessageStream = AnthropicStream | OpenAIStream;
+
+export function convertMessageFormat(
+  messages: Message[],
+  provider: LegacyProviderType,
+  isJsonMode?: boolean
+): OpenAIMessage[] | AnthropicMessage[] {
+  if (isAnthropicProvider(provider)) {
+    return messages.map(msg => ({
+      // Convert all special roles to 'assistant' for Anthropic
+      role: msg.role === 'developer' || msg.role === 'system' || msg.role === 'function'
+        ? 'assistant'
+        : msg.role as 'user' | 'assistant',
+      content: msg.content
+    })) as AnthropicMessage[];
+  }
+
+  // Convert to OpenAI format
+  return messages.map(msg => {
+    // Handle system/developer messages
+    if (msg.role === 'developer') {
+      return {
+        role: 'system',
+        content: msg.content
+      };
+    }
+
+    // Handle function messages
+    if (msg.role === 'function' && Array.isArray(msg.content)) {
+      // Extract function name and result from tool_result content
+      const toolResult = msg.content.find(c => c.type === 'tool_result');
+      if (toolResult && 'tool_use_id' in toolResult) {
+        return {
+          role: 'function',
+          name: toolResult.tool_use_id,
+          content: toolResult.content
+        };
+      }
+      // Fallback if no tool result found
+      return {
+        role: 'assistant',
+        content: msg.content
+      };
+    }
+
+    // Handle regular messages
+    const msgContent = msg.content;
+    if (isJsonMode && typeof msgContent === 'string') {
+      try {
+        // Validate if the content is JSON
+        JSON.parse(msgContent);
+      } catch (e) {
+        console.warn('Invalid JSON in message:', e);
+      }
+    }
+
+    return {
+      role: msg.role as 'user' | 'assistant' | 'system' | 'function',
+      content: msgContent
+    };
+  });
 }

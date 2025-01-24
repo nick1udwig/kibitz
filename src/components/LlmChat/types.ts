@@ -42,7 +42,7 @@ export type MessageContent = {
 } | ImageMessageContent | DocumentMessageContent;
 
 export type Message = {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'developer' | 'system' | 'function';
   content: MessageContent[] | string;
   timestamp: Date;
   toolInput?: Record<string, unknown>;

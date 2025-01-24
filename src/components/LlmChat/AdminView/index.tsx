@@ -105,12 +105,10 @@ export const AdminView = () => {
               </select>
             </div>
 
-            {(activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai') && (
+            {activeProject.settings.provider === 'openrouter' && (
               <Alert>
                 <AlertDescription>
-                  {activeProject.settings.provider === 'openrouter'
-                    ? "OpenRouter support is coming soon. Please use Anthropic for now."
-                    : "OpenAI support is coming soon. Please use Anthropic for now."}
+                  OpenRouter support is coming soon. Please use Anthropic for now.
                 </AlertDescription>
               </Alert>
             )}
