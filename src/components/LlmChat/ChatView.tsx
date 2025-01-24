@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } 
 import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
-import { Send, Square, X } from 'lucide-react';
+import { Send, Square, X, ChevronDown } from 'lucide-react';
 import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
 import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ export interface ChatViewRef {
 
 const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const [currentFileContent, setCurrentFileContent] = useState<MessageContent[]>([]);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const {
     projects,
     activeProjectId,
@@ -84,6 +85,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     if (!chatContainerRef.current) return;
     const container = chatContainerRef.current;
     container.scrollTop = container.scrollHeight;
+
+    // Add scroll event listener
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const bottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 10;
+      setIsAtBottom(bottom);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
   // Handle message updates
@@ -95,11 +106,17 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     const lastMessage = activeConversation.messages[activeConversation.messages.length - 1];
 
     if (lastMessage.role === 'assistant' || lastMessage.role === 'user') {
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      });
+      if (isAtBottom) {
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        });
+      }
     }
-  }, [activeConversation?.messages, activeConversation?.lastUpdated]);
+  }, [activeConversation?.messages, activeConversation?.lastUpdated, isAtBottom]);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   const getUniqueTools = (should_cache: boolean) => {
     if (!activeProject?.settings.mcpServerIds?.length) {
@@ -891,6 +908,17 @@ Example good titles:
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Scroll to bottom button */}
+      {!isAtBottom && (
+        <button
+          onClick={scrollToBottom}
+          className="fixed bottom-[120px] right-4 md:right-8 z-50 bg-primary text-primary-foreground rounded-full p-2 shadow-lg hover:bg-primary/90 transition-colors"
+          aria-label="Scroll to bottom"
+        >
+          <ChevronDown className="w-5 h-5" />
+        </button>
+      )}
 
       {error && (
         <div className="px-4 py-2 text-sm text-red-500">
