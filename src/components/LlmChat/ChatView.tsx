@@ -48,7 +48,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const [error, setError] = useState<string | null>(null);
   const shouldCancelRef = useRef<boolean>(false);
   const streamRef = useRef<{ abort: () => void } | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedToolCall, setSelectedToolCall] = useState<{
@@ -94,6 +93,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const bottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
+      console.log(`isAtBottom: ${bottom}`);
       setIsAtBottom(bottom);
     };
 
@@ -116,13 +116,19 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     const isInitialMessage = activeConversation.messages.length <= 1;
     if ((lastMessage.role === 'assistant' || lastMessage.role === 'user') && (isAtBottom || isInitialMessage)) {
       requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        const container = chatContainerRef.current;
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
       });
     }
   }, [activeConversation?.messages, activeConversation?.lastUpdated, isAtBottom]);
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = chatContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, []);
 
   const getUniqueTools = (should_cache: boolean) => {
@@ -912,7 +918,6 @@ Example good titles:
           {activeConversation.messages.map((message, index) => (
             renderMessage(message, index)
           ))}
-          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -920,7 +925,7 @@ Example good titles:
       {!isAtBottom && (
         <button
           onClick={scrollToBottom}
-          className="fixed bottom-[120px] right-4 md:right-8 z-[100] bg-primary text-primary-foreground rounded-full p-3 shadow-lg hover:bg-primary/90 transition-all hover:scale-110 animate-in fade-in slide-in-from-right-2"
+          className="fixed bottom-[60px] right-4 md:right-8 z-[100] bg-primary text-primary-foreground rounded-full p-3 shadow-lg hover:bg-primary/90 transition-all hover:scale-110 animate-in fade-in slide-in-from-right-2"
           aria-label="Scroll to bottom"
         >
           <ChevronDown className="w-6 h-6" />
