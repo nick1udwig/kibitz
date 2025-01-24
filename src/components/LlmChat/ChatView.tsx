@@ -100,8 +100,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       // Add scroll event listener
       const handleScroll = throttle(() => {
         const { scrollTop, scrollHeight, clientHeight } = container;
-        const bottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
-        console.log(`isAtBottom: ${bottom}`);
+        const bottom = container.scrollHeight < container.clientHeight || Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
         setIsAtBottom(bottom);
       }, 100);
 
