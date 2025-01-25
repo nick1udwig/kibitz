@@ -96,113 +96,93 @@ export class AnthropicProvider implements ChatProvider {
     });
   }
 
-  private addCachingHints(messages: Pick<Message, 'role' | 'content'>[]) {
-    const ephemeralCacheControl = { cache_control: { type: 'ephemeral' as const } };
-
-    return messages.map((m, index, array): Pick<Message, 'role' | 'content'> => {
-      // Only add cache control hints to messages within recent context
-      const recentContextSize = 3;
-      const isRecentMessage = index >= array.length - recentContextSize;
-
-      if (!isRecentMessage) {
-        return {
-          role: m.role,
-          content: m.content
-        };
-      }
-
-      // Add cache_control to each recent message's content
-      return {
-        role: m.role,
-        content: typeof m.content === 'string'
-          ? [{
-              type: 'text' as const,
-              text: m.content,
-              ...ephemeralCacheControl
-            }]
-          : m.content.map(c => ({
-              ...c,
-              ...(ephemeralCacheControl)
-            }))
-      };
-    });
-  }
-
   private formatMessagesForApi(messages: Pick<Message, 'role' | 'content'>[]): { role: 'user' | 'assistant'; content: MessageContent[] }[] {
     // Add cache control to messages within the recent context (last 3)
     return messages.map((msg, index, array) => {
       const isRecentContext = index >= array.length - 3;
-      const ephemeralCacheControl = { cache_control: { type: 'ephemeral' as const } };
 
-      // Convert string content to proper format first
+      // For older messages, just pass through without cache control
+      if (!isRecentContext) {
+        return {
+          role: msg.role,
+          content: typeof msg.content === 'string' ?
+            [{
+              type: 'text' as const,
+              text: msg.content
+            }] :
+            msg.content
+        };
+      }
+
+      // Last messages - add cache control ONLY to the last content block
       const content = typeof msg.content === 'string' ?
         [{
           type: 'text' as const,
-          text: msg.content,
-          ...(isRecentContext && ephemeralCacheControl)
+          text: msg.content
         }] :
         msg.content;
 
-      // Filter content and add cache control where needed
-      const filteredContent = content.map(c => {
-        // Add core fields and cache control based on message age
-        const withCache = isRecentContext ? ephemeralCacheControl : {};
-
-        if (c.type === 'text') {
-          return {
-            type: 'text' as const,
-            text: c.text,
-            ...withCache
-          } as MessageContent;
-        }
-
-        if (c.type === 'tool_use') {
-          return {
-            type: 'tool_use' as const,
-            id: c.id,
-            name: c.name,
-            input: c.input,
-            ...withCache
-          } as MessageContent;
-        }
-
-        if (c.type === 'tool_result') {
-          return {
-            type: 'tool_result' as const,
-            tool_use_id: c.tool_use_id,
-            content: c.content,
-            ...(c.is_error && { is_error: c.is_error }),
-            ...withCache
-          } as MessageContent;
-        }
-
-        if (c.type === 'image') {
-          return {
-            type: 'image' as const,
-            source: c.source,
-            ...withCache
-          } as MessageContent;
-        }
-
-        if (c.type === 'document') {
-          return {
-            type: 'document' as const,
-            source: c.source,
-            ...withCache
-          } as MessageContent;
-        }
-
-        // For any other content type, cast to MessageContent type
-        const baseContent = c as MessageContent;
-        return {
-          ...baseContent,
-          ...withCache
-        } as MessageContent;
-      });
-
+      // For recent messages, only the last content block gets cache control
       return {
         role: msg.role,
-        content: filteredContent
+        content: content.map((c, i, arr) => {
+          // Only add cache control to the last piece of content
+          const shouldAddCache = i === arr.length - 1;
+
+          const withCache = shouldAddCache ?
+            { cache_control: { type: 'ephemeral' as const } } : {};
+
+          if (c.type === 'text') {
+            return {
+              type: 'text' as const,
+              text: c.text,
+              ...withCache
+            } as MessageContent;
+          }
+
+          if (c.type === 'tool_use') {
+            return {
+              type: 'tool_use' as const,
+              id: c.id,
+              name: c.name,
+              input: c.input,
+              ...withCache
+            } as MessageContent;
+          }
+
+          if (c.type === 'tool_result') {
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: c.tool_use_id,
+              content: c.content,
+              ...(c.is_error && { is_error: c.is_error }),
+              ...withCache
+            } as MessageContent;
+          }
+
+          if (c.type === 'image') {
+            return {
+              type: 'image' as const,
+              source: c.source,
+              ...withCache
+            } as MessageContent;
+          }
+
+          if (c.type === 'document') {
+            return {
+              type: 'document' as const,
+              source: c.source,
+              ...withCache
+            } as MessageContent;
+          }
+
+          // For any other content type, cast to MessageContent type
+          const baseContent = c as MessageContent;
+          return {
+            ...baseContent,
+            ...withCache
+          } as MessageContent;
+        })
       };
     });
   }
@@ -237,13 +217,14 @@ export class AnthropicProvider implements ChatProvider {
 
       // Filter and prepare messages for the API
       const filteredMessages = this.filterToolMessages(messages);
-      const cachedMessages = this.addCachingHints(filteredMessages);
-      const apiMessages = this.formatMessagesForApi(cachedMessages);
+      const apiMessages = this.formatMessagesForApi(filteredMessages);
 
-      // Setup and start streaming with proper cache control
-      const toolsForApi = tools.map(tool => ({
+      // Only the last tool gets cache_control
+      const toolsForApi = tools.map((tool, index, array) => ({
         ...tool,
-        cache_control: { type: 'ephemeral' as const }
+        ...(index === array.length - 1 ? {
+          cache_control: { type: 'ephemeral' as const }
+        } : {})
       }));
 
       const streamParams: MessageCreateParams = {
