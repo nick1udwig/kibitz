@@ -1,6 +1,6 @@
 import { Project, ConversationBrief } from '../components/LlmChat/context/types';
 import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
-import { Message } from '../components/LlmChat/types';
+import { Message } from '../providers/anthropic';
 import { McpServer } from '../components/LlmChat/types/mcp';
 
 const DB_NAME = 'kibitz_db';

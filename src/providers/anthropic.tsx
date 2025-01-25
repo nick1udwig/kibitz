@@ -1,9 +1,60 @@
+import React from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
-import { Tool, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
+import { Tool, TextBlockParam, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
 import type { MessageCreateParams, MessageParam } from '@anthropic-ai/sdk/resources/messages/messages';
-import type { MessageContent } from '../components/LlmChat/types';
+import Image from 'next/image';
+import { CopyButton } from '@/components/ui/copy';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+
+export type ImageMessageContent = {
+  type: 'image';
+  source: {
+    type: 'base64';
+    media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+    data: string;
+  };
+  fileName?: string;
+  cache_control?: CacheControlEphemeral | null;
+};
+
+export type DocumentMessageContent = {
+  type: 'document';
+  source: {
+    type: 'base64';
+    media_type: 'application/pdf';
+    data: string;
+  };
+  fileName?: string;
+  cache_control?: CacheControlEphemeral | null;
+};
+
+export type MessageContent = {
+  type: 'text';
+  text: string;
+  cache_control?: CacheControlEphemeral | null;
+} | {
+  type: 'tool_use';
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  cache_control?: CacheControlEphemeral | null;
+} | {
+  type: 'tool_result';
+  tool_use_id: string;
+  content: string;
+  is_error?: boolean,
+  cache_control?: CacheControlEphemeral | null;
+} | ImageMessageContent | DocumentMessageContent;
+
+export type Message = {
+  role: 'user' | 'assistant';
+  content: MessageContent[] | string;
+  timestamp: Date;
+  toolInput?: Record<string, unknown>;
+};
 
 interface AnthropicConfig {
   apiKey: string;
@@ -149,6 +200,218 @@ Example good titles:
         return errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
       }
       return false;
+    },
+
+    renderMessage: (message: Message, index: number, conversation: { messages: Message[] }, onToolCall: (toolCall: {name: string, input: Record<string, unknown>, result: string | null}) => void) => {
+      if (Array.isArray(message.content)) {
+        return message.content.map((content, contentIndex) => {
+          if (content.type === 'text') {
+            return (
+              <div
+                key={`text-${index}-${contentIndex}`}
+                className={`flex max-w-full pt-6`}
+              >
+                <div className="relative group w-full max-w-full overflow-x-auto">
+                  {!content.text.match(/```[\s\S]*```/) && (
+                    <div className="absolute right-2 top-0 z-10">
+                      <CopyButton
+                        text={content.text.trim()}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      />
+                    </div>
+                  )}
+                  <div
+                    className={`w-full max-w-full rounded-lg px-4 py-2 ${message.role === 'user'
+                      ? 'bg-accent !text-accent-foreground'
+                      : 'bg-muted text-foreground'
+                      }`}
+                  >
+                    <ReactMarkdown
+                      className={`prose dark:prose-invert break-words max-w-full ${message.role === 'user' ? '[&_p]:!text-accent-foreground [&_code]:!text-accent-foreground' : ''}`}
+                      components={{
+                        p: ({ children }) => (
+                          <p className="break-words whitespace-pre-wrap overflow-hidden">
+                            {children}
+                          </p>
+                        ),
+                        pre({ children, ...props }) {
+                          // Extract text from the code block
+                          const getCodeText = (node: unknown): string => {
+                            if (typeof node === 'string') return node;
+                            if (!node) return '';
+                            if (Array.isArray(node)) {
+                              return node.map(getCodeText).join('\n');
+                            }
+                            if (typeof node === 'object' && node !== null && 'props' in node) {
+                              const element = node as { props?: { className?: string; children?: unknown } };
+                              if (element.props?.className?.includes('language-')) {
+                                return getCodeText(element.props.children);
+                              }
+                              if (element.props?.children) {
+                                return getCodeText(element.props.children);
+                              }
+                            }
+                            return '';
+                          };
+
+                          const text = getCodeText(children).trim();
+
+                          return (
+                            <div className="group/code relative max-w-full">
+                              <div className="absolute top-2 right-2 z-10">
+                                <CopyButton
+                                  text={text}
+                                  className="opacity-0 group-hover/code:opacity-100 transition-opacity"
+                                />
+                              </div>
+                              <pre className="overflow-x-auto max-w-full whitespace-pre" {...props}>{children}</pre>
+                            </div>
+                          );
+                        },
+                        code({ inline, children, ...props }) {
+                          return inline ? (
+                            <code className="text-inherit whitespace-nowrap inline" {...props}>{children}</code>
+                          ) : (
+                            <code className="block overflow-x-auto whitespace-pre-wrap" {...props}>{children}</code>
+                          );
+                        },
+                        a: ({ href, children }) => (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            {children}
+                          </a>
+                        ),
+                      }}
+                      remarkPlugins={[remarkGfm]}
+                    >
+                      {content.text}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              </div>
+            );
+          } else if (content.type === 'image') {
+            return (
+              <div
+                key={`image-${index}-${contentIndex}`}
+                className={`flex`}
+              >
+                <div
+                  className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-foreground'
+                    }`}
+                >
+                  <Image
+                    src={`data:${content.source.media_type};base64,${content.source.data}`}
+                    alt="User uploaded image"
+                    className="max-h-[150px] max-w-[300px] w-auto h-auto rounded object-contain"
+                    width={300}
+                    height={150}
+                  />
+                </div>
+              </div>
+            );
+          } else if (content.type === 'document') {
+            return (
+              <div
+                key={`document-${index}-${contentIndex}`}
+                className={`flex`}
+              >
+                <div
+                  className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-foreground'
+                    }`}
+                >
+                  <embed
+                    src={`data:${content.source.media_type};base64,${content.source.data}`}
+                    type={content.source.media_type}
+                    width="100%"
+                    height="600px"
+                    className="rounded"
+                  />
+                </div>
+              </div>
+            );
+          } else if (content.type === 'tool_use') {
+            const nextMessage = conversation.messages[index + 1];
+            let toolResult = null;
+            if (nextMessage && Array.isArray(nextMessage.content)) {
+              const resultContent = nextMessage.content.find(c =>
+                c.type === 'tool_result' && c.tool_use_id === content.id
+              );
+              if (resultContent && resultContent.type === 'tool_result') {
+                toolResult = resultContent.content;
+              }
+            }
+
+            return (
+              <div
+                key={`tool_use-${index}-${contentIndex}`}
+                className={`flex`}
+              >
+                <div
+                  key={`message-${index}-content-${contentIndex}`}
+                  className={`w-full rounded-lg px-4 py-2 relative group ${message.role === 'user'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-foreground'
+                    }`}
+                >
+                  <button
+                    onClick={() => onToolCall({
+                      name: content.name,
+                      input: content.input,
+                      result: toolResult
+                    })}
+                    className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline"
+                  >
+                    Use tool: {content.name}
+                  </button>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        });
+      }
+
+      return (
+        <div
+          key={`string-${index}`}
+          className={`flex`}
+        >
+          <div
+            className={`w-full rounded-lg px-4 py-2 ${message.role === 'user'
+              ? 'bg-accent text-accent-foreground'
+              : 'bg-muted text-foreground'
+              }`}
+          >
+            <ReactMarkdown
+              className="prose dark:prose-invert break-words overflow-hidden whitespace-pre-wrap max-w-full"
+              components={{
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    {children}
+                  </a>
+                )
+              }}
+              remarkPlugins={[remarkGfm]}
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        </div>
+      );
     }
   };
 };

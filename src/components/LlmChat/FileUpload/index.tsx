@@ -1,7 +1,7 @@
 import React, { useRef, useCallback } from 'react';
 import { UploadCloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { MessageContent } from '../types';
+import { MessageContent } from '@/providers/anthropic';
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const ACCEPTED_DOCUMENT_TYPES = ['application/pdf'];

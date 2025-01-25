@@ -1,4 +1,4 @@
-import { Message } from '../types';
+import { Message } from '@/providers/anthropic';
 import { McpServer } from '../types/mcp';
 import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { ProviderConfig, LegacyProviderType, LegacyProviderSettings } from '../types/provider';
