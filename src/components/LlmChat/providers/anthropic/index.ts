@@ -98,17 +98,18 @@ export class AnthropicProvider implements ChatProvider {
 
   private addCachingHints(messages: Pick<Message, 'role' | 'content'>[]) {
     return messages.map((m, index, array): Pick<Message, 'role' | 'content'> => {
-      // Only add cache control hints to last message content
-      const isLastMessage = index === array.length - 1;
-      
-      if (!isLastMessage) {
+      // Only add cache control hints to messages within recent context
+      const recentContextSize = 3;
+      const isRecentMessage = index >= array.length - recentContextSize;
+
+      if (!isRecentMessage) {
         return {
           role: m.role,
           content: m.content
         };
       }
 
-      // Add cache_control to last message's content
+      // Add cache_control to each recent message's content
       return {
         role: m.role,
         content: typeof m.content === 'string'
@@ -185,7 +186,7 @@ export class AnthropicProvider implements ChatProvider {
 
   async sendMessage(
     messages: Message[],
-    tools: Tool[],
+    tools: Tool[] = [],  // Ensure tools has a default value
     systemPrompt?: string,
     onText?: (text: string) => void,
     onError?: (error: Error) => void,
@@ -224,9 +225,17 @@ export class AnthropicProvider implements ChatProvider {
           system: systemContent
         }),
         ...(tools.length > 0 && {
-          tools // Pass tools directly without modifying
+          tools
         }),
       };
+
+      // Ensure each tool has cache_control
+      if (tools.length > 0) {
+        streamParams.tools = streamParams.tools!.map(tool => ({
+          ...tool,
+          cache_control: { type: 'ephemeral' }
+        }));
+      }
 
       const stream = await this.streamWithRetry(streamParams);
 

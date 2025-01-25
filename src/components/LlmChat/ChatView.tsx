@@ -148,6 +148,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     }
 
     const toolMap = new Map<string, Tool>();
+    const servers = useStore.getState().servers;
+
+    servers
+      .filter(server => activeProject.settings.mcpServerIds.includes(server.id))
+      .flatMap(s => s.tools || [])
+      .forEach((tool: Tool) => {
+        if (!toolMap.has(tool.name)) {
+          toolMap.set(tool.name, {
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.input_schema,
+          });
+        }
+      });
 
     const tools = Array.from(toolMap.values());
     return tools;
