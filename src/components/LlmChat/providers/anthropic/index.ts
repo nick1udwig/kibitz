@@ -97,25 +97,32 @@ export class AnthropicProvider implements ChatProvider {
   }
 
   private addCachingHints(messages: Pick<Message, 'role' | 'content'>[]) {
-    return messages.map((m, index, array): Pick<Message, 'role' | 'content'> =>
-      index < array.length - 3 ?
-        {
+    return messages.map((m, index, array): Pick<Message, 'role' | 'content'> => {
+      // Only add cache control hints to last message content
+      const isLastMessage = index === array.length - 1;
+      
+      if (!isLastMessage) {
+        return {
           role: m.role,
           content: m.content
-        } :
-        {
-          role: m.role,
-          content: typeof m.content === 'string' ?
-            [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } }] :
-            m.content.map((c, contentIndex, contentArray) =>
-              contentIndex !== contentArray.length - 1 ? c :
-                {
-                  ...c,
-                  cache_control: { type: 'ephemeral' }
-                }
-            )
-        }
-    );
+        };
+      }
+
+      // Add cache_control to last message's content
+      return {
+        role: m.role,
+        content: typeof m.content === 'string'
+          ? [{ 
+              type: 'text' as const, 
+              text: m.content, 
+              cache_control: { type: 'ephemeral' } 
+            }]
+          : m.content.map(c => ({
+              ...c,
+              cache_control: { type: 'ephemeral' }
+            }))
+      };
+    });
   }
 
   private formatMessagesForApi(messages: Pick<Message, 'role' | 'content'>[]): { role: 'user' | 'assistant'; content: MessageContent[] }[] {
@@ -209,7 +216,7 @@ export class AnthropicProvider implements ChatProvider {
       const apiMessages = this.formatMessagesForApi(cachedMessages);
 
       // Setup and start streaming
-      const stream = await this.streamWithRetry({
+      const streamParams: MessageCreateParams = {
         model: DEFAULT_MODEL,
         max_tokens: 8192,
         messages: apiMessages,
@@ -217,12 +224,11 @@ export class AnthropicProvider implements ChatProvider {
           system: systemContent
         }),
         ...(tools.length > 0 && {
-          tools: tools.map(tool => ({
-            ...tool,
-            cache_control: { type: 'ephemeral' }
-          }))
+          tools // Pass tools directly without modifying
         }),
-      });
+      };
+
+      const stream = await this.streamWithRetry(streamParams);
 
       // Handle text streaming
       stream.on('text', (text) => {
