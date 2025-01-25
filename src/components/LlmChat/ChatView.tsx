@@ -12,6 +12,7 @@ import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
 import { createAnthropicClient } from '@/providers/anthropic';
+import { createOpenAIClient } from '@/providers/openai';
 import type { Tool, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
 import type { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from '@/providers/anthropic';
 export interface ChatViewRef {
@@ -124,7 +125,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         }
       });
     }
-  }, [activeConversation?.messages, activeConversation?.lastUpdated, isAtBottom]);
+  }, [activeProject?.settings.provider, activeConversation?.messages, activeConversation?.lastUpdated, isAtBottom]);
 
   const scrollToBottom = useCallback(() => {
     const container = chatContainerRef.current;
@@ -194,12 +195,25 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError(null);
     setIsLoading(true);
 
-    const currentApiKey = activeProject.settings.provider === 'openrouter'
-      ? activeProject.settings.openRouterApiKey
-      : (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey);  // Fallback for backward compatibility
+    const provider = activeProject.settings.provider || 'anthropic';
+    let currentApiKey;
+
+    if (provider === 'openai') {
+      currentApiKey = activeProject.settings.openaiApiKey;
+    } else if (provider === 'openrouter') {
+      currentApiKey = activeProject.settings.openRouterApiKey;
+    } else {
+      currentApiKey = activeProject.settings.anthropicApiKey || activeProject.settings.apiKey;
+    }
 
     if (!currentApiKey?.trim()) {
-      setError(`API key not found. Please set your ${activeProject.settings.provider === 'openrouter' ? 'OpenRouter' : 'Anthropic'} API key in the Settings panel.`);
+      let providerName;
+      switch (provider) {
+        case 'openai': providerName = 'OpenAI'; break;
+        case 'openrouter': providerName = 'OpenRouter'; break;
+        default: providerName = 'Anthropic';
+      }
+      setError(`API key not found. Please set your ${providerName} API key in the Settings panel.`);
       setIsLoading(false);
       return;
     }
@@ -470,13 +484,26 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     }
   };
 
-  const anthropic = createAnthropicClient({
-    apiKey: activeProject?.settings.anthropicApiKey || activeProject?.settings.apiKey || '',
-    model: activeProject?.settings.model,
-    systemPrompt: activeProject?.settings.systemPrompt,
-  });
+  const provider = activeProject?.settings.provider || 'anthropic';
 
-  if (!activeConversation) {
+  let client;
+  if (provider === 'anthropic') {
+    client = createAnthropicClient({
+      apiKey: activeProject?.settings.anthropicApiKey || activeProject?.settings.apiKey || '',
+      model: activeProject?.settings.model,
+      systemPrompt: activeProject?.settings.systemPrompt,
+    });
+  } else if (provider === 'openai') {
+    client = createOpenAIClient({
+      apiKey: activeProject?.settings.openaiApiKey || '',
+      baseUrl: activeProject?.settings.openaiBaseUrl || 'https://api.openai.com/v1',
+      organizationId: activeProject?.settings.openaiOrgId || '',
+      model: activeProject?.settings.model,
+      systemPrompt: activeProject?.settings.systemPrompt,
+    });
+  }
+
+  if (!activeConversation || !client) {
     return (
       <div className="flex items-center justify-center h-full">
         <Spinner />
@@ -489,7 +516,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       <div ref={chatContainerRef} className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
         <div className="space-y-4 mb-4">
           {activeConversation.messages.map((message, index) => (
-            anthropic.renderMessage(message, index, activeConversation, setSelectedToolCall)
+            client.renderMessage(message, index, activeConversation, setSelectedToolCall)
           ))}
         </div>
       </div>
@@ -547,11 +574,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             <Textarea
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              placeholder={
-                activeProject?.settings.provider === 'openrouter'
-                  ? "⚠️ OpenRouter support coming soon"
-                  : !activeProject?.settings.apiKey?.trim()
+            placeholder={
+                !activeProject?.settings.apiKey?.trim() && !activeProject?.settings.openaiApiKey?.trim()
                   ? "⚠️ Set your API key in Settings to start chatting"
+                  : activeProject?.settings.provider === 'openrouter'
+                  ? "⚠️ OpenRouter support coming soon"
                   : isLoading
                   ? "Processing response..."
                   : "Type your message"
@@ -567,7 +594,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               ref={inputRef}
               className={`pr-20 ${!activeProject?.settings.apiKey?.trim() ? "placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium" : ""}`}
               maxRows={8}
-              disabled={isLoading || !activeProject?.settings.apiKey?.trim() || activeProject?.settings.provider === 'openrouter'}
+              disabled={isLoading || (!activeProject?.settings.apiKey?.trim() && !activeProject?.settings.openaiApiKey?.trim()) || activeProject?.settings.provider === 'openrouter'}
             />
             <div className="absolute right-2 bottom-2 flex gap-1">
               <FileUpload

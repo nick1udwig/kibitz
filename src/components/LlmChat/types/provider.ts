@@ -1,8 +1,24 @@
 export type LegacyProviderType = 'anthropic' | 'openrouter' | 'openai';
+export type OpenAIProvider = 'openai';
+export type AnthropicProvider = 'anthropic';
+export type ProviderType = OpenAIProvider | AnthropicProvider | 'openrouter';
+
+export interface BaseProviderSettings {
+  apiKey: string;
+}
+
+export interface OpenAIProviderSettings extends BaseProviderSettings {
+  baseUrl?: string;
+  organizationId?: string;
+}
+
+export interface OpenRouterProviderSettings extends BaseProviderSettings {
+  baseUrl?: string;
+}
 
 export interface ProviderConfig {
-  type: string;
-  settings: Record<string, string>;
+  type: ProviderType;
+  settings: BaseProviderSettings | OpenAIProviderSettings | OpenRouterProviderSettings;
 }
 
 export interface LegacyProviderSettings {
@@ -42,7 +58,7 @@ export function convertLegacyToProviderConfig(
         apiKey: settings.openaiApiKey || '',
         baseUrl: settings.openaiBaseUrl || 'https://api.openai.com/v1',
         organizationId: settings.openaiOrgId || '',
-      }
+      } as OpenAIProviderSettings
     };
   }
   throw new Error(`Unknown provider type: ${provider}`);
@@ -56,24 +72,28 @@ export function extractLegacySettings(config: ProviderConfig): LegacyProviderSet
         anthropicApiKey: config.settings.apiKey,
         apiKey: config.settings.apiKey, // For maximum compatibility
       };
-    case 'openrouter':
+    case 'openrouter': {
+      const settings = config.settings as OpenRouterProviderSettings;
       return {
-        openRouterApiKey: config.settings.apiKey,
-        openRouterBaseUrl: config.settings.baseUrl,
+        openRouterApiKey: settings.apiKey,
+        openRouterBaseUrl: settings.baseUrl,
       };
-    case 'openai':
+    }
+    case 'openai': {
+      const settings = config.settings as OpenAIProviderSettings;
       return {
-        openaiApiKey: config.settings.apiKey,
-        openaiBaseUrl: config.settings.baseUrl,
-        openaiOrgId: config.settings.organizationId,
+        openaiApiKey: settings.apiKey,
+        openaiBaseUrl: settings.baseUrl,
+        openaiOrgId: settings.organizationId,
       };
+    }
     default:
       return {};
   }
 }
 
 // Helper function to get provider-specific model options
-export function getProviderModels(type: string): string[] {
+export function getProviderModels(type: ProviderType): string[] {
   switch (type) {
     case 'anthropic':
       return [
