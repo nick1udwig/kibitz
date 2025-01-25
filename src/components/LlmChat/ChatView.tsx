@@ -1,9 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
 import Image from 'next/image';
-import { Anthropic } from '@anthropic-ai/sdk';
-import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square, X, ChevronDown } from 'lucide-react';
-import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
 import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy';
@@ -11,7 +8,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from './types';
 import { wakeLock } from '@/lib/wakeLock';
 import { ToolCallModal } from './ToolCallModal';
 import { VoiceRecorder } from './VoiceRecorder';
@@ -19,9 +15,9 @@ import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
-
-const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
-
+import { createAnthropicClient } from '@/providers/anthropic';
+import type { Tool, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
+import { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from './types';
 export interface ChatViewRef {
   focus: () => void;
 }
@@ -242,25 +238,14 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
       // retry enough times to always push past 60s (the rate limit timer):
       //  https://github.com/anthropics/anthropic-sdk-typescript/blob/dc2591fcc8847d509760a61777fc1b79e0eab646/src/core.ts#L645
-      const anthropic = new Anthropic({
-        apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',  // Use anthropic key only
-        dangerouslyAllowBrowser: true,
-        maxRetries: 12,
+      const anthropic = createAnthropicClient({
+        apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',
+        model: activeProject.settings.model,
+        systemPrompt: activeProject.settings.systemPrompt
       });
 
       const savedToolResults = new Set<string>();
-
       const toolsCached = getUniqueTools(true);
-      const tools = getUniqueTools(false);
-
-      // Only include system content if there is a non-empty system prompt
-      const systemPrompt = activeProject.settings.systemPrompt?.trim();
-      const systemPromptContent = systemPrompt ? [
-        {
-          type: "text",
-          text: systemPrompt,
-        },
-      ] as TextBlockParam[] : undefined;
 
       while (true) {
         const cachedApiMessages = currentMessages.filter((message, index, array) => {
@@ -303,6 +288,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               role: m.role,
               content: m.content,
               toolInput: m.toolInput ? m.toolInput : undefined,
+              timestamp: m.timestamp
             } :
             {
               role: m.role,
@@ -316,6 +302,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                     }
                 )) as MessageContent[],
               toolInput: m.toolInput ? m.toolInput : undefined,
+              timestamp: m.timestamp
             }
         );
 
@@ -332,58 +319,23 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
         if (activeProject.settings.elideToolResults) {
           if ((cachedApiMessages[cachedApiMessages.length - 1].content as MessageContent[])[0].type === 'tool_result') {
-            const keepToolResponse = await anthropic.messages.create({
-              model: DEFAULT_MODEL,
-              max_tokens: 8192,
-              messages: [
-                ...cachedApiMessages.filter(msg => {
-                  if (!Array.isArray(msg.content)) return false;
-                  const toolResult = msg.content.find(c =>
-                    c.type === 'tool_use' || c.type === 'tool_result'
-                  );
-                  return toolResult;
-                }).map(msg =>
-                  !(msg.content as MessageContent[]).find(c => c.type === 'tool_result') ?
-                    {
-                      ...msg,
-                      content: [
-                        msg.content[0],
-                        {
-                          type: 'text' as const,
-                          text: `${JSON.stringify(msg.content[1])}`,
-                        },
-                      ],
-                    } :
-                    {
-                      ...msg,
-                      content: [
-                        {
-                          type: 'text' as const,
-                          text: `${JSON.stringify({ ...(msg.content as MessageContent[])[0], content: 'elided' })}`,
-                        },
-                      ],
-                    }
-                ),
-                {
-                  role: 'user' as const,
-                  content: [{
-                    type: 'text' as const,
-                    text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
-                    cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
-                  }],
-                },
-              ] as Message[],
-              system: [{
-                type: 'text' as const,
-                text: 'Rate each `message`: will the `type: tool_result` be required by `assistant` to serve the next response? Reply ONLY with `<tool_use_id>: Yes` or `<tool_use_id>: No` for each tool_result. DO NOT reply with code, prose, or commentary of any kind.\nExample output:\ntoolu_014huykAonadokihkrboFfqn: Yes\ntoolu_01APhxfkQZ1nT7Ayt8Vtyuz8: Yes\ntoolu_01PcgSwHbHinNrn3kdFaD82w: No\ntoolu_018Qosa8PHAZjUa312TXRwou: Yes',
-                cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
-              }],
-            });
+            // Create messages for rating tool results
+            const ratingsMessages: Message[] = [
+              {
+                role: 'user' as const,
+                content: [{
+                  type: 'text' as const,
+                  text: 'Rate each tool result: will it be required for future responses? Reply with `id: Yes/No` for each.',
+                }] as MessageContent[],
+                timestamp: new Date()
+              }
+            ];
 
-            if (keepToolResponse.content[0].type === 'text') {
-              console.log('a');
-              const lines = keepToolResponse.content[0].text.split('\n');
+            const ratingResponse = await anthropic.streamChat(ratingsMessages, []);
+            const finalRatingResponse = await ratingResponse.finalMessage();
 
+            if (finalRatingResponse.content[0].type === 'text') {
+              const lines = finalRatingResponse.content[0].text.split('\n');
               for (const line of lines) {
                 const [key, value] = line.split(': ');
 
@@ -396,7 +348,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                 }
               }
             }
-            console.log(`keepToolResponse: ${JSON.stringify(keepToolResponse)}\n${JSON.stringify(savedToolResults)}`);
+            console.log(`Rating response: ${JSON.stringify(finalRatingResponse)}\nSaved tool results: ${JSON.stringify(Array.from(savedToolResults))}`);
           }
         }
 
@@ -434,41 +386,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         };
         currentStreamMessage.content.push(textContent);
 
-        // Helper function to handle stream with retries
-        const streamWithRetry = async (params: MessageCreateParams) => {
-          let lastError: unknown;
-          for (let attempt = 0; attempt < 12; attempt++) { // Try for 1 minute (12 * 5 seconds)
-            try {
-              const stream = await anthropic.messages.stream(params);
-              return stream;
-            } catch (error) {
-              lastError = error;
-              // Check if error has overloaded_error type
-              if (typeof error === 'object' && error !== null) {
-                const errorObj = error as { error?: { type?: string }; status?: number };
-                const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-                if (isOverloaded && attempt < 11) { // Don't wait on last attempt
-                  await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-                  continue;
-                }
-              }
-              throw error; // Throw non-overloaded errors immediately
-            }
+        const stream = await anthropic.streamChat(
+          apiMessagesToSend,
+          toolsCached,
+          (text) => {
+            textContent.text += text;
+            // Update conversation with streaming message
+            const updatedMessages = [...currentMessages, currentStreamMessage];
+            updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
           }
-          throw lastError; // Throw last error if all retries failed
-        };
-
-        const stream = await streamWithRetry({
-          model: activeProject.settings.model || DEFAULT_MODEL,
-          max_tokens: 8192,
-          messages: apiMessagesToSend,
-          ...(systemPromptContent && systemPromptContent.length > 0 && {
-            system: systemPromptContent
-          }),
-          ...(tools.length > 0 && {
-            tools: toolsCached
-          })
-        });
+        );
 
         streamRef.current = stream;
 
@@ -477,68 +404,17 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           break;
         }
 
-        stream.on('text', (text) => {
-          textContent.text += text;
-
-          // Update conversation with streaming message
-          const updatedMessages = [...currentMessages, currentStreamMessage];
-          updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
-        });
 
         // Handle tool use in the final response if any
         // Filter and validate text content in the final response
         const finalResponse = await stream.finalMessage();
 
-        // Process content to handle empty text blocks
-        const processedContent = finalResponse.content.map((content: MessageContent) => {
-          if (!content['type']) {
-            return content;
-          }
-          // Keep non-text content
-          if (content.type !== 'text') {
-            return content;
-          }
-
-          // Check if text content is purely whitespace
-          const isWhitespace = content.text.trim().length === 0;
-
-          // If there's only one content block and it's whitespace, replace with "empty"
-          if (isWhitespace && finalResponse.content.length === 1) {
-            return {
-              ...content,
-              text: 'empty',
-            } as MessageContent;
-          }
-          return content;
-        })
-          .filter((content: MessageContent) => {
-            if (!content['type']) {
-              return true;
-            }
-            // Keep non-text content
-            if (content.type !== 'text') {
-              return true;
-            }
-
-            // Check if text content is purely whitespace
-            const isWhitespace = content.text.trim().length === 0;
-
-            // If there's only one content block and it's whitespace, replace with "empty"
-            if (isWhitespace && finalResponse.content.length === 1) {
-              console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
-              content.text = 'empty';
-              return true;
-            }
-
-            // For multiple content blocks, drop purely whitespace ones
-            return !isWhitespace;
-          });
-
-        const processedResponse = {
-          ...finalResponse,
-          content: processedContent
+        // Process and update final response
+        const processedResponse: Message = {
+          role: 'assistant',
+          content: anthropic.processMessageContent(finalResponse.content),
+          timestamp: new Date()
         };
-
         currentMessages.push(processedResponse);
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
@@ -553,43 +429,14 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             return;
           }
 
-          const userFirstMessage = currentMessages[0].content;
-          const assistantFirstMessage = currentMessages[1].content;
-
-          const summaryResponse = await anthropic.messages.create({
-            model: activeProject.settings.model || DEFAULT_MODEL,
-            max_tokens: 20,
-            messages: [{
-              role: "user",
-              content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
-
-User message: ${JSON.stringify(userFirstMessage)}
-Assistant response: ${Array.isArray(assistantFirstMessage)
-  ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-  : assistantFirstMessage}
-
-Format: Only output the title, no quotes or explanation
-Example good titles:
-- React Router Setup
-- Python Script Optimization
-- Database Schema Design
-- ML Model Training
-- Docker Container Networking`
-            }]
-          });
-
-          const type = summaryResponse.content[0].type;
-          if (type == 'text') {
-            const suggestedTitle = summaryResponse.content[0].text
-              .replace(/["']/g, '')
-              .replace('title:', '')
-              .replace('Title:', '')
-              .replace('title', '')
-              .replace('Title', '')
-              .trim();
-            if (suggestedTitle) {
-              renameConversation(activeProject.id, activeConversationId, suggestedTitle);
-            }
+          // Convert any string content to MessageContent array
+          const userFirstMessage = typeof currentMessages[0].content === 'string' ?
+            [{ type: 'text' as const, text: currentMessages[0].content }] : currentMessages[0].content;
+          const assistantFirstMessage = typeof currentMessages[1].content === 'string' ?
+            [{ type: 'text' as const, text: currentMessages[1].content }] : currentMessages[1].content;
+          const suggestedTitle = await anthropic.generateChatTitle(userFirstMessage, assistantFirstMessage);
+          if (suggestedTitle) {
+            renameConversation(activeProject.id, activeConversationId, suggestedTitle);
           }
         }
 
@@ -663,23 +510,20 @@ Example good titles:
       }
 
     } catch (error) {
+      const isOverloadedError = (err: unknown) => {
+        if (typeof err === 'object' && err !== null) {
+          const errorObj = err as { error?: { type?: string }; status?: number };
+          return errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
+        }
+        return false;
+      };
+
       if (error && typeof error === 'object' && 'message' in error && error.message === 'Request was aborted.') {
         console.log('Request was cancelled by user');
-      } else if (typeof error === 'object' && error !== null) {
-        // Cast error to object with optional error and status properties
-        const errorObj = error as { error?: { type?: string }; status?: number };
-        const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-
-        if (isOverloaded) {
-          console.error('Server overloaded, all retries failed:', error);
-          if (!shouldCancelRef.current) {
-            setError('Server is currently overloaded. Message sending failed after multiple retries. Please try again later.');
-          }
-        } else {
-          console.error('Failed to send message:', error);
-          if (!shouldCancelRef.current) {
-            setError(error instanceof Error ? error.message : 'An error occurred');
-          }
+      } else if (isOverloadedError(error)) {
+        console.error('Server overloaded, all retries failed:', error);
+        if (!shouldCancelRef.current) {
+          setError('Server is currently overloaded. Message sending failed after multiple retries. Please try again later.');
         }
       } else {
         console.error('Failed to send message:', error);
