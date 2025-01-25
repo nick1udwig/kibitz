@@ -1,4 +1,5 @@
 import React from 'react';
+import OpenAI from "openai";
 import { CopyButton } from '@/components/ui/copy';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -54,6 +55,7 @@ interface OpenAIConfig {
   systemPrompt?: string;
   baseUrl?: string;
   organizationId?: string;
+  isProviderLocked?: boolean;
 }
 
 interface StreamResponse {
@@ -63,25 +65,24 @@ interface StreamResponse {
 }
 
 export const createOpenAIClient = (config: OpenAIConfig) => {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${config.apiKey}`,
-    ...(config.organizationId && { 'OpenAI-Organization': config.organizationId }),
-  };
+  if (!config.apiKey) {
+    throw new Error('API key is required');
+  }
 
-  const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
+  const client = new OpenAI({
+    apiKey: config.apiKey,
+    organization: config.organizationId,
+    baseURL: config.baseUrl,
+  });
 
   return {
     generateChatTitle: async (userMessage: MessageContent[], assistantMessage: MessageContent[]): Promise<string> => {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: config.model || DEFAULT_MODEL,
-          max_tokens: 20,
-          messages: [{
-            role: "user",
-            content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
+      const completion = await client.chat.completions.create({
+        model: config.model || DEFAULT_MODEL,
+        max_tokens: 20,
+        messages: [{
+          role: "user",
+          content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
 
 User message: ${JSON.stringify(userMessage)}
 Assistant response: ${Array.isArray(assistantMessage)
@@ -95,22 +96,17 @@ Example good titles:
 - Database Schema Design
 - ML Model Training
 - Docker Container Networking`
-          }]
-        })
+        }],
+        store: true,
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to generate title: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data.choices[0].message.content
-        .replace(/["']/g, '')
+      return completion.choices[0].message.content
+        ?.replace(/["']/g, '')
         .replace('title:', '')
         .replace('Title:', '')
         .replace('title', '')
         .replace('Title', '')
-        .trim();
+        .trim() || 'Untitled Chat';
     },
 
     streamChat: async (
@@ -129,87 +125,60 @@ Example good titles:
         content: config.systemPrompt
       }] : [];
 
+      // Convert tools to OpenAI format
+      const openaiTools = tools.map(tool => ({
+        type: 'function' as const,
+        function: {
+          name: tool.function.name,
+          description: tool.function.description,
+          parameters: tool.function.parameters
+        }
+      } satisfies OpenAI.ChatCompletionTool));
+
       const streamPromise = new Promise<{ content: MessageContent[] }>(async (resolve, reject) => {
         try {
-          const response = await fetch(`${baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              model: config.model || DEFAULT_MODEL,
-              messages: [...systemMessage, ...messages],
-              max_tokens: 8192,
-              stream: true,
-              ...(tools.length > 0 && {
-                tools,
-                tool_choice: 'auto'
-              }),
-              store: true
-            }),
-            signal: abortController.signal
+          const stream = await client.chat.completions.create({
+            model: config.model || DEFAULT_MODEL,
+            messages: [...systemMessage, ...messages] as Array<OpenAI.ChatCompletionMessageParam>,
+            max_tokens: 8192,
+            stream: true,
+            tools: tools.length > 0 ? openaiTools : undefined,
+            tool_choice: tools.length > 0 ? 'auto' : undefined,
+            store: true,
           });
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
+          for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta;
 
-          if (!response.body) {
-            throw new Error('Response body is null');
-          }
+            if (delta?.content) {
+              if (onText) {
+                onText(delta.content);
+              }
 
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  const data = line.slice(6);
-                  if (data === '[DONE]') continue;
-
-                  const parsed = JSON.parse(data);
-                  const delta = parsed.choices[0]?.delta;
-
-                  if (delta?.content) {
-                    if (onText) {
-                      onText(delta.content);
-                    }
-                    
-                    if (content.length === 0 || content[content.length - 1].type !== 'text') {
-                      content.push({ type: 'text', text: delta.content });
-                    } else {
-                      const lastContent = content[content.length - 1];
-                      if (lastContent.type === 'text') {
-                        lastContent.text += delta.content;
-                      }
-                    }
-                  }
-
-                  if (delta?.tool_calls) {
-                    const toolCall = delta.tool_calls[0];
-                    content.push({
-                      type: 'tool_use',
-                      id: toolCall.id,
-                      name: toolCall.function.name,
-                      input: JSON.parse(toolCall.function.arguments)
-                    });
-                  }
+              if (content.length === 0 || content[content.length - 1].type !== 'text') {
+                content.push({ type: 'text', text: delta.content });
+              } else {
+                const lastContent = content[content.length - 1];
+                if (lastContent.type === 'text') {
+                  lastContent.text += delta.content;
                 }
               }
             }
 
-            resolve({ content });
-          } catch (error) {
-            reader.cancel();
-            reject(error);
+            if (delta?.tool_calls) {
+              const toolCall = delta.tool_calls[0];
+              if (toolCall.id && toolCall.function?.name && toolCall.function?.arguments) {
+                content.push({
+                  type: 'tool_use',
+                  id: toolCall.id,
+                  name: toolCall.function.name,
+                  input: JSON.parse(toolCall.function.arguments)
+                });
+              }
+            }
           }
+
+          resolve({ content });
         } catch (error) {
           reject(error);
         }
@@ -229,7 +198,6 @@ Example good titles:
     },
 
     processMessageContent: (content: MessageContent[]): MessageContent[] => {
-      // Single empty text block handling
       if (content.length === 1 && 'text' in content[0] && !content[0].text.trim()) {
         return [{
           ...content[0],
@@ -237,16 +205,14 @@ Example good titles:
         }];
       }
 
-      // Remove empty text blocks, keep non-text content
       return content.filter(block => {
         return !('text' in block) || block.text.trim().length > 0;
       });
     },
 
     isOverloadedError: (error: unknown): boolean => {
-      if (typeof error === 'object' && error !== null) {
-        const errorObj = error as { error?: { type?: string }; status?: number };
-        return errorObj.status === 429 || errorObj.error?.type === 'insufficient_quota';
+      if (error instanceof OpenAI.APIError) {
+        return error.status === 429 || error.error?.type === 'insufficient_quota';
       }
       return false;
     },

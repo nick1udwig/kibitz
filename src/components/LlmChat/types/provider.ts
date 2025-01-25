@@ -5,15 +5,18 @@ export type ProviderType = OpenAIProvider | AnthropicProvider | 'openrouter';
 
 export interface BaseProviderSettings {
   apiKey: string;
+  isProviderLocked?: boolean;  // If true, provider cannot be changed after project creation
 }
 
 export interface OpenAIProviderSettings extends BaseProviderSettings {
   baseUrl?: string;
   organizationId?: string;
+  model?: string;  // OpenAI model override
 }
 
-export interface OpenRouterProviderSettings extends BaseProviderSettings {
-  baseUrl?: string;
+export interface OpenRouterProviderSettings extends OpenAIProviderSettings {
+  // OpenRouter is a superset of OpenAI configuration, but customized for OpenRouter endpoints
+  baseUrl: string;  // Required for OpenRouter API endpoint
 }
 
 export interface ProviderConfig {
@@ -93,7 +96,25 @@ export function extractLegacySettings(config: ProviderConfig): LegacyProviderSet
 }
 
 // Helper function to get provider-specific model options
-export function getProviderModels(type: ProviderType): string[] {
+export function getProviderModels(type: ProviderType, settings?: OpenAIProviderSettings | OpenRouterProviderSettings): string[] {
+  const baseUrl = settings?.baseUrl;
+  const openRouterModels = [
+    'openai/gpt-4-turbo-preview',
+    'anthropic/claude-3-opus-20240229',
+    'anthropic/claude-3-sonnet-20240229',
+    'meta-llama/llama-2-70b-chat',
+    'google/gemini-pro',
+  ];
+
+  const openAIModels = [
+    'gpt-4o',           // Most capable
+    'gpt-4-turbo',      // Fast, up to date
+    'gpt-4o-mini',      // Smaller but fast
+    'gpt-4',            // Original GPT-4
+    'gpt-3.5-turbo',    // Fast, cost-effective
+    'gpt-3.5-turbo-16k' // Larger context
+  ];
+
   switch (type) {
     case 'anthropic':
       return [
@@ -104,22 +125,9 @@ export function getProviderModels(type: ProviderType): string[] {
         'claude-3-5-haiku-20241022',
       ];
     case 'openai':
-      return [
-        'gpt-4o',           // Most capable
-        'gpt-4-turbo',      // Fast, up to date
-        'gpt-4o-mini',      // Smaller but fast
-        'gpt-4',            // Original GPT-4
-        'gpt-3.5-turbo',    // Fast, cost-effective
-        'gpt-3.5-turbo-16k' // Larger context
-      ];
+      return openAIModels;
     case 'openrouter':
-      return [
-        'openai/gpt-4-turbo-preview',
-        'anthropic/claude-3-opus-20240229',
-        'anthropic/claude-3-sonnet-20240229',
-        'meta-llama/llama-2-70b-chat',
-        'google/gemini-pro',
-      ];
+      return baseUrl ? openRouterModels : openAIModels;  // If OpenRouter base URL, use OpenRouter models
     default:
       return [];
   }
