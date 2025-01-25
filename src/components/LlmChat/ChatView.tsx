@@ -204,7 +204,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
     // Determine provider and API key
     const provider = activeProject.settings.provider || 'anthropic';
-    const apiKey = provider === 'anthropic' 
+    const apiKey = provider === 'anthropic'
       ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey) || ''
       : provider === 'openai'
       ? activeProject.settings.openaiApiKey || ''
@@ -275,6 +275,21 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       const tools = getUniqueTools();
       const systemPrompt = activeProject.settings.systemPrompt?.trim();
 
+      // Helper to handle title generation
+      const handleTitleGeneration = async (messages: Message[]) => {
+        const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+        if (currentConversation && messages.length === 2 && currentConversation.name === '(New Chat)') {
+          // Double check name hasn't changed
+          const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+          if (latestConversation?.name === '(New Chat)') {
+            const title = await chatProvider.generateTitle(messages[0].content, messages[1].content);
+            if (title) {
+              renameConversation(activeProject.id, activeConversationId, title);
+            }
+          }
+        }
+      };
+
       await chatProvider.sendMessage(
         currentMessages,
         tools,
@@ -294,26 +309,96 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           console.error('Error from provider:', error);
           setError(error.message);
         },
-        // Completion handler
+        // Completion handler - process tool use and tool results
         async (finalResponse) => {
-          // Update messages
-          updateConversationMessages(
-            activeProject.id, 
-            activeConversationId,
-            [...currentMessages, finalResponse]
-          );
+          const updatedMessages = [...currentMessages, finalResponse];
+          updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
 
-          // Handle chat title generation
-          const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-          if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
-            // Double check name hasn't changed
-            const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-            if (latestConversation?.name === '(New Chat)') {
-              const title = await chatProvider.generateTitle(currentMessages[0].content, finalResponse.content);
-              if (title) {
-                renameConversation(activeProject.id, activeConversationId, title);
+          // Look for tool use
+          const toolUseContent = Array.isArray(finalResponse.content) &&
+            finalResponse.content.find(c => c.type === 'tool_use');
+
+          if (toolUseContent && toolUseContent.type === 'tool_use') {
+            try {
+              // Get server with matching tool
+              const servers = useStore.getState().servers;
+              const serverWithTool = servers.find(s =>
+                s.tools?.some(t => t.name === toolUseContent.name)
+              );
+
+              if (!serverWithTool) {
+                throw new Error(`No server found for tool ${toolUseContent.name}`);
               }
+
+              // Execute tool and get result
+              const result = await useStore.getState().executeTool(
+                serverWithTool.id,
+                toolUseContent.name,
+                toolUseContent.input as Record<string, unknown>,
+              );
+
+              // Add tool result message
+              const toolResultMessage: Message = {
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: toolUseContent.id,
+                  content: result,
+                }],
+                timestamp: new Date()
+              };
+
+              // Update messages with tool result
+              const messagesWithResult = [...updatedMessages, toolResultMessage];
+              updateConversationMessages(activeProject.id, activeConversationId, messagesWithResult);
+
+              // Continue chat with tool result
+              await chatProvider.sendMessage(
+                messagesWithResult,
+                tools,
+                systemPrompt,
+                (text) => {
+                  const streamMessage: Message = {
+                    role: 'assistant',
+                    content: [{ type: 'text', text }],
+                    timestamp: new Date(),
+                  };
+                  const nextMessages = [...messagesWithResult, streamMessage];
+                  updateConversationMessages(activeProject.id, activeConversationId, nextMessages);
+                },
+                (error) => {
+                  console.error('Error from provider:', error);
+                  setError(error.message);
+                },
+                async (nextResponse) => {
+                  const nextMessages = [...messagesWithResult, nextResponse];
+                  updateConversationMessages(activeProject.id, activeConversationId, nextMessages);
+
+                  // Handle title generation if needed
+                  await handleTitleGeneration(nextMessages);
+                },
+                shouldCancelRef
+              );
+
+            } catch (error) {
+              // Add error message for failed tool execution
+              const errorMessage: Message = {
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: toolUseContent.id,
+                  content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  is_error: true,
+                }],
+                timestamp: new Date()
+              };
+
+              const messagesWithError = [...updatedMessages, errorMessage];
+              updateConversationMessages(activeProject.id, activeConversationId, messagesWithError);
             }
+          } else {
+            // No tool use - handle title generation if needed
+            await handleTitleGeneration(updatedMessages);
           }
         },
         shouldCancelRef

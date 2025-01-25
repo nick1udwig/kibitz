@@ -97,6 +97,8 @@ export class AnthropicProvider implements ChatProvider {
   }
 
   private addCachingHints(messages: Pick<Message, 'role' | 'content'>[]) {
+    const ephemeralCacheControl = { cache_control: { type: 'ephemeral' as const } };
+
     return messages.map((m, index, array): Pick<Message, 'role' | 'content'> => {
       // Only add cache control hints to messages within recent context
       const recentContextSize = 3;
@@ -113,68 +115,89 @@ export class AnthropicProvider implements ChatProvider {
       return {
         role: m.role,
         content: typeof m.content === 'string'
-          ? [{ 
-              type: 'text' as const, 
-              text: m.content, 
-              cache_control: { type: 'ephemeral' } 
+          ? [{
+              type: 'text' as const,
+              text: m.content,
+              ...ephemeralCacheControl
             }]
           : m.content.map(c => ({
               ...c,
-              cache_control: { type: 'ephemeral' }
+              ...(ephemeralCacheControl)
             }))
       };
     });
   }
 
   private formatMessagesForApi(messages: Pick<Message, 'role' | 'content'>[]): { role: 'user' | 'assistant'; content: MessageContent[] }[] {
-    return messages.map(msg => {
+    // Add cache control to messages within the recent context (last 3)
+    return messages.map((msg, index, array) => {
+      const isRecentContext = index >= array.length - 3;
+      const ephemeralCacheControl = { cache_control: { type: 'ephemeral' as const } };
+
       // Convert string content to proper format first
       const content = typeof msg.content === 'string' ?
-        [{ type: 'text' as const, text: msg.content }] :
+        [{
+          type: 'text' as const,
+          text: msg.content,
+          ...(isRecentContext && ephemeralCacheControl)
+        }] :
         msg.content;
 
-      // Filter content to only those fields API expects
+      // Filter content and add cache control where needed
       const filteredContent = content.map(c => {
+        // Add core fields and cache control based on message age
+        const withCache = isRecentContext ? ephemeralCacheControl : {};
+
         if (c.type === 'text') {
           return {
             type: 'text' as const,
             text: c.text,
-            ...(c.cache_control && { cache_control: c.cache_control })
-          };
+            ...withCache
+          } as MessageContent;
         }
+
         if (c.type === 'tool_use') {
           return {
             type: 'tool_use' as const,
             id: c.id,
             name: c.name,
             input: c.input,
-            ...(c.cache_control && { cache_control: c.cache_control })
-          };
+            ...withCache
+          } as MessageContent;
         }
+
         if (c.type === 'tool_result') {
           return {
             type: 'tool_result' as const,
             tool_use_id: c.tool_use_id,
             content: c.content,
             ...(c.is_error && { is_error: c.is_error }),
-            ...(c.cache_control && { cache_control: c.cache_control })
-          };
+            ...withCache
+          } as MessageContent;
         }
+
         if (c.type === 'image') {
           return {
             type: 'image' as const,
             source: c.source,
-            ...(c.cache_control && { cache_control: c.cache_control })
-          };
+            ...withCache
+          } as MessageContent;
         }
+
         if (c.type === 'document') {
           return {
             type: 'document' as const,
             source: c.source,
-            ...(c.cache_control && { cache_control: c.cache_control })
-          };
+            ...withCache
+          } as MessageContent;
         }
-        return c;
+
+        // For any other content type, cast to MessageContent type
+        const baseContent = c as MessageContent;
+        return {
+          ...baseContent,
+          ...withCache
+        } as MessageContent;
       });
 
       return {
@@ -196,11 +219,12 @@ export class AnthropicProvider implements ChatProvider {
     this.shouldCancel = shouldCancel;
 
     try {
-      // Create system message if provided
+      // Create system message if provided, with proper cache control
       const systemContent = systemPrompt?.trim()
         ? [{
             type: 'text' as const,
-            text: systemPrompt
+            text: systemPrompt,
+            cache_control: { type: 'ephemeral' as const }
           }]
         : undefined;
 
@@ -216,26 +240,19 @@ export class AnthropicProvider implements ChatProvider {
       const cachedMessages = this.addCachingHints(filteredMessages);
       const apiMessages = this.formatMessagesForApi(cachedMessages);
 
-      // Setup and start streaming
+      // Setup and start streaming with proper cache control
+      const toolsForApi = tools.map(tool => ({
+        ...tool,
+        cache_control: { type: 'ephemeral' as const }
+      }));
+
       const streamParams: MessageCreateParams = {
         model: DEFAULT_MODEL,
         max_tokens: 8192,
         messages: apiMessages,
-        ...(systemContent && systemContent.length > 0 && {
-          system: systemContent
-        }),
-        ...(tools.length > 0 && {
-          tools
-        }),
+        ...(systemContent?.length && { system: systemContent }),
+        ...(tools.length && { tools: toolsForApi }),
       };
-
-      // Ensure each tool has cache_control
-      if (tools.length > 0) {
-        streamParams.tools = streamParams.tools!.map(tool => ({
-          ...tool,
-          cache_control: { type: 'ephemeral' }
-        }));
-      }
 
       const stream = await this.streamWithRetry(streamParams);
 
@@ -258,14 +275,33 @@ export class AnthropicProvider implements ChatProvider {
 
       // Only process if not cancelled
       if (!this.shouldCancel?.current) {
-        // Filter and validate the content
-        const processedContent = this.filterAndValidateContent(finalResponse.content);
+        // Look for tool use first, before handling completion
+        const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
 
+        if (toolUseContent && toolUseContent.type === 'tool_use') {
+          // Emit the tool use message so the UI can show it
+          const toolUseMessage: Message = {
+            role: 'assistant',
+            content: [toolUseContent],
+            timestamp: new Date()
+          };
+
+          if (onCompletion) {
+            onCompletion(toolUseMessage);
+          }
+
+          // Let ChatView handle tool execution and wait for next message
+          return;
+        }
+
+        // No tool use - filter and validate content
+        const processedContent = this.filterAndValidateContent(finalResponse.content);
         const processedResponse = {
           ...finalResponse,
-          content: processedContent
+          content: processedContent,
         };
 
+        // Send final response
         if (onCompletion) {
           onCompletion(processedResponse);
         }
