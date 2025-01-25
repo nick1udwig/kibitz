@@ -1,7 +1,7 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
-import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
-import type { Message, MessageContent } from '../components/LlmChat/types';
+import type { MessageCreateParams, MessageParam } from '@anthropic-ai/sdk/resources/messages/messages';
+import type { MessageContent } from '../components/LlmChat/types';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -65,7 +65,7 @@ Example good titles:
     },
 
     streamChat: async (
-      messages: Message[],
+      messages: MessageParam[],
       tools: Tool[] = [],
       onText?: (text: string) => void
     ): Promise<StreamResponse> => {

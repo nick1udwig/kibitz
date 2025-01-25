@@ -244,7 +244,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         systemPrompt: activeProject.settings.systemPrompt
       });
 
-      const savedToolResults = new Set<string>();
       const toolsCached = getUniqueTools(true);
 
       while (true) {
@@ -288,7 +287,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               role: m.role,
               content: m.content,
               toolInput: m.toolInput ? m.toolInput : undefined,
-              timestamp: m.timestamp
             } :
             {
               role: m.role,
@@ -302,77 +300,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                     }
                 )) as MessageContent[],
               toolInput: m.toolInput ? m.toolInput : undefined,
-              timestamp: m.timestamp
             }
         );
-
-        const newestToolResultId = currentMessages
-          .filter((msg): msg is Message & { content: MessageContent[] } =>
-            Array.isArray(msg.content)
-          )
-          .flatMap(msg => msg.content)
-          .filter((content): content is MessageContent & { tool_use_id: string } =>
-            'tool_use_id' in content && content.type === 'tool_result'
-          )
-          .map(content => content.tool_use_id)
-          .pop();
-
-        if (activeProject.settings.elideToolResults) {
-          if ((cachedApiMessages[cachedApiMessages.length - 1].content as MessageContent[])[0].type === 'tool_result') {
-            // Create messages for rating tool results
-            const ratingsMessages: Message[] = [
-              {
-                role: 'user' as const,
-                content: [{
-                  type: 'text' as const,
-                  text: 'Rate each tool result: will it be required for future responses? Reply with `id: Yes/No` for each.',
-                }] as MessageContent[],
-                timestamp: new Date()
-              }
-            ];
-
-            const ratingResponse = await anthropic.streamChat(ratingsMessages, []);
-            const finalRatingResponse = await ratingResponse.finalMessage();
-
-            if (finalRatingResponse.content[0].type === 'text') {
-              const lines = finalRatingResponse.content[0].text.split('\n');
-              for (const line of lines) {
-                const [key, value] = line.split(': ');
-
-                if (value.trim() === 'Yes') {
-                  console.log('b');
-                  savedToolResults.add(key);
-                } else if (value.trim() === 'No') {
-                  console.log('c');
-                  savedToolResults.delete(key);
-                }
-              }
-            }
-            console.log(`Rating response: ${JSON.stringify(finalRatingResponse)}\nSaved tool results: ${JSON.stringify(Array.from(savedToolResults))}`);
-          }
-        }
-
-        const apiMessagesToSend = !activeProject.settings.elideToolResults ? cachedApiMessages :
-          cachedApiMessages
-            .map(msg => {
-              if (!Array.isArray(msg.content)) return msg;
-
-              const toolResult = msg.content.find(c =>
-                c.type === 'tool_result'
-              );
-              if (!toolResult) return msg;
-
-              const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
-              return toolUseId === newestToolResultId || savedToolResults.has(toolUseId) ?
-                msg :
-                {
-                  ...msg,
-                  content: [{
-                    ...msg.content[0],
-                    content: 'elided',
-                  }],
-                };
-            });
 
         const currentStreamMessage = {
           role: 'assistant' as const,
@@ -387,7 +316,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         currentStreamMessage.content.push(textContent);
 
         const stream = await anthropic.streamChat(
-          apiMessagesToSend,
+          cachedApiMessages,
           toolsCached,
           (text) => {
             textContent.text += text;
