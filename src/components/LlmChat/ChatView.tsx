@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
 import Image from 'next/image';
 import { ChatProviderFactory } from './providers/factory';
-import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
+import { Tool, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square, X, ChevronDown } from 'lucide-react';
 import { FileUpload } from './FileUpload';
 import { Button } from '@/components/ui/button';
@@ -164,7 +164,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       });
 
     const tools = Array.from(toolMap.values());
-    return tools;
+    return tools.map((t, index, array) => index != array.length - 1 ? t : { ...t, cache_control: { type: 'ephemeral' } as CacheControlEphemeral });
   };
 
   const updateConversationMessages = (projectId: string, conversationId: string, newMessages: Message[]) => {

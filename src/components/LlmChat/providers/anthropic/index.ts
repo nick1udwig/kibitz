@@ -13,7 +13,7 @@ export class AnthropicProvider implements ChatProvider {
     this.client = new Anthropic({
       apiKey,
       dangerouslyAllowBrowser: true,
-      maxRetries: 12,
+      maxRetries: 13,
     });
   }
 
