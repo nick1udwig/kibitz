@@ -60,6 +60,13 @@ export const useStore = create<RootState>((set, get) => {
   const connectionsRef = new Map<string, WebSocket>();
   const reconnectTimeoutsRef = new Map<string, NodeJS.Timeout>();
 
+// Helper function to initialize pagination state
+  const initializePagination = (messages: any[]) => ({
+    pageSize: DEFAULT_PAGE_SIZE,
+    hasMoreMessages: messages.length > DEFAULT_PAGE_SIZE,
+    isLoadingMore: false
+  });
+
   // Helper function to save API keys to server
   const saveApiKeysToServer = (keys: Record<string, string>) => {
     console.log(`saving ${JSON.stringify({ keys })}`);
@@ -427,11 +434,12 @@ export const useStore = create<RootState>((set, get) => {
           return {
             ...p,
             conversations: [{
-              id: conversationId,
-              name: '(New Chat)',
-              lastUpdated: new Date(),
-              messages: [],
-              createdAt: new Date()
+            id: conversationId,
+            name: '(New Chat)',
+            lastUpdated: new Date(),
+            messages: [],
+            createdAt: new Date(),
+            pagination: { pageSize: DEFAULT_PAGE_SIZE, hasMoreMessages: false, isLoadingMore: false }
             }],
             updatedAt: new Date()
           };
@@ -698,16 +706,13 @@ export const useStore = create<RootState>((set, get) => {
         // Find the conversation to initialize its pagination state
         if (conversationId && state.activeProjectId) {
           const project = state.projects.find(p => p.id === state.activeProjectId);
-          const conversation = project?.conversations.find(c => c.id === conversationId);
+      const project = state.projects.find(p => p.id === state.activeProjectId);
+      const conversation = project?.conversations.find(c => c.id === conversationId);
           
-          if (conversation && !conversation.pagination) {
-            // Initialize pagination state for this conversation
-            conversation.pagination = {
-              pageSize: DEFAULT_PAGE_SIZE,
-              hasMoreMessages: conversation.messages.length > DEFAULT_PAGE_SIZE,
-              isLoadingMore: false
-            };
-          }
+      // Always initialize/update pagination state when setting active conversation
+      if (conversation) {
+        conversation.pagination = initializePagination(conversation.messages);
+      }
         }
 
         const newState = {
@@ -734,14 +739,8 @@ export const useStore = create<RootState>((set, get) => {
         return;
       }
 
-      // If no pagination state exists, initialize it
-      if (!conversation.pagination) {
-        conversation.pagination = {
-          pageSize: DEFAULT_PAGE_SIZE,
-          hasMoreMessages: conversation.messages.length > DEFAULT_PAGE_SIZE,
-          isLoadingMore: false
-        };
-      }
+      // Always initialize/update pagination state
+      conversation.pagination = initializePagination(conversation.messages);
 
       // If already loading or no more messages, return
       if (conversation.pagination.isLoadingMore || !conversation.pagination.hasMoreMessages) {
