@@ -95,15 +95,21 @@ export const AdminView = () => {
               <select
                 value={activeProject.settings.provider || 'anthropic'}
                 onChange={(e) => {
-                  if (activeProject.conversations.length > 0) {
-                    // Set isProviderLocked when first changing provider
+                  // Only lock provider if there are non-empty conversations
+                  const hasNonEmptyConversations = activeProject.conversations.some(conv =>
+                    conv.messages && conv.messages.length > 0
+                  );
+
+                  if (hasNonEmptyConversations) {
+                    // Set isProviderLocked when first changing provider with non-empty conversations
                     handleSettingsChange({
                       provider: e.target.value as ProviderType,
                       isProviderLocked: true
                     });
                   } else {
                     handleSettingsChange({
-                      provider: e.target.value as ProviderType
+                      provider: e.target.value as ProviderType,
+                      isProviderLocked: false  // Ensure provider isn't locked for new/empty projects
                     });
                   }
                 }}
