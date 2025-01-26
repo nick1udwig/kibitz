@@ -95,13 +95,13 @@ export const AdminView = () => {
               <select
                 value={activeProject.settings.provider || 'anthropic'}
                 onChange={(e) => {
-                  // Only lock provider if there are non-empty conversations
+                  // Lock provider if there are multiple conversations or any non-empty conversations
+                  const hasMultipleConversations = activeProject.conversations.length > 1;
                   const hasNonEmptyConversations = activeProject.conversations.some(conv =>
                     conv.messages && conv.messages.length > 0
                   );
 
-                  if (hasNonEmptyConversations) {
-                    // Set isProviderLocked when first changing provider with non-empty conversations
+                  if (hasMultipleConversations || hasNonEmptyConversations) {
                     handleSettingsChange({
                       provider: e.target.value as ProviderType,
                       isProviderLocked: true
@@ -109,34 +109,27 @@ export const AdminView = () => {
                   } else {
                     handleSettingsChange({
                       provider: e.target.value as ProviderType,
-                      isProviderLocked: false  // Ensure provider isn't locked for new/empty projects
+                      isProviderLocked: false
                     });
                   }
                 }}
-                disabled={activeProject.settings.isProviderLocked}
+                disabled={activeProject.settings.isProviderLocked || activeProject.conversations.length > 1 || activeProject.conversations.some(c => c.messages?.length > 0)}
                 className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${
                   activeProject.settings.isProviderLocked ? 'opacity-50' : ''
                 }`}
               >
                 <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openrouter">OpenRouter (Coming Soon)</option>
+                <option value="openrouter">OpenRouter</option>
                 <option value="openai">OpenAI (GPT-4)</option>
               </select>
             </div>
 
-            {activeProject.settings.provider === 'openrouter' && (
-              <Alert>
-                <AlertDescription>
-                  OpenRouter support is coming soon. Please use Anthropic for now.
-                </AlertDescription>
-              </Alert>
-            )}
 
             {/* Show warning if provider is locked for existing project */}
             {activeProject.settings.isProviderLocked && (
               <Alert>
                 <AlertDescription>
-                  API provider cannot be changed for existing projects. You can only configure the API key.
+                  API provider cannot be changed when you have multiple conversations or any messages. You can only configure the API key.
                 </AlertDescription>
               </Alert>
             )}
@@ -201,9 +194,9 @@ export const AdminView = () => {
                 }}
                 placeholder={
                   activeProject.settings.provider === 'openrouter'
-                    ? "⚠️ OpenRouter support coming soon"
+                    ? "Enter your OpenRouter API key"
                     : activeProject.settings.provider === 'openai'
-                    ? "⚠️ OpenAI support coming soon"
+                    ? "Enter your OpenAI API key"
                     : "⚠️ Enter your Anthropic API key to use the chat"
                 }
                 className={
@@ -213,7 +206,7 @@ export const AdminView = () => {
                     ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
                     : ""
                 }
-                disabled={activeProject.settings.provider === 'openrouter'}
+                disabled={false}
               />
             </div>
 

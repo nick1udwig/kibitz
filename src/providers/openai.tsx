@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Image from 'next/image';
 
-const DEFAULT_MODEL = 'gpt-4o';
+const DEFAULT_MODEL = 'gpt-4-turbo';
 
 export type ImageMessageContent = {
   type: 'image_url';
