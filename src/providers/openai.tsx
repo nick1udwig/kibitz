@@ -74,6 +74,7 @@ export const createOpenAIClient = (config: OpenAIConfig) => {
     apiKey: config.apiKey,
     organization: config.organizationId,
     baseURL: config.baseUrl,
+    dangerouslyAllowBrowser: true,
   });
 
   return {
