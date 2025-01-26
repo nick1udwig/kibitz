@@ -191,6 +191,27 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     setError('Operation cancelled');
   }, []);
 
+  // Function to handle loading more messages while preserving scroll position
+  const handleLoadMore = async () => {
+    if (!activeProject?.id || !activeConversation?.id) return;
+    
+    // Store current scroll position and height
+    const container = chatContainerRef.current;
+    if (!container) return;
+    
+    const oldScrollHeight = container.scrollHeight;
+    
+    // Load more messages
+    await useStore.getState().loadMoreMessages(activeProject.id, activeConversation.id);
+    
+    // After messages are loaded, restore relative scroll position
+    requestAnimationFrame(() => {
+      const newScrollHeight = container.scrollHeight;
+      const additionalHeight = newScrollHeight - oldScrollHeight;
+      container.scrollTop = container.scrollTop + additionalHeight;
+    });
+  };
+
   const handleSendMessage = async () => {
     shouldCancelRef.current = false;
     if ((!inputMessage.trim() && currentFileContent.length === 0) || !activeProject || !activeConversationId) return;
@@ -710,6 +731,20 @@ Example good titles:
   return (
     <div className="flex flex-col h-full relative">
       <div ref={chatContainerRef} className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
+        {activeConversation.pagination?.hasMoreMessages && (
+          <div className="flex justify-center mb-4">
+            <Button
+              variant="outline"
+              onClick={handleLoadMore}
+              disabled={activeConversation.pagination.isLoadingMore}
+            >
+              {activeConversation.pagination.isLoadingMore ? (
+                <Spinner className="mr-2 h-4 w-4" />
+              ) : null}
+              Load Previous Messages
+            </Button>
+          </div>
+        )}
         <div className="space-y-4 mb-4">
           {activeConversation.messages.map((message, index) => (
             <MessageItem 

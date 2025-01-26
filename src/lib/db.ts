@@ -202,7 +202,25 @@ export const loadState = async (): Promise<DbState> => {
     projectStore.index('order').openCursor().onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
       if (cursor) {
-        projects.push(cursor.value);
+        const project = cursor.value;
+        
+        // Initialize pagination for each conversation and limit initial messages
+        project.conversations = project.conversations.map(conv => {
+          const totalMessages = conv.messages.length;
+          const initialPageSize = 50; // Match DEFAULT_PAGE_SIZE from store
+          
+          return {
+            ...conv,
+            messages: conv.messages.slice(-initialPageSize), // Get most recent messages
+            pagination: {
+              pageSize: initialPageSize,
+              hasMoreMessages: totalMessages > initialPageSize,
+              isLoadingMore: false
+            }
+          };
+        });
+        
+        projects.push(project);
         cursor.continue();
       }
     };
