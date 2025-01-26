@@ -314,12 +314,41 @@ export const useStore = create<RootState>((set, get) => {
         console.log('Loading projects from IndexedDB:', JSON.stringify(state));
 
         if (hasProjects) {
+          // Migrate existing conversations to have pagination
+          const migratedProjects = state.projects.map(project => ({
+            ...project,
+            conversations: project.conversations.map(conv => {
+              if (!conv.pagination || !conv._allMessages) {
+                return {
+                  ...conv,
+                  _allMessages: conv.messages,
+                  messages: conv.messages.slice(-DEFAULT_PAGE_SIZE),
+                  pagination: {
+                    pageSize: DEFAULT_PAGE_SIZE,
+                    hasMoreMessages: conv.messages.length > DEFAULT_PAGE_SIZE,
+                    isLoadingMore: false
+                  }
+                };
+              }
+              return conv;
+            })
+          }));
+
           set({
-            projects: state.projects,
+            projects: migratedProjects,
             activeProjectId: state.activeProjectId,
             activeConversationId: state.activeProjectId && state.activeConversationId
               ? state.activeConversationId
               : null,
+          });
+
+          // Save migrated state
+          saveState({
+            projects: migratedProjects,
+            activeProjectId: state.activeProjectId,
+            activeConversationId: state.activeConversationId
+          }).catch(error => {
+            console.error('Error saving migrated state:', error);
           });
         } else {
           // Create default project with an initial conversation
@@ -328,7 +357,13 @@ export const useStore = create<RootState>((set, get) => {
             name: '(New Chat)',
             lastUpdated: new Date(),
             messages: [],
-            createdAt: new Date()
+            _allMessages: [],
+            createdAt: new Date(),
+            pagination: {
+              pageSize: DEFAULT_PAGE_SIZE,
+              hasMoreMessages: false,
+              isLoadingMore: false
+            }
           };
           const { apiKeys } = get();
           const defaultProject = {
@@ -459,6 +494,26 @@ export const useStore = create<RootState>((set, get) => {
         const apiKeysToUpdate = { ...state.apiKeys };
         let shouldUpdateApiKeys = false;
 
+        // Initialize pagination if missing
+        if (updates.conversations) {
+          updates.conversations = updates.conversations.map(conv => {
+            if (!conv.pagination) {
+              const allMessages = conv._allMessages || conv.messages;
+              return {
+                ...conv,
+                _allMessages: allMessages,
+                messages: allMessages.slice(-DEFAULT_PAGE_SIZE),
+                pagination: {
+                  pageSize: DEFAULT_PAGE_SIZE,
+                  hasMoreMessages: allMessages.length > DEFAULT_PAGE_SIZE,
+                  isLoadingMore: false
+                }
+              };
+            }
+            return conv;
+          });
+        }
+
         // Check for API key changes before updating project
         if (projectToUpdate && updates.settings) {
           if (updates.settings.apiKey !== projectToUpdate.settings.apiKey) {
@@ -552,6 +607,7 @@ export const useStore = create<RootState>((set, get) => {
                   lastUpdated: new Date(),
                   createdAt: new Date(),
                   messages: [],
+                  _allMessages: [], // Initialize complete message history
                   pagination: {
                     pageSize: DEFAULT_PAGE_SIZE,
                     hasMoreMessages: false,
@@ -583,13 +639,19 @@ export const useStore = create<RootState>((set, get) => {
           const updatedConversations = p.conversations.filter(c => c.id !== conversationId);
 
           if (updatedConversations.length === 0) {
-            const newChat = {
-              id: newChatId,
-              name: '(New Chat)',
-              lastUpdated: new Date(),
-              messages: [],
-              createdAt: new Date()
-            };
+              const newChat = {
+                id: newChatId,
+                name: '(New Chat)',
+                lastUpdated: new Date(),
+                messages: [],
+                _allMessages: [], // Initialize complete message history
+                createdAt: new Date(),
+                pagination: {
+                  pageSize: DEFAULT_PAGE_SIZE,
+                  hasMoreMessages: false,
+                  isLoadingMore: false
+                }
+              };
             return {
               ...p,
               conversations: [newChat],
@@ -734,11 +796,13 @@ export const useStore = create<RootState>((set, get) => {
         return;
       }
 
-      // If no pagination state exists, initialize it
+      // Initialize or update pagination state
+      const allMessages = conversation._allMessages || conversation.messages;
+      conversation._allMessages = allMessages;
       if (!conversation.pagination) {
         conversation.pagination = {
           pageSize: DEFAULT_PAGE_SIZE,
-          hasMoreMessages: conversation.messages.length > DEFAULT_PAGE_SIZE,
+          hasMoreMessages: allMessages.length > DEFAULT_PAGE_SIZE,
           isLoadingMore: false
         };
       }
@@ -764,7 +828,7 @@ export const useStore = create<RootState>((set, get) => {
       }));
 
       try {
-        // Use the _allMessages from the conversation
+        // Ensure we have _allMessages
         if (!conversation._allMessages) {
           // If _allMessages is not in memory, load from IndexedDB
           const fullState = await loadState();
@@ -775,6 +839,9 @@ export const useStore = create<RootState>((set, get) => {
             throw new Error('Conversation not found in database');
           }
           conversation._allMessages = fullConversation._allMessages || fullConversation.messages;
+          
+          // Update pagination state with full message count
+          conversation.pagination.hasMoreMessages = conversation._allMessages.length > conversation.messages.length;
         }
 
         // Calculate new message range

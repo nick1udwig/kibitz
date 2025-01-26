@@ -27,10 +27,9 @@ export interface ConversationBrief {
   name: string;
   lastUpdated: Date;
   messages: Message[];
-  createdAt?: Date;  // Optional to maintain compatibility with existing data
-  pagination?: PaginationState;  // Optional to maintain compatibility with existing data
-  _allMessages?: Message[];  // Full message history for pagination
-  _allMessages?: Message[];  // Internal cache of all messages
+  createdAt: Date;
+  pagination: PaginationState;  // Required now
+  _allMessages?: Message[];  // Complete message history
 }
 
 export interface Project {

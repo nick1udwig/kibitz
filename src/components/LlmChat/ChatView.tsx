@@ -731,7 +731,7 @@ Example good titles:
   return (
     <div className="flex flex-col h-full relative">
       <div ref={chatContainerRef} className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
-        {activeConversation.pagination?.hasMoreMessages && (
+        {activeConversation.pagination && activeConversation._allMessages && activeConversation.pagination.hasMoreMessages && (
           <div className="flex justify-center mb-4">
             <Button
               variant="outline"
