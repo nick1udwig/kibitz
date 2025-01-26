@@ -94,23 +94,43 @@ export const AdminView = () => {
               </label>
               <select
                 value={activeProject.settings.provider || 'anthropic'}
-                onChange={(e) => handleSettingsChange({
-                  provider: e.target.value as ProviderType
-                })}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                onChange={(e) => {
+                  if (activeProject.conversations.length > 0) {
+                    // Set isProviderLocked when first changing provider
+                    handleSettingsChange({
+                      provider: e.target.value as ProviderType,
+                      isProviderLocked: true
+                    });
+                  } else {
+                    handleSettingsChange({
+                      provider: e.target.value as ProviderType
+                    });
+                  }
+                }}
+                disabled={activeProject.settings.isProviderLocked}
+                className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${
+                  activeProject.settings.isProviderLocked ? 'opacity-50' : ''
+                }`}
               >
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="openrouter">OpenRouter (Coming Soon)</option>
-                <option value="openai">OpenAI</option>
+                <option value="openai">OpenAI (GPT-4)</option>
               </select>
             </div>
 
-            {(activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai') && (
+            {activeProject.settings.provider === 'openrouter' && (
               <Alert>
                 <AlertDescription>
-                  {activeProject.settings.provider === 'openrouter'
-                    ? "OpenRouter support is coming soon. Please use Anthropic for now."
-                    : "OpenAI support is coming soon. Please use Anthropic for now."}
+                  OpenRouter support is coming soon. Please use Anthropic for now.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Show warning if provider is locked for existing project */}
+            {activeProject.settings.isProviderLocked && (
+              <Alert>
+                <AlertDescription>
+                  API provider cannot be changed for existing projects. You can only configure the API key.
                 </AlertDescription>
               </Alert>
             )}
@@ -187,7 +207,7 @@ export const AdminView = () => {
                     ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
                     : ""
                 }
-                disabled={activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai'}
+                disabled={activeProject.settings.provider === 'openrouter'}
               />
             </div>
 

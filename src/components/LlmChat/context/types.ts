@@ -9,6 +9,7 @@ export type ProviderType = LegacyProviderType;
 export interface ProjectSettings extends LegacyProviderSettings {
   provider?: LegacyProviderType;  // Optional for backward compatibility
   providerConfig?: ProviderConfig;  // New provider configuration
+  isProviderLocked?: boolean;  // If true, provider cannot be changed after project creation
   model: string;
   groqApiKey?: string;  // API key for GROQ services
   systemPrompt: string;
