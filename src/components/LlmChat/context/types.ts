@@ -16,12 +16,19 @@ export interface ProjectSettings extends LegacyProviderSettings {
   elideToolResults: boolean;
 }
 
+export interface PaginationState {
+  pageSize: number;
+  hasMoreMessages: boolean;
+  isLoadingMore: boolean;
+}
+
 export interface ConversationBrief {
   id: string;
   name: string;
   lastUpdated: Date;
   messages: Message[];
   createdAt?: Date;  // Optional to maintain compatibility with existing data
+  pagination?: PaginationState;  // Optional to maintain compatibility with existing data
 }
 
 export interface Project {
@@ -65,6 +72,7 @@ export interface ProjectState {
   renameProject: (projectId: string, newName: string) => void;
   setActiveProject: (projectId: string | null) => void;
   setActiveConversation: (conversationId: string | null) => void;
+  loadMoreMessages: (projectId: string, conversationId: string) => Promise<void>;
 }
 
 export interface Tool {

@@ -17,6 +17,8 @@ const getDefaultModelForProvider = (provider?: string): string => {
   }
 };
 
+const DEFAULT_PAGE_SIZE = 50;
+
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   apiKey: '',
   groqApiKey: '',
@@ -549,7 +551,12 @@ export const useStore = create<RootState>((set, get) => {
                   name: name || '(New Chat)',
                   lastUpdated: new Date(),
                   createdAt: new Date(),
-                  messages: []
+                  messages: [],
+                  pagination: {
+                    pageSize: DEFAULT_PAGE_SIZE,
+                    hasMoreMessages: false,
+                    isLoadingMore: false
+                  }
                 },
                 ...p.conversations
               ],
@@ -688,6 +695,21 @@ export const useStore = create<RootState>((set, get) => {
 
     setActiveConversation: (conversationId: string | null) => {
       set(state => {
+        // Find the conversation to initialize its pagination state
+        if (conversationId && state.activeProjectId) {
+          const project = state.projects.find(p => p.id === state.activeProjectId);
+          const conversation = project?.conversations.find(c => c.id === conversationId);
+          
+          if (conversation && !conversation.pagination) {
+            // Initialize pagination state for this conversation
+            conversation.pagination = {
+              pageSize: DEFAULT_PAGE_SIZE,
+              hasMoreMessages: conversation.messages.length > DEFAULT_PAGE_SIZE,
+              isLoadingMore: false
+            };
+          }
+        }
+
         const newState = {
           ...state,
           activeConversationId: conversationId
@@ -699,6 +721,99 @@ export const useStore = create<RootState>((set, get) => {
 
         return newState;
       });
+    },
+
+    loadMoreMessages: async (projectId: string, conversationId: string) => {
+      // Get current state
+      const state = get();
+      const project = state.projects.find(p => p.id === projectId);
+      const conversation = project?.conversations.find(c => c.id === conversationId);
+
+      if (!project || !conversation) {
+        console.error('Project or conversation not found');
+        return;
+      }
+
+      // If no pagination state exists, initialize it
+      if (!conversation.pagination) {
+        conversation.pagination = {
+          pageSize: DEFAULT_PAGE_SIZE,
+          hasMoreMessages: conversation.messages.length > DEFAULT_PAGE_SIZE,
+          isLoadingMore: false
+        };
+      }
+
+      // If already loading or no more messages, return
+      if (conversation.pagination.isLoadingMore || !conversation.pagination.hasMoreMessages) {
+        return;
+      }
+
+      // Set loading state
+      set(state => ({
+        ...state,
+        projects: state.projects.map(p => p.id === projectId ? {
+          ...p,
+          conversations: p.conversations.map(c => c.id === conversationId ? {
+            ...c,
+            pagination: {
+              ...c.pagination!,
+              isLoadingMore: true
+            }
+          } : c)
+        } : p)
+      }));
+
+      try {
+        // Load messages from IndexedDB
+        const fullState = await loadState();
+        const fullProject = fullState.projects.find(p => p.id === projectId);
+        const fullConversation = fullProject?.conversations.find(c => c.id === conversationId);
+
+        if (!fullConversation) {
+          throw new Error('Conversation not found in database');
+        }
+
+        // Calculate new message range
+        const currentMessageCount = conversation.messages.length;
+        const newMessageCount = Math.min(
+          currentMessageCount + conversation.pagination.pageSize,
+          fullConversation.messages.length
+        );
+
+        // Update state with new messages and pagination info
+        set(state => ({
+          ...state,
+          projects: state.projects.map(p => p.id === projectId ? {
+            ...p,
+            conversations: p.conversations.map(c => c.id === conversationId ? {
+              ...c,
+              messages: fullConversation.messages.slice(-newMessageCount),
+              pagination: {
+                ...c.pagination!,
+                isLoadingMore: false,
+                hasMoreMessages: newMessageCount < fullConversation.messages.length
+              }
+            } : c)
+          } : p)
+        }));
+
+      } catch (error) {
+        console.error('Error loading more messages:', error);
+        // Reset loading state on error
+        set(state => ({
+          ...state,
+          projects: state.projects.map(p => p.id === projectId ? {
+            ...p,
+            conversations: p.conversations.map(c => c.id === conversationId ? {
+              ...c,
+              pagination: {
+                ...c.pagination!,
+                isLoadingMore: false
+              }
+            } : c)
+          } : p)
+        }));
+      }
     },
 
     // MCP methods
