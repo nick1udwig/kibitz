@@ -764,20 +764,24 @@ export const useStore = create<RootState>((set, get) => {
       }));
 
       try {
-        // Load messages from IndexedDB
-        const fullState = await loadState();
-        const fullProject = fullState.projects.find(p => p.id === projectId);
-        const fullConversation = fullProject?.conversations.find(c => c.id === conversationId);
+        // Use the _allMessages from the conversation
+        if (!conversation._allMessages) {
+          // If _allMessages is not in memory, load from IndexedDB
+          const fullState = await loadState();
+          const fullProject = fullState.projects.find(p => p.id === projectId);
+          const fullConversation = fullProject?.conversations.find(c => c.id === conversationId);
 
-        if (!fullConversation) {
-          throw new Error('Conversation not found in database');
+          if (!fullConversation) {
+            throw new Error('Conversation not found in database');
+          }
+          conversation._allMessages = fullConversation._allMessages || fullConversation.messages;
         }
 
         // Calculate new message range
         const currentMessageCount = conversation.messages.length;
         const newMessageCount = Math.min(
           currentMessageCount + conversation.pagination.pageSize,
-          fullConversation.messages.length
+          conversation._allMessages.length
         );
 
         // Update state with new messages and pagination info
@@ -787,11 +791,11 @@ export const useStore = create<RootState>((set, get) => {
             ...p,
             conversations: p.conversations.map(c => c.id === conversationId ? {
               ...c,
-              messages: fullConversation.messages.slice(-newMessageCount),
+              messages: conversation._allMessages.slice(-newMessageCount),
               pagination: {
                 ...c.pagination!,
                 isLoadingMore: false,
-                hasMoreMessages: newMessageCount < fullConversation.messages.length
+                hasMoreMessages: newMessageCount < conversation._allMessages.length
               }
             } : c)
           } : p)

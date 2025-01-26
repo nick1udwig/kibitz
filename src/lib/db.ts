@@ -204,19 +204,23 @@ export const loadState = async (): Promise<DbState> => {
       if (cursor) {
         const project = cursor.value;
         
-        // Initialize pagination for each conversation and limit initial messages
         project.conversations = project.conversations.map(conv => {
           const totalMessages = conv.messages.length;
           const initialPageSize = 50; // Match DEFAULT_PAGE_SIZE from store
+          const allMessages = conv.messages; // Keep full message history
+
+          // Initialize pagination if doesn't exist
+          const pagination = {
+            pageSize: initialPageSize,
+            hasMoreMessages: totalMessages > initialPageSize,
+            isLoadingMore: false
+          };
           
           return {
             ...conv,
-            messages: conv.messages.slice(-initialPageSize), // Get most recent messages
-            pagination: {
-              pageSize: initialPageSize,
-              hasMoreMessages: totalMessages > initialPageSize,
-              isLoadingMore: false
-            }
+            messages: allMessages.slice(-initialPageSize), // Get most recent messages
+            pagination,
+            _allMessages: allMessages // Store full history
           };
         });
         
