@@ -29,6 +29,7 @@ export interface ConversationBrief {
   messages: Message[];
   createdAt?: Date;  // Optional to maintain compatibility with existing data
   pagination?: PaginationState;  // Optional to maintain compatibility with existing data
+  _allMessages?: Message[];  // Full message history for pagination
   _allMessages?: Message[];  // Internal cache of all messages
 }
 
