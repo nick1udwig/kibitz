@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ProjectSettings, ProviderType } from '../context/types';
-import { getProviderModels } from '../types/provider';
+import { getProviderModels, CUSTOM_MODEL_OPTION } from '../types/provider';
 import { McpConfiguration } from './McpConfiguration';
 import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
@@ -237,17 +237,44 @@ export const AdminView = () => {
               <label className="block text-sm font-medium mb-1">
                 Model
               </label>
-              <select
-                value={activeProject.settings.model}
-                onChange={(e) => handleSettingsChange({
-                  model: e.target.value
-                })}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                {getProviderModels(activeProject.settings.provider || 'anthropic').map(model => (
-                  <option key={model} value={model}>{model}</option>
-                ))}
-              </select>
+              {activeProject.settings.model === CUSTOM_MODEL_OPTION ||
+               !getProviderModels(activeProject.settings.provider || 'anthropic').includes(activeProject.settings.model || '') ? (
+                <div className="space-y-2">
+                  <Input
+                    value={activeProject.settings.model || ''}
+                    onChange={(e) => handleSettingsChange({
+                      model: e.target.value
+                    })}
+                    placeholder="Enter custom model name..."
+                    className="w-full"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSettingsChange({
+                      model: getProviderModels(activeProject.settings.provider || 'anthropic')[0]
+                    })}
+                  >
+                    Use standard model
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <select
+                    value={activeProject.settings.model}
+                    onChange={(e) => handleSettingsChange({
+                      model: e.target.value
+                    })}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {getProviderModels(activeProject.settings.provider || 'anthropic').map(model => (
+                      <option key={model} value={model}>
+                        {model === CUSTOM_MODEL_OPTION ? '✎ Other (write-in)' : model}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div>

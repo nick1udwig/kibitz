@@ -95,6 +95,9 @@ export function extractLegacySettings(config: ProviderConfig): LegacyProviderSet
   }
 }
 
+// Constant to identify custom model option
+export const CUSTOM_MODEL_OPTION = '__custom__';
+
 // Helper function to get provider-specific model options
 export function getProviderModels(type: ProviderType, settings?: OpenAIProviderSettings | OpenRouterProviderSettings): string[] {
   const baseUrl = settings?.baseUrl;
@@ -115,20 +118,28 @@ export function getProviderModels(type: ProviderType, settings?: OpenAIProviderS
     'gpt-3.5-turbo-16k' // Larger context
   ];
 
+  let models: string[];
   switch (type) {
     case 'anthropic':
-      return [
+      models = [
         'claude-3-opus-20240229',
         'claude-3-sonnet-20240229',
         'claude-3-haiku-20240307',
         'claude-3-5-sonnet-20241022',
         'claude-3-5-haiku-20241022',
       ];
+      break;
     case 'openai':
-      return openAIModels;
+      models = openAIModels;
+      break;
     case 'openrouter':
-      return baseUrl ? openRouterModels : openAIModels;  // If OpenRouter base URL, use OpenRouter models
+      models = baseUrl ? openRouterModels : openAIModels;  // If OpenRouter base URL, use OpenRouter models
+      break;
     default:
-      return [];
+      models = [];
   }
+
+  // Add custom model option at the end
+  models.push(CUSTOM_MODEL_OPTION);
+  return models;
 }
