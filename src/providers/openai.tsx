@@ -65,8 +65,9 @@ interface StreamResponse {
 }
 
 export const createOpenAIClient = (config: OpenAIConfig) => {
-  if (!config.apiKey || config.apiKey.trim() === '') {
-    throw new Error('OpenAI API key is required. Please add your API key in Settings.');
+  const apiKey = config.apiKey?.trim();
+  if (!apiKey) {
+    throw new Error('OpenAI API key is required. Please add your API key in the Settings panel under Project Configuration.');
   }
 
   const client = new OpenAI({

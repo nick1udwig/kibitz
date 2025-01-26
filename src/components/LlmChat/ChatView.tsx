@@ -494,13 +494,37 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       systemPrompt: activeProject?.settings.systemPrompt,
     });
   } else if (provider === 'openai') {
-    client = createOpenAIClient({
-      apiKey: activeProject?.settings.openaiApiKey || '',
-      baseUrl: activeProject?.settings.openaiBaseUrl || 'https://api.openai.com/v1',
-      organizationId: activeProject?.settings.openaiOrgId || '',
-      model: activeProject?.settings.model,
-      systemPrompt: activeProject?.settings.systemPrompt,
-    });
+    const apiKey = activeProject?.settings.openaiApiKey?.trim() || '';
+    if (!apiKey) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-4">
+          <Alert>
+            <AlertDescription>
+              OpenAI API key not found. Please add your API key in Settings.
+            </AlertDescription>
+          </Alert>
+        </div>
+      );
+    }
+    try {
+      client = createOpenAIClient({
+        apiKey: apiKey,
+        baseUrl: activeProject?.settings.openaiBaseUrl || 'https://api.openai.com/v1',
+        organizationId: activeProject?.settings.openaiOrgId || '',
+        model: activeProject?.settings.model,
+        systemPrompt: activeProject?.settings.systemPrompt,
+      });
+    } catch (error) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-4">
+          <Alert>
+            <AlertDescription>
+              {error instanceof Error ? error.message : 'Failed to initialize OpenAI client. Please check your settings.'}
+            </AlertDescription>
+          </Alert>
+        </div>
+      );
+    }
   }
 
   if (!activeConversation || !client) {
