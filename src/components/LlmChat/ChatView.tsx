@@ -21,6 +21,7 @@ import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat } from '@/components/LlmChat/types/genericMessage';
+import { FunctionCall } from 'openai/resources/chat/completions';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -284,7 +285,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
       let apiFormatMessages;
       if (activeProject.settings.provider === 'openai') {
-        apiFormatMessages = toOpenAIFormat(updatedGenericMessages);
+        apiFormatMessages = toOpenAIFormat(updatedGenericMessages, toolsCached);
       } else if (activeProject.settings.provider === 'anthropic') {
         apiFormatMessages = toAnthropicFormat(updatedGenericMessages);
       } else {
@@ -512,20 +513,99 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             stream = await openai.chat.completions.create({ // Make OpenAI API stream call
               model: activeProject.settings.model || 'gpt-4o', // Or your default OpenAI model
               messages: apiFormatMessages.messages, // Use OpenAI formatted messages
-              max_tokens: 8192, // Or your desired max tokens
+              functions: apiFormatMessages.functions, // Include functions for OpenAI
+
+              // **[LOG JSON STRINGIFIED API FORMAT MESSAGES]**
               stream: true,
+              max_tokens: 8192,
             });
 
-            // **[ASYNC ITERABLE STREAM HANDLING]**
-            for await (const chunk of stream) {
-              const content = chunk?.choices?.[0]?.delta?.content || ""; // Safely access content
-              textContent.text += content;
+            let functionCallBuffer: FunctionCall | null = null;
 
-              // Update conversation with streaming message
+            for await (const chunk of stream) {
+              const content = chunk?.choices?.[0]?.delta?.content || "";
+              const functionCallDelta = chunk?.choices?.[0]?.delta?.function_call;
+
+              if (content) {
+                textContent.text += content;
+              }
+
+              if (functionCallDelta) {
+                if (!functionCallBuffer) {
+                  functionCallBuffer = functionCallDelta;
+                } else {
+                  functionCallBuffer = {
+                    name: functionCallBuffer.name || functionCallDelta.name,
+                    arguments: (functionCallBuffer.arguments || '') + (functionCallDelta.arguments || ''),
+                  };
+                }
+              }
+
               const updatedMessages = [...currentMessages, currentStreamMessage];
               updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
             }
-            // **[END ASYNC ITERABLE STREAM HANDLING]**
+
+            if (functionCallBuffer) {
+              const functionName = functionCallBuffer.name;
+              const functionArgs = JSON.parse(functionCallBuffer.arguments || '{}');
+
+              const toolUseContent: MessageContent = {
+                type: 'tool_use',
+                id: `tool_use_${Date.now()}`,
+                name: functionName as string,
+                input: functionArgs,
+              };
+
+              currentStreamMessage.content.push(toolUseContent);
+              updateConversationMessages(activeProject.id, activeConversationId, [...currentMessages, currentStreamMessage]);
+
+              try {
+                const serverWithTool = servers.find(s =>
+                  s.tools?.some(t => t.name === functionName)
+                );
+
+                if (!serverWithTool) {
+                  throw new Error(`No server found for tool ${functionName}`);
+                }
+
+                const result = await executeTool(
+                  serverWithTool.id,
+                  functionName as string,
+                  functionArgs,
+                );
+
+                const toolResultMessage: Message = {
+                  role: 'user', // Tool result is from the user/agent perspective
+                  content: [{
+                    type: 'tool_result',
+                    tool_use_id: toolUseContent.id,
+                    content: result,
+                  }],
+                  timestamp: new Date()
+                };
+
+                const updatedMessagesWithResult = [...currentMessages, currentStreamMessage, toolResultMessage];
+                updateConversationMessages(activeProject.id, activeConversationId, updatedMessagesWithResult);
+
+              } catch (toolError) {
+                const errorMessage: Message = {
+                  role: 'user',
+                  content: [{
+                    type: 'tool_result',
+                    tool_use_id: toolUseContent.id,
+                    content: `Error: ${toolError instanceof Error ? toolError.message : 'Unknown error'}`,
+                    is_error: true,
+                  }],
+                  timestamp: new Date()
+                };
+                const updatedMessagesWithError = [...currentMessages, currentStreamMessage, errorMessage];
+                updateConversationMessages(activeProject.id, activeConversationId, updatedMessagesWithError);
+              } finally {
+                setIsLoading(false);
+                wakeLock.release();
+                return;
+              }
+            }
 
           } catch (openaiError: any) { // Catch OpenAI errors
             console.error("OpenAI API error:", openaiError);
@@ -761,7 +841,7 @@ Example good titles:
         }
 
         // Break the loop if no tool use or should cancel
-        if (shouldCancelRef.current || !toolUseContent) {
+        if (shouldCancelRef.current || (activeProject.settings.provider === 'anthropic' && !toolUseContent)) {
           break;
         }
       }
