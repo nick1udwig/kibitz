@@ -263,6 +263,36 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         },
       ] as TextBlockParam[] : undefined;
 
+      // **[Existing] Get current conversation history as GenericMessage[]**
+      const currentGenericMessages: GenericMessage[] = (activeConversation?.messages || []).map(m => ({
+        role: m.role as 'user' | 'assistant' | 'system', // Ensure role is correctly typed
+        content: m.content,
+      }));
+
+      // **[Existing] Create user message as GenericMessage**
+      const userGenericMessage: GenericMessage = {
+        role: 'user',
+        content: userMessageContent,
+      };
+
+      // **[Existing] Combine current history with new user message in GenericMessage format**
+      const updatedGenericMessages = [...currentGenericMessages, userGenericMessage];
+
+      console.log("Current activeProject.settings.provider:", activeProject.settings.provider);
+
+      let apiFormatMessages;
+      const provider = activeProject.settings.provider;
+      if (provider === 'openai') {
+        apiFormatMessages = toOpenAIFormat(updatedGenericMessages);
+        console.log("Sending OpenAI formatted messages:", apiFormatMessages);
+      } else { // Default to anthropic
+        apiFormatMessages = toAnthropicFormat(
+          updatedGenericMessages,
+          systemPrompt
+        );
+        console.log("Sending Anthropic formatted messages:", apiFormatMessages);
+      }
+
       while (true) {
         const cachedApiMessages = currentMessages.filter((message, index, array) => {
           // Process messages and remove incomplete tool use interactions

@@ -18,7 +18,6 @@ interface KibitzDb extends IDBDatabase {
 }
 
 const initDb = async (): Promise<KibitzDb> => {
-  console.log(`Initializing database, version: ${DB_VERSION}`);
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -186,7 +185,7 @@ const initDb = async (): Promise<KibitzDb> => {
           console.error('Error during v5 migration:', error);
         };
       } else if (event.oldVersion < 6) {
-        // Add new providerConfig field to existing projects
+        // Migrate messages to GenericMessage format
         const transaction = (event.target as IDBOpenDBRequest).transaction;
         if (!transaction) {
           console.error('No transaction available during upgrade');
@@ -199,6 +198,22 @@ const initDb = async (): Promise<KibitzDb> => {
           const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
           if (cursor) {
             const project = cursor.value;
+
+            if (project.conversations && Array.isArray(project.conversations)) {
+              project.conversations = project.conversations.map(conversation => {
+                if (conversation.messages && Array.isArray(conversation.messages)) {
+                  conversation.messages = conversation.messages.map(message => {
+                    try {
+                      return messageToGenericMessage(message);
+                    } catch (error) {
+                      console.error('Error migrating message:', error, message);
+                      return message;
+                    }
+                  });
+                }
+                return conversation;
+              });
+            }
 
             try {
               // Convert legacy provider settings to new format
