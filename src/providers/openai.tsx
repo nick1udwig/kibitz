@@ -112,7 +112,19 @@ Example good titles:
     },
 
     streamChat: async (
-      messages: Array<{ role: string; content: string | MessageContent[] }>,
+      messages: Array<{
+        role: 'user' | 'assistant';
+        content: {
+          type: string;
+          text?: string;
+          source?: { type: 'base64'; media_type: string; data: string; };
+          id?: string;
+          name?: string;
+          input?: Record<string, unknown>;
+          tool_use_id?: string;
+          is_error?: boolean;
+        }[] | string;
+      }>,
       tools: Array<{
         type: 'function';
         function: { name: string; description: string; parameters: Record<string, unknown> };
@@ -122,8 +134,61 @@ Example good titles:
       const abortController = new AbortController();
       const content: MessageContent[] = [];
 
+      // Convert unified messages to OpenAI format
+      const convertToOpenAIFormat = (messages: Array<{ role: 'user' | 'assistant'; content: string | Array<{
+        type: string;
+        text?: string;
+        source?: {
+          type: 'base64';
+          media_type: string;
+          data: string;
+        };
+        id?: string;
+        name?: string;
+        input?: Record<string, unknown>;
+        tool_use_id?: string;
+        content?: string;
+      }> }>) => {
+        const contentToString = (content: string | Array<{
+          type: string;
+          text?: string;
+          source?: {
+            type: 'base64';
+            media_type: string;
+            data: string;
+          };
+          id?: string;
+          name?: string;
+          input?: Record<string, unknown>;
+          tool_use_id?: string;
+          content?: string;
+        }>): string => {
+          if (typeof content === 'string') return content;
+          
+          return content.map(c => {
+            switch (c.type) {
+              case 'text':
+                return c.text || '';
+              case 'tool_use':
+                return `Tool use: ${c.name} with input: ${JSON.stringify(c.input)}`;
+              case 'tool_result':
+                return `Tool result: ${c.content}`;
+              case 'image':
+                return '[Image file]';
+              default:
+                return '';
+            }
+          }).filter(Boolean).join('\n');
+        };
+
+        return messages.map(msg => ({
+          role: msg.role,
+          content: contentToString(msg.content)
+        }));
+      };
+
       const systemMessage = config.systemPrompt?.trim() ? [{
-        role: 'developer',
+        role: 'system',
         content: config.systemPrompt
       }] : [];
 
@@ -141,7 +206,7 @@ Example good titles:
         try {
           const stream = await client.chat.completions.create({
             model: config.model || DEFAULT_MODEL,
-            messages: [...systemMessage, ...messages] as Array<OpenAI.ChatCompletionMessageParam>,
+            messages: [...systemMessage, ...convertToOpenAIFormat(messages)] as Array<OpenAI.ChatCompletionMessageParam>,
             max_tokens: 8192,
             stream: true,
             tools: tools.length > 0 ? openaiTools : undefined,

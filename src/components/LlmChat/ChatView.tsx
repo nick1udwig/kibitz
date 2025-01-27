@@ -14,7 +14,45 @@ import { throttle } from 'lodash';
 import { createAnthropicClient } from '@/providers/anthropic';
 import { createOpenAIClient } from '@/providers/openai';
 import type { Tool, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
-import type { Message, MessageContent, ImageMessageContent, DocumentMessageContent } from '@/providers/anthropic';
+// Define our types using only what we need
+
+// Define unified types for our chat
+type UnifiedMessageContent = {
+  type: 'text';
+  text: string;
+  cache_control?: { type: 'ephemeral' };
+} | {
+  type: 'image';
+  source: {
+    type: 'base64';
+    media_type: string;
+    data: string;
+  };
+  fileName?: string;
+} | {
+  type: 'tool_use';
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+} | {
+  type: 'tool_result';
+  tool_use_id: string;
+  content: string;
+  is_error?: boolean;
+};
+
+type UnifiedMessage = {
+  role: 'user' | 'assistant';
+  content: UnifiedMessageContent[] | string;
+  timestamp: Date;
+  toolInput?: Record<string, unknown>;
+};
+
+// Type aliases for convenience
+type Message = UnifiedMessage;
+type MessageContent = UnifiedMessageContent;
+type ImageMessageContent = Extract<UnifiedMessageContent, { type: 'image' }>;
+type DocumentMessageContent = Extract<UnifiedMessageContent, { type: 'image' }>;
 export interface ChatViewRef {
   focus: () => void;
 }
@@ -78,10 +116,22 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   // Scroll handling logic
   useEffect(() => {
     const makeHandleScroll = async () => {
-      while (!chatContainerRef.current) {
-        console.log(`no chatContainerRef`);
+      // Try for a maximum of 12 attempts (3 seconds total)
+      let attempts = 0;
+      const maxAttempts = 12;
+
+      while (!chatContainerRef.current && attempts < maxAttempts) {
+        console.log(`no chatContainerRef (attempt ${attempts + 1}/${maxAttempts})`);
         await sleep(250);
+        attempts++;
       }
+
+      // If we still don't have the ref after max attempts, return early
+      if (!chatContainerRef.current) {
+        console.log('Failed to get chatContainerRef after max attempts');
+        return;
+      }
+
       console.log(`got chatContainerRef`);
       const container = chatContainerRef.current;
 
@@ -197,16 +247,54 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
     const provider = activeProject.settings.provider || 'anthropic';
     let currentApiKey;
+    let client;
 
+    // Determine API key and create appropriate client
     if (provider === 'openai') {
       currentApiKey = activeProject.settings.openaiApiKey;
+      if (currentApiKey?.trim()) {
+        try {
+          client = createOpenAIClient({
+            apiKey: currentApiKey,
+            baseUrl: activeProject.settings.openaiBaseUrl || 'https://api.openai.com/v1',
+            organizationId: activeProject.settings.openaiOrgId || '',
+            model: activeProject.settings.model,
+            systemPrompt: activeProject.settings.systemPrompt,
+          });
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Failed to initialize OpenAI client');
+          setIsLoading(false);
+          return;
+        }
+      }
     } else if (provider === 'openrouter') {
       currentApiKey = activeProject.settings.openRouterApiKey;
+      if (currentApiKey?.trim()) {
+        try {
+          client = createOpenAIClient({
+            apiKey: currentApiKey,
+            baseUrl: 'https://openrouter.ai/api/v1',
+            model: activeProject.settings.model,
+            systemPrompt: activeProject.settings.systemPrompt,
+          });
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Failed to initialize OpenRouter client');
+          setIsLoading(false);
+          return;
+        }
+      }
     } else {
       currentApiKey = activeProject.settings.anthropicApiKey || activeProject.settings.apiKey;
+      if (currentApiKey?.trim()) {
+        client = createAnthropicClient({
+          apiKey: currentApiKey,
+          model: activeProject.settings.model,
+          systemPrompt: activeProject.settings.systemPrompt,
+        });
+      }
     }
 
-    if (!currentApiKey?.trim()) {
+    if (!currentApiKey?.trim() || !client) {
       let providerName;
       switch (provider) {
         case 'openai': providerName = 'OpenAI'; break;
@@ -246,18 +334,14 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       setInputMessage('');
       setCurrentFileContent([]);
 
-      // retry enough times to always push past 60s (the rate limit timer):
-      //  https://github.com/anthropics/anthropic-sdk-typescript/blob/dc2591fcc8847d509760a61777fc1b79e0eab646/src/core.ts#L645
-      const anthropic = createAnthropicClient({
-        apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',
-        model: activeProject.settings.model,
-        systemPrompt: activeProject.settings.systemPrompt
-      });
-
       const toolsCached = getUniqueTools(true);
 
       while (true) {
-        const cachedApiMessages = currentMessages.filter((message, index, array) => {
+        // Convert messages for OpenAI/OpenRouter compatibility
+        const messages = currentMessages;
+
+        // Filter out incomplete tool interactions
+        const cachedApiMessages = messages.filter((message, index, array) => {
           // Process messages and remove incomplete tool use interactions
           // If content is a string, keep it
           if (typeof message.content === 'string') return true;
@@ -291,27 +375,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             );
           });
         })
-        .map((m, index, array) =>
-          index < array.length - 3 ?
-            {
-              role: m.role,
-              content: m.content,
-              toolInput: m.toolInput ? m.toolInput : undefined,
-            } :
-            {
-              role: m.role,
-              content: (typeof m.content === 'string' ?
-                [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }]
+        .map((m, index, array) => ({
+          ...m,
+          content: index < array.length - 3
+            ? m.content
+            : (typeof m.content === 'string'
+                ? [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }]
                 : m.content.map((c: MessageContent, index: number, array: MessageContent[]) =>
-                  index != array.length - 1 ? c :
-                    {
-                      ...c,
-                      cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
-                    }
-                )) as MessageContent[],
-              toolInput: m.toolInput ? m.toolInput : undefined,
-            }
-        );
+                    index != array.length - 1 ? c :
+                      {
+                        ...c,
+                        cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
+                      }
+                )) as MessageContent[]
+        }));
 
         const currentStreamMessage = {
           role: 'assistant' as const,
@@ -325,7 +402,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         };
         currentStreamMessage.content.push(textContent);
 
-        const stream = await anthropic.streamChat(
+        const stream = await client.streamChat(
           cachedApiMessages,
           toolsCached,
           (text) => {
@@ -343,7 +420,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           break;
         }
 
-
         // Handle tool use in the final response if any
         // Filter and validate text content in the final response
         const finalResponse = await stream.finalMessage();
@@ -351,7 +427,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         // Process and update final response
         const processedResponse: Message = {
           role: 'assistant',
-          content: anthropic.processMessageContent(finalResponse.content),
+          content: client.processMessageContent(finalResponse.content),
           timestamp: new Date()
         };
         currentMessages.push(processedResponse);
@@ -373,7 +449,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             [{ type: 'text' as const, text: currentMessages[0].content }] : currentMessages[0].content;
           const assistantFirstMessage = typeof currentMessages[1].content === 'string' ?
             [{ type: 'text' as const, text: currentMessages[1].content }] : currentMessages[1].content;
-          const suggestedTitle = await anthropic.generateChatTitle(userFirstMessage, assistantFirstMessage);
+          const suggestedTitle = await client.generateChatTitle(userFirstMessage, assistantFirstMessage);
           if (suggestedTitle) {
             renameConversation(activeProject.id, activeConversationId, suggestedTitle);
           }

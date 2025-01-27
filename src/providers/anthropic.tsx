@@ -1,7 +1,7 @@
 import React from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, TextBlockParam, CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages/messages';
-import type { MessageCreateParams, MessageParam } from '@anthropic-ai/sdk/resources/messages/messages';
+import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
 import Image from 'next/image';
 import { CopyButton } from '@/components/ui/copy';
 import ReactMarkdown from 'react-markdown';
@@ -9,52 +9,30 @@ import remarkGfm from 'remark-gfm';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
-export type ImageMessageContent = {
-  type: 'image';
-  source: {
-    type: 'base64';
-    media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
-    data: string;
-  };
-  fileName?: string;
+export type UnifiedContent = {
+  type: string;
+  text?: string;
+  source?: { type: 'base64'; media_type: string; data: string };
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  tool_use_id?: string;
+  content?: string;
+  is_error?: boolean;
   cache_control?: CacheControlEphemeral | null;
 };
 
-export type DocumentMessageContent = {
-  type: 'document';
-  source: {
-    type: 'base64';
-    media_type: 'application/pdf';
-    data: string;
-  };
-  fileName?: string;
-  cache_control?: CacheControlEphemeral | null;
-};
-
-export type MessageContent = {
-  type: 'text';
-  text: string;
-  cache_control?: CacheControlEphemeral | null;
-} | {
-  type: 'tool_use';
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-  cache_control?: CacheControlEphemeral | null;
-} | {
-  type: 'tool_result';
-  tool_use_id: string;
-  content: string;
-  is_error?: boolean,
-  cache_control?: CacheControlEphemeral | null;
-} | ImageMessageContent | DocumentMessageContent;
-
-export type Message = {
+export type UnifiedMessage = {
   role: 'user' | 'assistant';
-  content: MessageContent[] | string;
+  content: UnifiedContent[] | string;
   timestamp: Date;
   toolInput?: Record<string, unknown>;
 };
+
+export type Message = UnifiedMessage;
+export type MessageContent = UnifiedContent;
+export type ImageMessageContent = UnifiedContent & { type: 'image' };
+export type DocumentMessageContent = UnifiedContent & { type: 'document' };
 
 interface AnthropicConfig {
   apiKey: string;
@@ -116,7 +94,12 @@ Example good titles:
     },
 
     streamChat: async (
-      messages: MessageParam[],
+      messages: Array<{
+        role: 'user' | 'assistant';
+        content: UnifiedContent[] | string;
+        timestamp?: Date;
+        toolInput?: Record<string, unknown>;
+      }>,
       tools: Tool[] = [],
       onText?: (text: string) => void
     ): Promise<StreamResponse> => {
