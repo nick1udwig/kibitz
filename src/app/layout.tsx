@@ -2,7 +2,7 @@ import { ThemeProvider } from "./providers";
 import "./globals.css";
 
 export const metadata = {
-  title: 'Kibitz',
+  title: 'EDITOR Kib',
   description: 'Chat with LLMs that use tools',
 };
 
