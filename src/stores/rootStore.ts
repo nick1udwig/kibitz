@@ -18,13 +18,21 @@ export const getDefaultModelForProvider = (provider?: string): string => {
   }
 };
 
+const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
-  apiKey: '',
-  groqApiKey: '',
-  model: getDefaultModelForProvider('anthropic'),
+  providerConfig: {
+    anthropic: { apiKey: '', model: DEFAULT_MODEL },
+    openai: { apiKey: '', model: 'gpt-4o' },
+    openrouter: { apiKey: '', model: '' },
+    groq: { apiKey: '', model: '' },
+    perplexity: { apiKey: '', model: '' },
+  },
+  provider: 'anthropic',
+  model: DEFAULT_MODEL,
   systemPrompt: '',
-  mcpServerIds: [],
   elideToolResults: false,
+  mcpServerIds: [],
 };
 
 interface RootState extends ProjectState, McpState {
@@ -270,7 +278,6 @@ export const useStore = create<RootState>((set, get) => {
 
         // Always try to load saved servers first
         const savedServers = await loadMcpServers();
-        console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
 
         const connectedServers: McpServerConnection[] = [];
 

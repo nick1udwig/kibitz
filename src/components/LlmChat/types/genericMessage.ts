@@ -6,12 +6,30 @@ export interface GenericMessage {
   name?: string; // Ensure name is string or undefined to match with toolInput type
 }
 
-// Define the OpenAI function format - simplified
+// Define the OpenAI function format
+interface OpenAIFunctionParameter {
+  type: string;
+  properties: Record<string, {
+    type: string;
+    description?: string;
+    enum?: string[];
+  }>;
+  required?: string[];
+  additionalProperties?: boolean;
+}
+
 interface OpenAIFunction {
   type: 'function';
-  name: string; // Name directly at the top level
-  description: string; // Description directly at the top level
-  parameters: any; // Parameters directly at the top level
+  function: {
+    name: string;
+    description: string;
+    parameters: OpenAIFunctionParameter;
+  };
+}
+
+interface OpenAITool {
+  type: 'function';
+  function: OpenAIFunction['function'];
 }
 
 // Function to sanitize function names for OpenAI compatibility
@@ -19,19 +37,26 @@ function sanitizeFunctionName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase(); // Replace non-alphanumeric and non-underscore with underscore, and lowercase
 }
 
-// Function to convert Anthropic tool to OpenAI function format - simplified structure with description truncation
-function anthropicToolToOpenAIFunction(anthropicTool: any): OpenAIFunction {
+// Function to convert Anthropic tool to OpenAI function format
+function anthropicToolToOpenAIFunction(anthropicTool: any): OpenAITool {
   let description = anthropicTool.description;
   if (description && description.length > 1024) {
     console.warn(`Tool description for '${anthropicTool.name}' is too long (${description.length} characters). Truncating to 1024 characters.`);
-    description = description.substring(0, 1021) + '...'; // Truncate and add ellipsis
+    description = description.substring(0, 1021) + '...';
   }
 
   return {
     type: 'function',
-    name: sanitizeFunctionName(anthropicTool.name), // Name directly here
-    description: description, // Use potentially truncated description
-    parameters: anthropicTool.input_schema, // Parameters directly here
+    function: {
+      name: sanitizeFunctionName(anthropicTool.name),
+      description: description,
+      parameters: {
+        type: 'object',
+        properties: anthropicTool.input_schema.properties || {},
+        required: anthropicTool.input_schema.required || [],
+        additionalProperties: false
+      }
+    }
   };
 }
 
@@ -72,7 +97,14 @@ export function toOpenAIFormat(messages: GenericMessage[], tools?: any[]): any {
 
   // Convert and add tools to the payload if provided
   if (tools && tools.length > 0) {
-    openaiPayload.functions = tools.map(anthropicToolToOpenAIFunction);
+    openaiPayload.tools = tools.map(anthropicToolToOpenAIFunction);
+    // Enable function calling and set it to auto
+    openaiPayload.tool_choice = 'auto';
+    // Add function calling configuration
+    openaiPayload.function_calling = {
+      allow_nested_function_calls: true,
+      allow_multiple_function_calls: true
+    };
   }
 
   return openaiPayload;
