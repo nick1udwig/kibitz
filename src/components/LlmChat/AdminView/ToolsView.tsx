@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -8,10 +8,11 @@ import {
 } from '@/components/ui/card';
 import { useStore } from '@/stores/rootStore';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Server } from 'lucide-react';
+import { Server, ChevronRight } from 'lucide-react';
 
 const ToolsView = () => {
   const { servers } = useStore();
+  const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
 
   return (
     <div className="space-y-4 p-4">
@@ -46,16 +47,38 @@ const ToolsView = () => {
               ) : (
                 <div className="space-y-4">
                   {server.tools.map((tool) => (
-                    <div key={tool.name} className="border rounded-lg p-4">
-                      <h3 className="font-semibold mb-2">{tool.name}</h3>
-                      <p className="text-sm text-muted-foreground mb-2">{tool.description}</p>
+                    <div key={tool.name} className="border rounded-lg">
+                      <button
+                        onClick={() => {
+                          setExpandedTools(prev => ({
+                            ...prev,
+                            [tool.name]: !prev[tool.name]
+                          }));
+                        }}
+                        className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <ChevronRight 
+                            className={`h-4 w-4 transition-transform ${
+                              expandedTools[tool.name] ? 'transform rotate-90' : ''
+                            }`}
+                          />
+                          <h3 className="font-semibold">{tool.name}</h3>
+                        </div>
+                      </button>
                       
-                      {tool.input_schema && (
-                        <div className="mt-2">
-                          <h4 className="text-sm font-medium mb-1">Input Schema:</h4>
-                          <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
-                            {JSON.stringify(tool.input_schema, null, 2)}
-                          </pre>
+                      {expandedTools[tool.name] && (
+                        <div className="px-4 pb-4">
+                          <p className="text-sm text-muted-foreground mb-2">{tool.description}</p>
+                          
+                          {tool.input_schema && (
+                            <div className="mt-2">
+                              <h4 className="text-sm font-medium mb-1">Input Schema:</h4>
+                              <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
+                                {JSON.stringify(tool.input_schema, null, 2)}
+                              </pre>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
