@@ -37,7 +37,7 @@ export const AdminView = () => {
         mcpServerIds: activeServerIds
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId, servers]);
 
 
@@ -105,16 +105,6 @@ export const AdminView = () => {
               </select>
             </div>
 
-            {(activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai') && (
-              <Alert>
-                <AlertDescription>
-                  {activeProject.settings.provider === 'openrouter'
-                    ? "OpenRouter support is coming soon. Please use Anthropic for now."
-                    : "OpenAI support is coming soon. Please use Anthropic for now."}
-                </AlertDescription>
-              </Alert>
-            )}
-
             <div>
               <label className="block text-sm font-medium mb-1">
                 API Key <span className="text-red-500">*</span>
@@ -122,7 +112,7 @@ export const AdminView = () => {
               <p className="text-sm text-muted-foreground mb-2">
                 Required to chat. Get yours at{' '}
                 {(() => {
-                  switch(activeProject.settings.provider) {
+                  switch (activeProject.settings.provider) {
                     case 'openrouter':
                       return (
                         <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
@@ -150,12 +140,12 @@ export const AdminView = () => {
                   activeProject.settings.provider === 'openrouter'
                     ? activeProject.settings.openRouterApiKey || ''
                     : activeProject.settings.provider === 'openai'
-                    ? activeProject.settings.openaiApiKey || ''
-                    : activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || ''  // Fallback for backward compatibility
+                      ? activeProject.settings.openaiApiKey || ''
+                      : activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || ''  // Fallback for backward compatibility
                 }
                 onChange={(e) => {
                   const value = e.target.value.trim();
-                  switch(activeProject.settings.provider) {
+                  switch (activeProject.settings.provider) {
                     case 'openrouter':
                       handleSettingsChange({
                         openRouterApiKey: value
@@ -177,17 +167,17 @@ export const AdminView = () => {
                   activeProject.settings.provider === 'openrouter'
                     ? "⚠️ OpenRouter support coming soon"
                     : activeProject.settings.provider === 'openai'
-                    ? "⚠️ OpenAI support coming soon"
-                    : "⚠️ Enter your Anthropic API key to use the chat"
+                      ? "⚠️ Enter your OpenAI API key to use the chat"
+                      : "⚠️ Enter your Anthropic API key to use the chat"
                 }
                 className={
                   activeProject.settings.provider === 'openrouter'
                     ? ""
                     : (!activeProject.settings.anthropicApiKey?.trim() && !activeProject.settings.apiKey?.trim())
-                    ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
-                    : ""
+                      ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
+                      : ""
                 }
-                disabled={activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai'}
+                disabled={activeProject.settings.provider === 'openrouter'}
               />
             </div>
 
