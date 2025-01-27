@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
 import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square, X, ChevronDown } from 'lucide-react';
 import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
@@ -296,6 +297,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         console.warn("Unknown provider:", provider);
         apiFormatMessages = toAnthropicFormat(updatedGenericMessages); // Default to anthropic just in case, or handle error
       }
+      console.log("handleSendMessage: API formatted messages:", apiFormatMessages); // **[LOGGING]**
 
       while (true) {
         const cachedApiMessages = currentMessages.filter((message, index, array) => {
@@ -371,7 +373,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               model: DEFAULT_MODEL,
               max_tokens: 8192,
               messages: [
-                ...cachedApiMessages.filter(msg => {
+                cachedApiMessages.filter(msg => {
                   if (!Array.isArray(msg.content)) return false;
                   const toolResult = msg.content.find(c =>
                     c.type === 'tool_use' || c.type === 'tool_result'
@@ -504,18 +506,51 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           throw lastError; // Throw last error if all retries failed
         };
 
-        const stream = await streamWithRetry({
-          model: activeProject.settings.model || DEFAULT_MODEL,
-          max_tokens: 8192,
-          messages: anthropicApiMessages.messages,
-          ...(anthropicApiMessages.system && { system: anthropicApiMessages.system }),
-          ...(systemPromptContent && systemPromptContent.length > 0 && {
-            system: systemPromptContent
-          }),
-          ...(tools.length > 0 && {
-            tools: toolsCached
-          })
-        });
+        let stream;
+        if (provider === 'openai') {
+          // **[START OpenAI API CALL IMPLEMENTATION]**
+          const openai = new OpenAI({ // Initialize OpenAI client
+            apiKey: activeProject.settings.openaiApiKey, // Use OpenAI API key
+            dangerouslyAllowBrowser: true, // If running in browser
+          });
+
+          console.log("OpenAI Model from settings:", activeProject.settings.model); // **[LOGGING]**
+
+          try {
+            stream = await openai.chat.completions.create({ // Make OpenAI API stream call
+              model: activeProject.settings.model || 'gpt-4o', // Or your default OpenAI model
+              messages: apiFormatMessages.messages, // Use OpenAI formatted messages
+              max_tokens: 8192, // Or your desired max tokens
+              stream: true,
+            });
+          } catch (openaiError: any) { // Catch OpenAI errors
+            console.error("OpenAI API error:", openaiError);
+            setError(`OpenAI API error: ${openaiError.message || 'Unknown error'}`);
+            setIsLoading(false);
+            wakeLock.release();
+            return; // Exit handleSendMessage on error
+          }
+          // **[END OpenAI API CALL IMPLEMENTATION]**
+
+        } else if (provider === 'anthropic') {
+          stream = await streamWithRetry({
+            model: activeProject.settings.model || DEFAULT_MODEL,
+            max_tokens: 8192,
+            messages: anthropicApiMessages.messages,
+            ...(anthropicApiMessages.system && { system: anthropicApiMessages.system }),
+            ...(systemPromptContent && systemPromptContent.length > 0 && {
+              system: systemPromptContent
+            }),
+            ...(tools.length > 0 && {
+              tools: toolsCached
+            })
+          });
+        } else {
+          // Should not reach here as provider is checked earlier
+          setIsLoading(false);
+          wakeLock.release();
+          return;
+        }
 
         streamRef.current = stream;
 

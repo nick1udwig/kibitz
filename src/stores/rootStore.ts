@@ -6,7 +6,7 @@ import { GenericMessage, messageToGenericMessage } from '../components/LlmChat/t
 
 const generateId = () => Math.random().toString(36).substring(7);
 
-const getDefaultModelForProvider = (provider?: string): string => {
+export const getDefaultModelForProvider = (provider?: string): string => {
   switch (provider) {
     case 'openai':
       return 'gpt-4o';

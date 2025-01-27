@@ -12,6 +12,7 @@ import { getProviderModels } from '../types/provider';
 import { McpConfiguration } from './McpConfiguration';
 import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
+import { getDefaultModelForProvider } from '@/stores/rootStore';
 
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings, servers } = useStore();
@@ -50,6 +51,7 @@ export const AdminView = () => {
   }
 
   const handleSettingsChange = (settings: Partial<ProjectSettings>) => {
+    console.log("handleSettingsChange - settings received:", settings);
     // Special handling for provider changes to preserve API keys
     if (settings.provider !== undefined && settings.provider !== activeProject.settings.provider) {
       // When changing provider, ensure we preserve both API keys
@@ -63,7 +65,9 @@ export const AdminView = () => {
           // Keep legacy apiKey in sync with anthropicApiKey
           apiKey: settings.provider === 'anthropic'
             ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey)
-            : activeProject.settings.apiKey
+            : activeProject.settings.apiKey,
+          // **[FIX] Update model to default for new provider**
+          model: getDefaultModelForProvider(settings.provider)
         }
       });
     } else {
@@ -210,9 +214,12 @@ export const AdminView = () => {
               </label>
               <select
                 value={activeProject.settings.model}
-                onChange={(e) => handleSettingsChange({
-                  model: e.target.value
-                })}
+                onChange={(e) => {
+                  console.log("Model dropdown onChange event:", e.target.value);
+                  handleSettingsChange({
+                    model: e.target.value
+                  });
+                }}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 {getProviderModels(activeProject.settings.provider || 'anthropic').map(model => (
