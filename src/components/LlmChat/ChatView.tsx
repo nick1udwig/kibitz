@@ -19,6 +19,7 @@ import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
+import { GenericMessage, toAnthropicFormat, toOpenAIFormat } from '@/components/LlmChat/types/genericMessage';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -297,27 +298,27 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             );
           });
         })
-        .map((m, index, array) =>
-          index < array.length - 3 ?
-            {
-              role: m.role,
-              content: m.content,
-              toolInput: m.toolInput ? m.toolInput : undefined,
-            } :
-            {
-              role: m.role,
-              content: (typeof m.content === 'string' ?
-                [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }]
-                : m.content.map((c, index, array) =>
-                  index != array.length - 1 ? c :
-                    {
-                      ...c,
-                      cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
-                    }
-                )) as MessageContent[],
-              toolInput: m.toolInput ? m.toolInput : undefined,
-            }
-        );
+          .map((m, index, array) =>
+            index < array.length - 3 ?
+              {
+                role: m.role,
+                content: m.content,
+                toolInput: m.toolInput ? m.toolInput : undefined,
+              } :
+              {
+                role: m.role,
+                content: (typeof m.content === 'string' ?
+                  [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }]
+                  : m.content.map((c, index, array) =>
+                    index != array.length - 1 ? c :
+                      {
+                        ...c,
+                        cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
+                      }
+                  )) as MessageContent[],
+                toolInput: m.toolInput ? m.toolInput : undefined,
+              }
+          );
 
         const newestToolResultId = currentMessages
           .filter((msg): msg is Message & { content: MessageContent[] } =>
@@ -422,6 +423,17 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                 };
             });
 
+        const genericMessagesToSend: GenericMessage[] = apiMessagesToSend.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+          name: msg.toolInput // If you need to pass tool input as 'name' in generic format
+        }));
+
+        const anthropicApiMessages = toAnthropicFormat(
+          genericMessagesToSend,
+          systemPrompt // Pass system prompt separately for Anthropic format
+        );
+
         const currentStreamMessage = {
           role: 'assistant' as const,
           content: [] as MessageContent[],
@@ -461,7 +473,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         const stream = await streamWithRetry({
           model: activeProject.settings.model || DEFAULT_MODEL,
           max_tokens: 8192,
-          messages: apiMessagesToSend,
+          messages: anthropicApiMessages.messages,
+          ...(anthropicApiMessages.system && { system: anthropicApiMessages.system }),
           ...(systemPromptContent && systemPromptContent.length > 0 && {
             system: systemPromptContent
           }),
@@ -542,10 +555,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         currentMessages.push(processedResponse);
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-          // Only rename if this is a new chat getting its first messages
-          // Get the current conversation state directly from projects
-          const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-          if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
+        // Only rename if this is a new chat getting its first messages
+        // Get the current conversation state directly from projects
+        const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+        if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
           // Double check the name hasn't changed while we were processing
           const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
           if (latestConversation?.name !== '(New Chat)') {
@@ -565,8 +578,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
 User message: ${JSON.stringify(userFirstMessage)}
 Assistant response: ${Array.isArray(assistantFirstMessage)
-  ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-  : assistantFirstMessage}
+                  ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                  : assistantFirstMessage}
 
 Format: Only output the title, no quotes or explanation
 Example good titles:
@@ -988,10 +1001,10 @@ Example good titles:
                 activeProject?.settings.provider === 'openrouter'
                   ? "⚠️ OpenRouter support coming soon"
                   : !activeProject?.settings.apiKey?.trim()
-                  ? "⚠️ Set your API key in Settings to start chatting"
-                  : isLoading
-                  ? "Processing response..."
-                  : "Type your message"
+                    ? "⚠️ Set your API key in Settings to start chatting"
+                    : isLoading
+                      ? "Processing response..."
+                      : "Type your message"
               }
               onKeyDown={(e) => {
                 // Only send on Enter in desktop mode

@@ -2,9 +2,10 @@ import { Project, ConversationBrief } from '../components/LlmChat/context/types'
 import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
 import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
+import { GenericMessage, messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
 
 const DB_NAME = 'kibitz_db';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 interface DbState {
   projects: Project[];
@@ -17,6 +18,7 @@ interface KibitzDb extends IDBDatabase {
 }
 
 const initDb = async (): Promise<KibitzDb> => {
+  console.log(`Initializing database, version: ${DB_VERSION}`);
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -183,6 +185,42 @@ const initDb = async (): Promise<KibitzDb> => {
         projectStore.openCursor().onerror = (error) => {
           console.error('Error during v5 migration:', error);
         };
+      } else if (event.oldVersion < 6) {
+        // Add new providerConfig field to existing projects
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during upgrade');
+          return;
+        }
+        const projectStore = transaction.objectStore('projects');
+
+        // Migrate existing projects
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const project = cursor.value;
+
+            try {
+              // Convert legacy provider settings to new format
+              if (project.settings) {
+                // Use the helper function to convert legacy settings to new format
+                project.settings.providerConfig = convertLegacyToProviderConfig(
+                  project.settings.provider,
+                  project.settings
+                );
+                cursor.update(project);
+              }
+            } catch (error) {
+              console.error('Error updating project during v6 migration:', error);
+            }
+            cursor.continue();
+          }
+        };
+
+        // Add error handling for the cursor operation
+        projectStore.openCursor().onerror = (error) => {
+          console.error('Error during v6 migration:', error);
+        };
       }
     };
   });
@@ -268,9 +306,9 @@ const sanitizeProjectForStorage = (project: Project): Project => {
   // First convert to JSON to remove non-serializable properties
   const sanitizedProject = JSON.parse(JSON.stringify({
     ...project,
-      settings: {
-        ...project.settings,
-        mcpServerIds: project.settings.mcpServerIds || [],
+    settings: {
+      ...project.settings,
+      mcpServerIds: project.settings.mcpServerIds || [],
       // Ensure providerConfig exists by converting from legacy if needed
       providerConfig: project.settings.providerConfig || convertLegacyToProviderConfig(
         project.settings.provider,

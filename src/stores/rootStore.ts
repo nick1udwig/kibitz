@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection, Tool } from '../components/LlmChat/context/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
+import { GenericMessage, messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -489,12 +490,12 @@ export const useStore = create<RootState>((set, get) => {
               ...p,
               settings: updates.settings
                 ? {
-                    ...p.settings,
-                    ...updates.settings,
-                    mcpServerIds: updates.settings.mcpServerIds !== undefined
-                      ? updates.settings.mcpServerIds
-                      : p.settings.mcpServerIds
-                  }
+                  ...p.settings,
+                  ...updates.settings,
+                  mcpServerIds: updates.settings.mcpServerIds !== undefined
+                    ? updates.settings.mcpServerIds
+                    : p.settings.mcpServerIds
+                }
                 : p.settings,
               conversations: updatedConversations,
               updatedAt: new Date()
