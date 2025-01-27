@@ -263,6 +263,22 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         },
       ] as TextBlockParam[] : undefined;
 
+      // **[ADD LOGGING for activeProject OBJECT]**
+      console.log("Current activeProject:", activeProject);
+
+      // **[ADD MORE DETAILED LOGGING]**
+      console.log("Current activeProject.settings:", activeProject.settings); // Log settings object itself
+      if (activeProject.settings) { // Check if settings exists before accessing properties
+        console.log("typeof activeProject.settings.provider:", typeof activeProject.settings.provider); // Check type
+        console.log("Keys in activeProject.settings:", Object.keys(activeProject.settings)); // Log keys
+      } else {
+        console.log("activeProject.settings is UNDEFINED");
+      }
+
+      // **[FIX] Use provider from providerConfig.type instead of settings.provider**
+      const provider = activeProject.settings.providerConfig?.type;
+      console.log("Using provider from providerConfig:", provider);
+
       // **[Existing] Get current conversation history as GenericMessage[]**
       const currentGenericMessages: GenericMessage[] = (activeConversation?.messages || []).map(m => ({
         role: m.role as 'user' | 'assistant' | 'system', // Ensure role is correctly typed
@@ -278,19 +294,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       // **[Existing] Combine current history with new user message in GenericMessage format**
       const updatedGenericMessages = [...currentGenericMessages, userGenericMessage];
 
-      console.log("Current activeProject.settings.provider:", activeProject.settings.provider);
-
       let apiFormatMessages;
-      const provider = activeProject.settings.provider;
       if (provider === 'openai') {
         apiFormatMessages = toOpenAIFormat(updatedGenericMessages);
         console.log("Sending OpenAI formatted messages:", apiFormatMessages);
-      } else { // Default to anthropic
-        apiFormatMessages = toAnthropicFormat(
-          updatedGenericMessages,
-          systemPrompt
-        );
+      } else if (provider === 'anthropic') {
+        apiFormatMessages = toAnthropicFormat(updatedGenericMessages);
         console.log("Sending Anthropic formatted messages:", apiFormatMessages);
+      } else {
+        console.warn("Unknown provider:", provider);
+        apiFormatMessages = toAnthropicFormat(updatedGenericMessages); // Default to anthropic just in case, or handle error
       }
 
       while (true) {
