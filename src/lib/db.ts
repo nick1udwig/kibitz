@@ -325,10 +325,7 @@ const sanitizeProjectForStorage = (project: Project): Project => {
       ...project.settings,
       mcpServerIds: project.settings.mcpServerIds || [],
       // Ensure providerConfig exists by converting from legacy if needed
-      providerConfig: project.settings.providerConfig || convertLegacyToProviderConfig(
-        project.settings.provider,
-        project.settings
-      )
+      providerConfig: project.settings.providerConfig // No legacy conversion
     },
     conversations: project.conversations.map(conv => ({
       ...conv,

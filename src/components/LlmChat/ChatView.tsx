@@ -266,13 +266,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       // **[ADD LOGGING for activeProject OBJECT]**
       console.log("Current activeProject:", activeProject);
 
-      // **[ADD MORE DETAILED LOGGING]**
-      console.log("Current activeProject.settings:", activeProject.settings); // Log settings object itself
-      if (activeProject.settings) { // Check if settings exists before accessing properties
-      } else {
-        console.log("activeProject.settings is UNDEFINED");
-      }
-
       // **[FIX] Use provider from providerConfig.type instead of settings.provider**
       const provider = activeProject.settings.providerConfig?.type;
       console.log("Using provider from providerConfig:", provider);
