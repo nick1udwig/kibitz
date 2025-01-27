@@ -33,6 +33,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/typography": "^0.5.15",
+    "@types/lodash": "^4.17.14",
     "@types/node": "^20.17.11",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",

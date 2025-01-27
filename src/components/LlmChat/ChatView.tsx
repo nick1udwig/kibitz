@@ -456,7 +456,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         const genericMessagesToSend: GenericMessage[] = apiMessagesToSend.map(msg => ({
           role: msg.role,
           content: msg.content,
-          name: msg.toolInput // If you need to pass tool input as 'name' in generic format
+          name: msg.toolInput as string | undefined // If you need to pass tool input as 'name' in generic format, ensure type matches GenericMessage
         }));
 
         const anthropicApiMessages = toAnthropicFormat(

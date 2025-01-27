@@ -1,7 +1,7 @@
 export interface GenericMessage {
   role: 'user' | 'assistant' | 'system';
   content: any; // Keep it flexible for now, can be string or MessageContent[]
-  name?: string;
+  name?: string; // Ensure name is string or undefined to match with toolInput type
 }
 
 export function toAnthropicFormat(messages: GenericMessage[], systemPrompt?: string): any {
@@ -45,13 +45,13 @@ export function messageToGenericMessage(message: Message): GenericMessage {
   return {
     role: message.role as 'user' | 'assistant' | 'system', // Ensure correct role type
     content: message.content, // Directly copy content - it can be string or MessageContent[]
-    name: message.toolInput, // Map toolInput to name if it's relevant for generic format
+    name: message.toolInput as string | undefined, // Map toolInput to name if it's relevant for generic format, ensure type matches GenericMessage
   };
 }
 
 export function genericMessageToMessage(genericMessage: GenericMessage): Message {
   return {
-    role: genericMessage.role,
+    role: genericMessage.role as 'user' | 'assistant', // Correct role type for Message, system is not allowed here
     content: genericMessage.content,
     timestamp: new Date(), // You might want to preserve the original timestamp if available in GenericMessage later
     // ... any other properties in your Message type that need to be mapped or defaulted
