@@ -264,12 +264,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         },
       ] as TextBlockParam[] : undefined;
 
-      // **[ADD LOGGING for activeProject OBJECT]**
-      console.log("Current activeProject:", activeProject);
-
-      // **[FIX] Use provider from providerConfig.type instead of settings.provider**
-      const provider = activeProject.settings.providerConfig?.type;
-      console.log("Using provider from providerConfig:", provider);
+      // **[LOG PROVIDER]**
+      console.log("Using provider:", activeProject.settings.provider);
 
       // **[Existing] Get current conversation history as GenericMessage[]**
       const currentGenericMessages: GenericMessage[] = (activeConversation?.messages || []).map(m => ({
@@ -287,14 +283,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       const updatedGenericMessages = [...currentGenericMessages, userGenericMessage];
 
       let apiFormatMessages;
-      if (provider === 'openai') {
+      if (activeProject.settings.provider === 'openai') {
         apiFormatMessages = toOpenAIFormat(updatedGenericMessages);
-        console.log("Sending OpenAI formatted messages:", apiFormatMessages);
-      } else if (provider === 'anthropic') {
+      } else if (activeProject.settings.provider === 'anthropic') {
         apiFormatMessages = toAnthropicFormat(updatedGenericMessages);
-        console.log("Sending Anthropic formatted messages:", apiFormatMessages);
       } else {
-        console.warn("Unknown provider:", provider);
+        console.warn("Unknown provider:", activeProject.settings.provider);
         apiFormatMessages = toAnthropicFormat(updatedGenericMessages); // Default to anthropic just in case, or handle error
       }
       console.log("handleSendMessage: API formatted messages:", apiFormatMessages); // **[LOGGING]**
@@ -507,14 +501,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         };
 
         let stream;
-        if (provider === 'openai') {
+        if (activeProject.settings.provider === 'openai') {
           // **[START OpenAI API CALL IMPLEMENTATION]**
           const openai = new OpenAI({ // Initialize OpenAI client
             apiKey: activeProject.settings.openaiApiKey, // Use OpenAI API key
             dangerouslyAllowBrowser: true, // Allow browser usage (with caution!)
           });
-
-          console.log("OpenAI API Request Messages:", apiFormatMessages); // **[DEBUG LOGGING]**
 
           try {
             stream = await openai.chat.completions.create({ // Make OpenAI API stream call
@@ -526,7 +518,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
             // **[ASYNC ITERABLE STREAM HANDLING]**
             for await (const chunk of stream) {
-              console.log("Chunk object:", chunk); // **[LOG CHUNK OBJECT]**
               const content = chunk?.choices?.[0]?.delta?.content || ""; // Safely access content
               textContent.text += content;
 
@@ -540,14 +531,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             console.error("OpenAI API error:", openaiError);
             setError(`OpenAI API error: ${openaiError.message || 'Unknown error'}`);
           } finally {
-            console.log("Stream object:", stream); // **[INSPECT STREAM OBJECT]**
             setIsLoading(false);
             wakeLock.release();
             return; // Exit handleSendMessage on error
           }
           // **[END OpenAI API CALL IMPLEMENTATION]**
 
-        } else if (provider === 'anthropic') {
+        } else if (activeProject.settings.provider === 'anthropic') {
           stream = await streamWithRetry({
             model: activeProject.settings.model || DEFAULT_MODEL,
             max_tokens: 8192,
