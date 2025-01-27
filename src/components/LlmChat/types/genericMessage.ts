@@ -24,6 +24,12 @@ export function toAnthropicFormat(messages: GenericMessage[], systemPrompt?: str
 export function toOpenAIFormat(messages: GenericMessage[]): any {
   const openaiMessages = [];
   for (const msg of messages) {
+    if (Array.isArray(msg.content) && msg.content.some(content => content.type === 'tool_use')) {
+      continue;
+    }
+    if (Array.isArray(msg.content) && msg.content.some(content => content.type === 'tool_result')) {
+      continue;
+    }
     openaiMessages.push({
       role: msg.role, // OpenAI uses the same role names: "system", "user", "assistant"
       content: msg.content, // Assuming content is directly compatible or will be stringified

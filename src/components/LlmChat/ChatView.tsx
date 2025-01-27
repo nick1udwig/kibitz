@@ -511,10 +511,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           // **[START OpenAI API CALL IMPLEMENTATION]**
           const openai = new OpenAI({ // Initialize OpenAI client
             apiKey: activeProject.settings.openaiApiKey, // Use OpenAI API key
-            dangerouslyAllowBrowser: true, // If running in browser
+            dangerouslyAllowBrowser: true, // Allow browser usage (with caution!)
           });
 
-          console.log("OpenAI Model from settings:", activeProject.settings.model); // **[LOGGING]**
+          console.log("OpenAI API Request Messages:", apiFormatMessages); // **[DEBUG LOGGING]**
 
           try {
             stream = await openai.chat.completions.create({ // Make OpenAI API stream call
@@ -523,9 +523,24 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               max_tokens: 8192, // Or your desired max tokens
               stream: true,
             });
+
+            // **[ASYNC ITERABLE STREAM HANDLING]**
+            for await (const chunk of stream) {
+              console.log("Chunk object:", chunk); // **[LOG CHUNK OBJECT]**
+              const content = chunk?.choices?.[0]?.delta?.content || ""; // Safely access content
+              textContent.text += content;
+
+              // Update conversation with streaming message
+              const updatedMessages = [...currentMessages, currentStreamMessage];
+              updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+            }
+            // **[END ASYNC ITERABLE STREAM HANDLING]**
+
           } catch (openaiError: any) { // Catch OpenAI errors
             console.error("OpenAI API error:", openaiError);
             setError(`OpenAI API error: ${openaiError.message || 'Unknown error'}`);
+          } finally {
+            console.log("Stream object:", stream); // **[INSPECT STREAM OBJECT]**
             setIsLoading(false);
             wakeLock.release();
             return; // Exit handleSendMessage on error
@@ -545,6 +560,31 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               tools: toolsCached
             })
           });
+          // **[NODE.JS STREAM HANDLING - ANTHROPIC]**
+          stream.on('text', (text) => {
+            textContent.text += text;
+
+            // Update conversation with streaming message
+            const updatedMessages = [...currentMessages, currentStreamMessage];
+            updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+          });
+          // **[END NODE.JS STREAM HANDLING - ANTHROPIC]**
+
+          // streamRef.current = stream; // Removed - not needed with new stream handling
+
+          // Break if cancel was requested during setup
+          // if (shouldCancelRef.current) { // Removed - while loop now controls stream reading
+          //   break;
+          // }
+
+          // stream.on('text', (text) => { // **[OLD - NODE.JS STREAM HANDLING - OPENAI]**
+          //   textContent.text += text;
+          //
+          //   // Update conversation with streaming message
+          //   const updatedMessages = [...currentMessages, currentStreamMessage];
+          //   updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+          // });
+
         } else {
           // Should not reach here as provider is checked earlier
           setIsLoading(false);
@@ -558,14 +598,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         if (shouldCancelRef.current) {
           break;
         }
-
-        stream.on('text', (text) => {
-          textContent.text += text;
-
-          // Update conversation with streaming message
-          const updatedMessages = [...currentMessages, currentStreamMessage];
-          updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
-        });
 
         // Handle tool use in the final response if any
         // Filter and validate text content in the final response
