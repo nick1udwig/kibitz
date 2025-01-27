@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProjectSettings, ProviderType } from '../context/types';
 import { getProviderModels } from '../types/provider';
 import { McpConfiguration } from './McpConfiguration';
+import ToolsView from './ToolsView';
 import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
 import { getDefaultModelForProvider } from '@/stores/rootStore';
@@ -17,6 +19,7 @@ import { getDefaultModelForProvider } from '@/stores/rootStore';
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings, servers } = useStore();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [activeTab, setActiveTab] = useState('config');
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -88,7 +91,21 @@ export const AdminView = () => {
         <ThemeToggle />
       </div>
 
-      <Card>
+      <div className="mb-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="config">Configuration</TabsTrigger>
+            <TabsTrigger value="tools">Tools</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {activeTab === 'tools' ? (
+        <ToolsView />
+      ) : (
+
+        <>
+          <Card>
         <CardContent className="p-6">
           <h3 className="text-lg font-medium mb-4">API Settings</h3>
           <div className="space-y-4">
@@ -317,6 +334,8 @@ export const AdminView = () => {
           </AlertDialog>
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 };
