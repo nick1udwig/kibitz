@@ -440,10 +440,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           });
 
           try {
-            stream = await openai.chat.completions.create({ // Make OpenAI API stream call
-              model: activeProject.settings.model || 'gpt-4o', // Or your default OpenAI model
-              messages: apiFormatMessages.messages, // Use OpenAI formatted messages
-              functions: apiFormatMessages.functions, // Include functions for OpenAI
+            console.log(`calling openai with tools: ${apiFormatMessages.tools}`);
+            stream = await openai.chat.completions.create({
+              model: activeProject.settings.model || 'gpt-4o',
+              messages: apiFormatMessages.messages,
+              tools: apiFormatMessages.tools,
 
               // **[LOG JSON STRINGIFIED API FORMAT MESSAGES]**
               stream: true,
