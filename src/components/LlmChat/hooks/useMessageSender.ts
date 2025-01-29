@@ -233,8 +233,10 @@ export const useMessageSender = () => {
         };
         currentStreamMessage.content.push(textContent);
 
-        if (activeProject.settings.provider === 'openai') {
+        if (activeProject.settings.provider === 'openai' || activeProject.settings.provider === 'openrouter') {
+          const baseURL = activeProject.settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : undefined;
           const openai = new OpenAI({
+            baseURL,
             apiKey: activeProject.settings.openaiApiKey,
             dangerouslyAllowBrowser: true,
           });
