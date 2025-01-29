@@ -50,9 +50,29 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const numMessages = activeConversation?.messages.length;
   const visibleMessages = useMemo(() => {
     if (!activeConversation?.messages) return [];
-    return activeProject?.settings.showAllMessages 
-      ? activeConversation.messages 
-      : activeConversation.messages.slice(numMessages ? numMessages - MESSAGE_WINDOW : 0, numMessages);
+    
+    if (activeProject?.settings.showAllMessages) {
+      return activeConversation.messages;
+    }
+    
+    const messages = activeConversation.messages.slice(numMessages ? numMessages - MESSAGE_WINDOW : 0, numMessages);
+    
+    // Only add the hint if there are more messages than what we're showing
+    if (numMessages && numMessages > MESSAGE_WINDOW) {
+      return [
+        {
+          role: 'system',
+          content: [{
+            type: 'text',
+            text: `_Showing last ${MESSAGE_WINDOW} messages. Enable "Full History" to see all ${numMessages} messages._`
+          }],
+          timestamp: new Date()
+        },
+        ...messages
+      ];
+    }
+    
+    return messages;
   }, [activeConversation?.messages, activeProject?.settings.showAllMessages, numMessages]);
 
   const [inputMessage, setInputMessage] = useState('');
@@ -1033,7 +1053,9 @@ Example good titles:
                       }
                     }}
                   />
-                  <span className="text-xs text-muted-foreground">History</span>
+                  <div className="border border-input rounded-md px-2 py-0.5">
+                    <span className="text-xs text-muted-foreground">Full History</span>
+                  </div>
                 </div>
                 <FileUpload
                   onFileSelect={(content) => {
