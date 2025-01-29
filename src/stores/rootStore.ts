@@ -3,6 +3,7 @@ import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, Mc
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
 
+const WS_MCP_PORT = "10126";
 const generateId = () => Math.random().toString(36).substring(7);
 
 const getDefaultModelForProvider = (provider?: string): string => {
@@ -807,7 +808,7 @@ export const useStore = create<RootState>((set, get) => {
       const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
       const isOnKinode = process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT;
       const isOnLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const defaultWsUri = !isOnKinode || isOnLocalhost ? 'ws://localhost:10125'
+      const defaultWsUri = !isOnKinode || isOnLocalhost ? 'ws://localhost:' + WS_MCP_PORT
         : `${wsProtocol}://${window.location.host}${process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT}`;
       const server: McpServer = {
         id: id,
