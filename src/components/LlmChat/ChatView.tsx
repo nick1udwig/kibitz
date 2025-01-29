@@ -18,6 +18,7 @@ import { VoiceRecorder } from './VoiceRecorder';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { throttle } from 'lodash';
 import { MessageList } from './MessageList';
 
@@ -47,7 +48,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   );
 
   const numMessages = activeConversation?.messages.length;
-  const visibleMessages = useMemo(() => activeConversation?.messages.slice(numMessages ? numMessages - MESSAGE_WINDOW : 0, numMessages), [activeConversation?.messages]);
+  const visibleMessages = useMemo(() => {
+    if (!activeConversation?.messages) return [];
+    return activeProject?.settings.showAllMessages 
+      ? activeConversation.messages 
+      : activeConversation.messages.slice(numMessages ? numMessages - MESSAGE_WINDOW : 0, numMessages);
+  }, [activeConversation?.messages, activeProject?.settings.showAllMessages, numMessages]);
 
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1012,24 +1018,42 @@ Example good titles:
               disabled={isLoading || !activeProject?.settings.apiKey?.trim() || activeProject?.settings.provider === 'openrouter'}
             />
             <div className="absolute right-2 bottom-2 flex gap-1">
-              <FileUpload
-                onFileSelect={(content) => {
-                  setCurrentFileContent(prev => [...prev, { ...content }]);
-                }}
-                onUploadComplete={() => {
-                  if (inputRef.current) {
-                    inputRef.current.focus();
-                  }
-                }}
-              />
-              <VoiceRecorder
-                onTranscriptionComplete={(text) => {
-                  setInputMessage(prev => {
-                    const newText = prev.trim() ? `${prev}\n${text}` : text;
-                    return newText;
-                  });
-                }}
-              />
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={activeProject?.settings.showAllMessages ?? false}
+                    onCheckedChange={(checked) => {
+                      if (activeProject) {
+                        updateProjectSettings(activeProject.id, {
+                          settings: {
+                            ...activeProject.settings,
+                            showAllMessages: checked
+                          }
+                        });
+                      }
+                    }}
+                  />
+                  <span className="text-xs text-muted-foreground">All Messages</span>
+                </div>
+                <FileUpload
+                  onFileSelect={(content) => {
+                    setCurrentFileContent(prev => [...prev, { ...content }]);
+                  }}
+                  onUploadComplete={() => {
+                    if (inputRef.current) {
+                      inputRef.current.focus();
+                    }
+                  }}
+                />
+                <VoiceRecorder
+                  onTranscriptionComplete={(text) => {
+                    setInputMessage(prev => {
+                      const newText = prev.trim() ? `${prev}\n${text}` : text;
+                      return newText;
+                    });
+                  }}
+                />
+              </div>
             </div>
           </div>
           <Button

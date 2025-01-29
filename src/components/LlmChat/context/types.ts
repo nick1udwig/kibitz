@@ -14,6 +14,7 @@ export interface ProjectSettings extends LegacyProviderSettings {
   systemPrompt: string;
   mcpServerIds: string[];  // Store server IDs instead of full server objects
   elideToolResults: boolean;
+  showAllMessages: boolean;  // Toggle for showing all messages vs truncated view
 }
 
 export interface ConversationBrief {
