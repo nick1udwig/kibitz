@@ -3,14 +3,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
+import { Message, MessageContent } from './types';
+import { ToolCallModal } from './ToolCallModal';
 import { MessageContentRenderer } from './components/MessageContent';
 import { FileContentList } from './components/FileContentList';
 import { ChatInput } from './components/ChatInput';
 import { ScrollToBottomButton } from './components/ScrollToBottomButton';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
-import { Message, MessageContent } from './types';
-import { ToolCallModal } from './ToolCallModal';
 
 export interface ChatViewRef {
   focus: () => void;
