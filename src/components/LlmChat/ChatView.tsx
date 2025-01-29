@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useImperativeHandle, useMemo } from 'react';
 import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
@@ -19,8 +19,10 @@ import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
+import { MessageList } from './MessageList';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+const MESSAGE_WINDOW = 30;
 
 export interface ChatViewRef {
   focus: () => void;
@@ -43,6 +45,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const activeConversation = activeProject?.conversations.find(
     c => c.id === activeConversationId
   );
+
+  const numMessages = activeConversation?.messages.length;
+  const visibleMessages = useMemo(() => activeConversation?.messages.slice(numMessages ? numMessages - MESSAGE_WINDOW : 0, numMessages), [activeConversation?.messages]);
 
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -297,27 +302,27 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             );
           });
         })
-        .map((m, index, array) =>
-          index < array.length - 3 ?
-            {
-              role: m.role,
-              content: m.content,
-              toolInput: m.toolInput ? m.toolInput : undefined,
-            } :
-            {
-              role: m.role,
-              content: (typeof m.content === 'string' ?
-                [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }]
-                : m.content.map((c, index, array) =>
-                  index != array.length - 1 ? c :
-                    {
-                      ...c,
-                      cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
-                    }
-                )) as MessageContent[],
-              toolInput: m.toolInput ? m.toolInput : undefined,
-            }
-        );
+          .map((m, index, array) =>
+            index < array.length - 3 ?
+              {
+                role: m.role,
+                content: m.content,
+                toolInput: m.toolInput ? m.toolInput : undefined,
+              } :
+              {
+                role: m.role,
+                content: (typeof m.content === 'string' ?
+                  [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' } as CacheControlEphemeral }]
+                  : m.content.map((c, index, array) =>
+                    index != array.length - 1 ? c :
+                      {
+                        ...c,
+                        cache_control: { type: 'ephemeral' } as CacheControlEphemeral,
+                      }
+                  )) as MessageContent[],
+                toolInput: m.toolInput ? m.toolInput : undefined,
+              }
+          );
 
         const newestToolResultId = currentMessages
           .filter((msg): msg is Message & { content: MessageContent[] } =>
@@ -542,10 +547,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         currentMessages.push(processedResponse);
         updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-          // Only rename if this is a new chat getting its first messages
-          // Get the current conversation state directly from projects
-          const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-          if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
+        // Only rename if this is a new chat getting its first messages
+        // Get the current conversation state directly from projects
+        const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+        if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
           // Double check the name hasn't changed while we were processing
           const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
           if (latestConversation?.name !== '(New Chat)') {
@@ -565,8 +570,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
 User message: ${JSON.stringify(userFirstMessage)}
 Assistant response: ${Array.isArray(assistantFirstMessage)
-  ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-  : assistantFirstMessage}
+                  ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                  : assistantFirstMessage}
 
 Format: Only output the title, no quotes or explanation
 Example good titles:
@@ -925,7 +930,7 @@ Example good titles:
     <div className="flex flex-col h-full relative">
       <div ref={chatContainerRef} className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
         <div className="space-y-4 mb-4">
-          {activeConversation.messages.map((message, index) => (
+          {visibleMessages?.map((message, index) => (
             renderMessage(message, index)
           ))}
         </div>
@@ -988,10 +993,10 @@ Example good titles:
                 activeProject?.settings.provider === 'openrouter'
                   ? "⚠️ OpenRouter support coming soon"
                   : !activeProject?.settings.apiKey?.trim()
-                  ? "⚠️ Set your API key in Settings to start chatting"
-                  : isLoading
-                  ? "Processing response..."
-                  : "Type your message"
+                    ? "⚠️ Set your API key in Settings to start chatting"
+                    : isLoading
+                      ? "Processing response..."
+                      : "Type your message"
               }
               onKeyDown={(e) => {
                 // Only send on Enter in desktop mode
