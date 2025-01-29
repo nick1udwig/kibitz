@@ -160,11 +160,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           toolMap.set(tool.name, {
             name: tool.name,
             description: tool.description || `Tool ${tool.name}`,  // Provide default description
-            input_schema: {
-              type: 'object',
-              properties: tool.input_schema?.properties || {},
-              required: tool.input_schema?.required || [],
-            }
+            input_schema: tool.input_schema,
           });
         }
       });
