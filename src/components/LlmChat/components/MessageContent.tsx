@@ -190,18 +190,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
               className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline group"
             >
               🛠️: {content.name}
-              {toolResult && (
-                <span className="ml-1 text-xs text-muted-foreground group-hover:text-muted-foreground/80">
-                  (Click to view full details)
-                </span>
-              )}
             </button>
-
-            {toolResult && (
-              <div className="text-sm opacity-75 whitespace-pre-wrap break-words overflow-hidden text-ellipsis max-h-20">
-                {toolResult}
-              </div>
-            )}
           </div>
         </div>
       </div>
