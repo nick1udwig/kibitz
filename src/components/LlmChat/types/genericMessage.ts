@@ -33,7 +33,7 @@ interface OpenAITool {
 }
 
 // Function to sanitize function names for OpenAI compatibility
-function sanitizeFunctionName(name: string): string {
+export function sanitizeFunctionName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase(); // Replace non-alphanumeric and non-underscore with underscore, and lowercase
 }
 
@@ -81,16 +81,37 @@ export function toOpenAIFormat(messages: GenericMessage[], tools?: any[]): any {
   const openaiMessages = [];
   for (const msg of messages) {
     if (Array.isArray(msg.content) && msg.content.some(content => content.type === 'tool_use')) {
-      continue; // Skip tool_use messages for OpenAI format - they are handled differently
+      //const nonToolUseContent = msg.content.find(content => content.type !== 'tool_use');
+      const toolUseContent = msg.content.find(content => content.type === 'tool_use');
+      openaiMessages.push({
+        role: msg.role,
+        tool_calls: [
+          //...nonToolUseContent,
+          {
+            id: toolUseContent.id,
+            type: 'function',
+            function: {
+              name: toolUseContent.name,
+              arguments: JSON.stringify(toolUseContent.input),
+            },
+          }
+        ],
+        name: msg.name,
+      });
+    } else if (Array.isArray(msg.content) && msg.content.some(content => content.type === 'tool_result')) {
+      const toolResultContent = msg.content.find(content => content.type === 'tool_result');
+      openaiMessages.push({
+        role: 'tool',
+        tool_call_id: toolResultContent.tool_use_id,
+        content: toolResultContent.content,
+      });
+    } else {
+      openaiMessages.push({
+        role: msg.role,
+        content: msg.content,
+        name: msg.name,
+      });
     }
-    if (Array.isArray(msg.content) && msg.content.some(content => content.type === 'tool_result')) {
-      continue; // Skip tool_result messages for OpenAI format - they are handled differently
-    }
-    openaiMessages.push({
-      role: msg.role,
-      content: msg.content,
-      name: msg.name, // Include name if available, might be needed for function calls
-    });
   }
 
   const openaiPayload: any = { messages: openaiMessages };
@@ -126,4 +147,4 @@ export function genericMessageToMessage(genericMessage: GenericMessage): Message
     content: genericMessage.content,
     timestamp: new Date(),
   };
-} 
+}

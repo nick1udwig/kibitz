@@ -20,7 +20,7 @@ import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
-import { GenericMessage, toAnthropicFormat, toOpenAIFormat } from '@/components/LlmChat/types/genericMessage';
+import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '@/components/LlmChat/types/genericMessage';
 import { FunctionCall } from 'openai/resources/chat/completions';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
@@ -265,7 +265,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         },
       ] as TextBlockParam[] : undefined;
 
-      // **[LOG PROVIDER]**
       console.log("Using provider:", activeProject.settings.provider);
 
       // **[Existing] Get current conversation history as GenericMessage[]**
@@ -285,17 +284,40 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
       let apiFormatMessages;
       if (activeProject.settings.provider === 'openai') {
-        apiFormatMessages = toOpenAIFormat(updatedGenericMessages, toolsCached);
+        apiFormatMessages = toOpenAIFormat(updatedGenericMessages, tools);
       } else if (activeProject.settings.provider === 'anthropic') {
         apiFormatMessages = toAnthropicFormat(updatedGenericMessages);
       } else {
         console.warn("Unknown provider:", activeProject.settings.provider);
         apiFormatMessages = toAnthropicFormat(updatedGenericMessages); // Default to anthropic just in case, or handle error
       }
-      console.log("handleSendMessage: API formatted messages:", apiFormatMessages); // **[LOGGING]**
+
+      // Helper function to handle stream with retries
+      const streamWithRetry = async (params: MessageCreateParams) => {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 12; attempt++) { // Try for 1 minute (12 * 5 seconds)
+          try {
+            const stream = await anthropic.messages.stream(params);
+            return stream;
+          } catch (error) {
+            lastError = error;
+            // Check if error has overloaded_error type
+            if (typeof error === 'object' && error !== null) {
+              const errorObj = error as { error?: { type?: string }; status?: number };
+              const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
+              if (isOverloaded && attempt < 11) { // Don't wait on last attempt
+                await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+                continue;
+              }
+            }
+            throw error; // Throw non-overloaded errors immediately
+          }
+        }
+        throw lastError; // Throw last error if all retries failed
+      };
 
       while (true) {
-        const cachedApiMessages = currentMessages.filter((message, index, array) => {
+        const apiMessagesToSend = currentMessages.filter((message, index, array) => {
           // Process messages and remove incomplete tool use interactions
           // If content is a string, keep it
           if (typeof message.content === 'string') return true;
@@ -330,7 +352,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           });
         })
           .map((m, index, array) =>
-            index < array.length - 3 ?
+            activeProject.settings.provider !== 'anthropic' || index < array.length - 3 ?
               {
                 role: m.role,
                 content: m.content,
@@ -351,49 +373,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               }
           );
 
-        const newestToolResultId = currentMessages
-          .filter((msg): msg is Message & { content: MessageContent[] } =>
-            Array.isArray(msg.content)
-          )
-          .flatMap(msg => msg.content)
-          .filter((content): content is MessageContent & { tool_use_id: string } =>
-            'tool_use_id' in content && content.type === 'tool_result'
-          )
-          .map(content => content.tool_use_id)
-          .pop();
-
-        const apiMessagesToSend = !activeProject.settings.elideToolResults ? cachedApiMessages :
-          cachedApiMessages
-            .map(msg => {
-              if (!Array.isArray(msg.content)) return msg;
-
-              const toolResult = msg.content.find(c =>
-                c.type === 'tool_result'
-              );
-              if (!toolResult) return msg;
-
-              const toolUseId = (toolResult as { tool_use_id: string }).tool_use_id;
-              return toolUseId === newestToolResultId || savedToolResults.has(toolUseId) ?
-                msg :
-                {
-                  ...msg,
-                  content: [{
-                    ...msg.content[0],
-                    content: 'elided',
-                  }],
-                };
-            });
-
         const genericMessagesToSend: GenericMessage[] = apiMessagesToSend.map(msg => ({
           role: msg.role,
           content: msg.content,
           name: msg.toolInput as string | undefined // If you need to pass tool input as 'name' in generic format, ensure type matches GenericMessage
         }));
-
-        const anthropicApiMessages = toAnthropicFormat(
-          genericMessagesToSend,
-          systemPrompt // Pass system prompt separately for Anthropic format
-        );
 
         const currentStreamMessage = {
           role: 'assistant' as const,
@@ -407,101 +391,132 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         };
         currentStreamMessage.content.push(textContent);
 
-        // Helper function to handle stream with retries
-        const streamWithRetry = async (params: MessageCreateParams) => {
-          let lastError: unknown;
-          for (let attempt = 0; attempt < 12; attempt++) { // Try for 1 minute (12 * 5 seconds)
-            try {
-              const stream = await anthropic.messages.stream(params);
-              return stream;
-            } catch (error) {
-              lastError = error;
-              // Check if error has overloaded_error type
-              if (typeof error === 'object' && error !== null) {
-                const errorObj = error as { error?: { type?: string }; status?: number };
-                const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-                if (isOverloaded && attempt < 11) { // Don't wait on last attempt
-                  await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-                  continue;
-                }
-              }
-              throw error; // Throw non-overloaded errors immediately
-            }
-          }
-          throw lastError; // Throw last error if all retries failed
-        };
-
         let stream;
         if (activeProject.settings.provider === 'openai') {
-          // **[START OpenAI API CALL IMPLEMENTATION]**
-          const openai = new OpenAI({ // Initialize OpenAI client
-            apiKey: activeProject.settings.openaiApiKey, // Use OpenAI API key
-            dangerouslyAllowBrowser: true, // Allow browser usage (with caution!)
+          const openai = new OpenAI({
+            apiKey: activeProject.settings.openaiApiKey,
+            dangerouslyAllowBrowser: true,
           });
 
           try {
-            console.log(`calling openai with tools: ${apiFormatMessages.tools}`);
+            const openAIApiMessages = toOpenAIFormat(genericMessagesToSend, tools);
             stream = await openai.chat.completions.create({
               model: activeProject.settings.model || 'gpt-4o',
-              messages: apiFormatMessages.messages,
+              messages: openAIApiMessages.messages,
               tools: apiFormatMessages.tools,
-
-              // **[LOG JSON STRINGIFIED API FORMAT MESSAGES]**
               stream: true,
-              max_tokens: 8192,
+              max_tokens: 4096,
             });
 
             let functionCallBuffer: FunctionCall | null = null;
 
-            for await (const chunk of stream) {
-              const content = chunk?.choices?.[0]?.delta?.content || "";
-              const functionCallDelta = chunk?.choices?.[0]?.delta?.function_call;
+            // TODO get types to play nice
+            //streamRef.current = stream;
 
-              if (content) {
-                textContent.text += content;
+            for await (const chunk of stream) {
+              if (shouldCancelRef.current) {
+                // Break if cancel was requested
+                break;
               }
 
+              const content = chunk?.choices?.[0]?.delta?.content;
+              const functionCallDelta = chunk?.choices?.[0]?.delta?.tool_calls;
+
               if (functionCallDelta) {
+                const delta = functionCallDelta[0];
                 if (!functionCallBuffer) {
-                  functionCallBuffer = functionCallDelta;
+                  functionCallBuffer = delta.function;
                 } else {
                   functionCallBuffer = {
-                    name: functionCallBuffer.name || functionCallDelta.name,
-                    arguments: (functionCallBuffer.arguments || '') + (functionCallDelta.arguments || ''),
+                    name: functionCallBuffer.name || delta.function?.name,
+                    arguments: (functionCallBuffer.arguments || '') + (delta.function?.arguments || ''),
                   };
                 }
               }
 
-              const updatedMessages = [...currentMessages, currentStreamMessage];
-              updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+              if (content) {
+                textContent.text += content;
+                const updatedMessages = [...currentMessages, currentStreamMessage];
+                updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+              }
             }
 
             if (functionCallBuffer) {
               const functionName = functionCallBuffer.name;
               const functionArgs = JSON.parse(functionCallBuffer.arguments || '{}');
 
+              const serverWithTool = servers.find(s =>
+                s.tools?.some(t => sanitizeFunctionName(t.name) === functionName)
+              );
+
+              const unsanitizedTool = serverWithTool?.tools?.find(t => sanitizeFunctionName(t.name) === functionName);
+
+              if (!serverWithTool || ! unsanitizedTool) {
+                throw new Error(`No server found for tool ${functionName}`);
+              }
+
               const toolUseContent: MessageContent = {
                 type: 'tool_use',
                 id: `tool_use_${Date.now()}`,
-                name: functionName as string,
+                name: unsanitizedTool.name as string,
                 input: functionArgs,
               };
 
-              currentStreamMessage.content.push(toolUseContent);
+              if (currentStreamMessage.content.length == 1 && currentStreamMessage.content[0].type === 'text' && currentStreamMessage.content[0].text === '') {
+                currentStreamMessage.content = [toolUseContent];
+              } else {
+                currentStreamMessage.content.push(toolUseContent);
+              }
               updateConversationMessages(activeProject.id, activeConversationId, [...currentMessages, currentStreamMessage]);
 
-              try {
-                const serverWithTool = servers.find(s =>
-                  s.tools?.some(t => t.name === functionName)
-                );
+              // Only rename if this is a new chat getting its first messages
+              // Get the current conversation state directly from projects
+              const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+              if (currentConversation && currentMessages.length === 3 && currentConversation.name === '(New Chat)') {
+                const userFirstMessage = currentMessages[0].content;
+                const assistantFirstMessage = currentMessages[1].content;
 
-                if (!serverWithTool) {
-                  throw new Error(`No server found for tool ${functionName}`);
+
+                const summaryResponse = await openai.chat.completions.create({
+                  model: activeProject.settings.model || 'gpt-4o',
+                  messages: [{
+                    role: "user",
+                    content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
+
+User message: ${JSON.stringify(userFirstMessage)}
+Assistant response: ${Array.isArray(assistantFirstMessage)
+                        ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                        : assistantFirstMessage}
+
+Format: Only output the title, no quotes or explanation
+Example good titles:
+- React Router Setup
+- Python Script Optimization
+- Database Schema Design
+- ML Model Training
+- Docker Container Networking`
+                  }],
+                  max_tokens: 20,
+                });
+
+                if (summaryResponse.choices[0].message.content) {
+                  const suggestedTitle = summaryResponse.choices[0].message.content
+                    .replace(/["']/g, '')
+                    .replace('title:', '')
+                    .replace('Title:', '')
+                    .replace('title', '')
+                    .replace('Title', '')
+                    .trim();
+                  if (suggestedTitle) {
+                    renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+                  }
                 }
+              }
 
+              try {
                 const result = await executeTool(
                   serverWithTool.id,
-                  functionName as string,
+                  unsanitizedTool.name as string,
                   functionArgs,
                 );
 
@@ -515,8 +530,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                   timestamp: new Date()
                 };
 
-                const updatedMessagesWithResult = [...currentMessages, currentStreamMessage, toolResultMessage];
-                updateConversationMessages(activeProject.id, activeConversationId, updatedMessagesWithResult);
+                if (currentStreamMessage) {
+                  currentMessages.push(currentStreamMessage);
+                }
+                currentMessages.push(toolResultMessage);
+                updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
               } catch (toolError) {
                 const errorMessage: Message = {
@@ -531,24 +549,68 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
                 };
                 const updatedMessagesWithError = [...currentMessages, currentStreamMessage, errorMessage];
                 updateConversationMessages(activeProject.id, activeConversationId, updatedMessagesWithError);
-              } finally {
-                setIsLoading(false);
-                wakeLock.release();
-                return;
               }
+            } else {
+              currentMessages.push(currentStreamMessage);
+              updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+
+              // Only rename if this is a new chat getting its first messages
+              // Get the current conversation state directly from projects
+              const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+              if (currentConversation && currentMessages.length === 3 && currentConversation.name === '(New Chat)') {
+                const userFirstMessage = currentMessages[0].content;
+                const assistantFirstMessage = currentMessages[1].content;
+
+                const summaryResponse = await openai.chat.completions.create({
+                  model: activeProject.settings.model || 'gpt-4o',
+                  messages: [{
+                    role: "user",
+                    content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
+
+User message: ${JSON.stringify(userFirstMessage)}
+Assistant response: ${Array.isArray(assistantFirstMessage)
+                        ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                        : assistantFirstMessage}
+
+Format: Only output the title, no quotes or explanation
+Example good titles:
+- React Router Setup
+- Python Script Optimization
+- Database Schema Design
+- ML Model Training
+- Docker Container Networking`
+                  }],
+                  max_tokens: 20,
+                });
+
+                if (summaryResponse.choices[0].message.content) {
+                  const suggestedTitle = summaryResponse.choices[0].message.content
+                    .replace(/["']/g, '')
+                    .replace('title:', '')
+                    .replace('Title:', '')
+                    .replace('title', '')
+                    .replace('Title', '')
+                    .trim();
+                  if (suggestedTitle) {
+                    renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+                  }
+                }
+              }
+
+              break;
             }
 
           } catch (openaiError: any) { // Catch OpenAI errors
             console.error("OpenAI API error:", openaiError);
             setError(`OpenAI API error: ${openaiError.message || 'Unknown error'}`);
-          } finally {
-            setIsLoading(false);
-            wakeLock.release();
-            return; // Exit handleSendMessage on error
           }
-          // **[END OpenAI API CALL IMPLEMENTATION]**
 
         } else if (activeProject.settings.provider === 'anthropic') {
+          const anthropicApiMessages = toAnthropicFormat(
+            genericMessagesToSend,
+            systemPrompt,
+          );
+
           stream = await streamWithRetry({
             model: activeProject.settings.model || DEFAULT_MODEL,
             max_tokens: 8192,
@@ -569,70 +631,27 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             const updatedMessages = [...currentMessages, currentStreamMessage];
             updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
           });
-          // **[END NODE.JS STREAM HANDLING - ANTHROPIC]**
 
-          // streamRef.current = stream; // Removed - not needed with new stream handling
+          streamRef.current = stream;
 
           // Break if cancel was requested during setup
-          // if (shouldCancelRef.current) { // Removed - while loop now controls stream reading
-          //   break;
-          // }
-
-          // stream.on('text', (text) => { // **[OLD - NODE.JS STREAM HANDLING - OPENAI]**
-          //   textContent.text += text;
-          //
-          //   // Update conversation with streaming message
-          //   const updatedMessages = [...currentMessages, currentStreamMessage];
-          //   updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
-          // });
-
-        } else {
-          // Should not reach here as provider is checked earlier
-          setIsLoading(false);
-          wakeLock.release();
-          return;
-        }
-
-        streamRef.current = stream;
-
-        // Break if cancel was requested during setup
-        if (shouldCancelRef.current) {
-          break;
-        }
-
-        // Handle tool use in the final response if any
-        // Filter and validate text content in the final response
-        const finalResponse = await stream.finalMessage();
-
-        // Process content to handle empty text blocks
-        const processedContent = finalResponse.content.map((content: MessageContent) => {
-          if (!content['type']) {
-            return content;
-          }
-          // Keep non-text content
-          if (content.type !== 'text') {
-            return content;
+          if (shouldCancelRef.current) {
+            break;
           }
 
-          // Check if text content is purely whitespace
-          const isWhitespace = content.text.trim().length === 0;
+          // Handle tool use in the final response if any
+          // Filter and validate text content in the final response
+          const finalResponse = await stream.finalMessage();
 
-          // If there's only one content block and it's whitespace, replace with "empty"
-          if (isWhitespace && finalResponse.content.length === 1) {
-            return {
-              ...content,
-              text: 'empty',
-            } as MessageContent;
-          }
-          return content;
-        })
-          .filter((content: MessageContent) => {
+
+          // Process content to handle empty text blocks
+          const processedContent = finalResponse.content.map((content: MessageContent) => {
             if (!content['type']) {
-              return true;
+              return content;
             }
             // Keep non-text content
             if (content.type !== 'text') {
-              return true;
+              return content;
             }
 
             // Check if text content is purely whitespace
@@ -640,48 +659,62 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
             // If there's only one content block and it's whitespace, replace with "empty"
             if (isWhitespace && finalResponse.content.length === 1) {
-              console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
-              content.text = 'empty';
-              return true;
+              return {
+                ...content,
+                text: 'empty',
+              } as MessageContent;
             }
+            return content;
+          })
+            .filter((content: MessageContent) => {
+              if (!content['type']) {
+                return true;
+              }
+              // Keep non-text content
+              if (content.type !== 'text') {
+                return true;
+              }
 
-            // For multiple content blocks, drop purely whitespace ones
-            return !isWhitespace;
-          });
+              // Check if text content is purely whitespace
+              const isWhitespace = content.text.trim().length === 0;
 
-        const processedResponse = {
-          ...finalResponse,
-          content: processedContent
-        };
+              // If there's only one content block and it's whitespace, replace with "empty"
+              if (isWhitespace && finalResponse.content.length === 1) {
+                console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
+                content.text = 'empty';
+                return true;
+              }
 
-        currentMessages.push(processedResponse);
-        updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+              // For multiple content blocks, drop purely whitespace ones
+              return !isWhitespace;
+            });
 
-        // Only rename if this is a new chat getting its first messages
-        // Get the current conversation state directly from projects
-        const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-        if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
-          // Double check the name hasn't changed while we were processing
-          const latestConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
-          if (latestConversation?.name !== '(New Chat)') {
-            console.log('Title already changed, skipping generation');
-            return;
-          }
+          const processedResponse = {
+            ...finalResponse,
+            content: processedContent
+          };
 
-          const userFirstMessage = currentMessages[0].content;
-          const assistantFirstMessage = currentMessages[1].content;
+          currentMessages.push(processedResponse);
+          updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-          const summaryResponse = await anthropic.messages.create({
-            model: activeProject.settings.model || DEFAULT_MODEL,
-            max_tokens: 20,
-            messages: [{
-              role: "user",
-              content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
+          // Only rename if this is a new chat getting its first messages
+          // Get the current conversation state directly from projects
+          const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
+          if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
+            const userFirstMessage = currentMessages[0].content;
+            const assistantFirstMessage = currentMessages[1].content;
+
+            const summaryResponse = await anthropic.messages.create({
+              model: activeProject.settings.model || DEFAULT_MODEL,
+              max_tokens: 20,
+              messages: [{
+                role: "user",
+                content: `Generate a concise, specific title (3-4 words max) that accurately captures the main topic or purpose of this conversation. Use key technical terms when relevant. Avoid generic words like 'conversation', 'chat', or 'help'.
 
 User message: ${JSON.stringify(userFirstMessage)}
 Assistant response: ${Array.isArray(assistantFirstMessage)
-                  ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
-                  : assistantFirstMessage}
+                    ? assistantFirstMessage.filter(c => c.type === 'text').map(c => c.type === 'text' ? c.text : '').join(' ')
+                    : assistantFirstMessage}
 
 Format: Only output the title, no quotes or explanation
 Example good titles:
@@ -690,89 +723,100 @@ Example good titles:
 - Database Schema Design
 - ML Model Training
 - Docker Container Networking`
-            }]
-          });
+              }]
+            });
 
-          const type = summaryResponse.content[0].type;
-          if (type == 'text') {
-            const suggestedTitle = summaryResponse.content[0].text
-              .replace(/["']/g, '')
-              .replace('title:', '')
-              .replace('Title:', '')
-              .replace('title', '')
-              .replace('Title', '')
-              .trim();
-            if (suggestedTitle) {
-              renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+            const type = summaryResponse.content[0].type;
+            if (type == 'text') {
+              const suggestedTitle = summaryResponse.content[0].text
+                .replace(/["']/g, '')
+                .replace('title:', '')
+                .replace('Title:', '')
+                .replace('title', '')
+                .replace('Title', '')
+                .trim();
+              if (suggestedTitle) {
+                renameConversation(activeProject.id, activeConversationId, suggestedTitle);
+              }
             }
           }
-        }
 
-        // Check for and handle tool use
-        const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
-        if (toolUseContent && toolUseContent.type === 'tool_use') {
-          try {
-            // Break if cancel was requested before tool execution
-            if (shouldCancelRef.current) {
+          // Check for and handle tool use
+          const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
+          if (toolUseContent && toolUseContent.type === 'tool_use') {
+            try {
+              // Break if cancel was requested before tool execution
+              if (shouldCancelRef.current) {
+                break;
+              }
+
+              const serverWithTool = servers.find(s =>
+                s.tools?.some(t => t.name === toolUseContent.name)
+              );
+
+              if (!serverWithTool) {
+                throw new Error(`No server found for tool ${toolUseContent.name}`);
+              }
+
+              const result = await executeTool(
+                serverWithTool.id,
+                toolUseContent.name,
+                toolUseContent.input as Record<string, unknown>,
+              );
+
+              // Check cancel after tool execution
+              if (shouldCancelRef.current) {
+                break;
+              }
+
+              const toolResultMessage: Message = {
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: toolUseContent.id,
+                  content: result,
+                }],
+                timestamp: new Date()
+              };
+
+              currentMessages.push(toolResultMessage);
+              updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+
+              // Continue the conversation with the tool result if not cancelled
+              if (!shouldCancelRef.current) {
+                continue;
+              }
               break;
+            } catch (error) {
+              const errorMessage: Message = {
+                role: 'user',
+                content: [{
+                  type: 'tool_result',
+                  tool_use_id: toolUseContent.id,
+                  content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  is_error: true,
+                }],
+                timestamp: new Date()
+              };
+
+              currentMessages.push(errorMessage);
+              updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
             }
+          }
 
-            const serverWithTool = servers.find(s =>
-              s.tools?.some(t => t.name === toolUseContent.name)
-            );
-
-            if (!serverWithTool) {
-              throw new Error(`No server found for tool ${toolUseContent.name}`);
-            }
-
-            const result = await executeTool(
-              serverWithTool.id,
-              toolUseContent.name,
-              toolUseContent.input as Record<string, unknown>,
-            );
-
-            // Check cancel after tool execution
-            if (shouldCancelRef.current) {
-              break;
-            }
-
-            const toolResultMessage: Message = {
-              role: 'user',
-              content: [{
-                type: 'tool_result',
-                tool_use_id: toolUseContent.id,
-                content: result,
-              }],
-              timestamp: new Date()
-            };
-
-            currentMessages.push(toolResultMessage);
-            updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
-
-            // Continue the conversation with the tool result if not cancelled
-            if (!shouldCancelRef.current) {
-              continue;
-            }
+          // Break the loop if no tool use or should cancel
+          if (!toolUseContent) {
             break;
-          } catch (error) {
-            const errorMessage: Message = {
-              role: 'user',
-              content: [{
-                type: 'tool_result',
-                tool_use_id: toolUseContent.id,
-                content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                is_error: true,
-              }],
-              timestamp: new Date()
-            };
-
-            currentMessages.push(errorMessage);
-            updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
           }
+
+        } else {
+          // Should not reach here as provider is checked earlier
+          setIsLoading(false);
+          wakeLock.release();
+          return;
         }
 
-        // Break the loop if no tool use or should cancel
-        if (shouldCancelRef.current || (activeProject.settings.provider === 'anthropic' && !toolUseContent)) {
+        if (shouldCancelRef.current) {
           break;
         }
       }
