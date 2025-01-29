@@ -39,7 +39,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   // Use custom hooks
   useFocusControl();
-  const { isLoading, error, handleSendMessage } = useMessageSender();
+  const { isLoading, error, handleSendMessage, cancelCurrentCall } = useMessageSender();
   const { chatContainerRef, isAtBottom, scrollToBottom } = useScrollControl({
     messages: activeConversation?.messages || []
   });
@@ -146,6 +146,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           onChange={setInputMessage}
           onSend={handleSubmit}
           isLoading={isLoading}
+          onStop={cancelCurrentCall}
           isDisabled={!activeProjectId || !activeConversationId}
           onFileSelect={(content) => {
             setCurrentFileContent(prev => [...prev, { ...content }]);

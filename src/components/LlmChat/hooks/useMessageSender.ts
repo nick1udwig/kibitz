@@ -548,7 +548,7 @@ Format: Only output the title, no quotes or explanation`
                 content: [{
                   type: 'tool_result',
                   tool_use_id: toolUseContent.id,
-                  content: result,
+                  content: typeof result === 'string' ? result : JSON.stringify(result),
                 }],
                 timestamp: new Date()
               };

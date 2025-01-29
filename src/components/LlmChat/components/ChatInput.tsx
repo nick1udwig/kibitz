@@ -10,6 +10,7 @@ interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
+  onStop?: () => void;
   isLoading: boolean;
   isDisabled: boolean;
   onFileSelect: (content: MessageContent) => void;
@@ -20,6 +21,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   value,
   onChange,
   onSend,
+  onStop,
   isLoading,
   isDisabled,
   onFileSelect,
@@ -73,9 +75,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       </div>
       <Button
-        onClick={onSend}
-        disabled={isDisabled}
-        className={`self-end relative ${isLoading ? 'bg-muted' : ''}`}
+        onClick={isLoading ? onStop : onSend}
+        disabled={isDisabled || (isLoading && !onStop)}
+        className={`self-end relative ${isLoading ? 'bg-destructive hover:bg-destructive/90' : ''}`}
       >
         {isLoading ? (
           <Square className="w-4 h-4" />
