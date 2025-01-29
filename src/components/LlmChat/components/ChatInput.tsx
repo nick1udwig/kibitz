@@ -43,7 +43,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             }
           }}
           ref={inputRef}
-          className="pr-20"
+          className={`pr-20 ${isLoading ? 'bg-muted text-muted-foreground' : ''}`}
           maxRows={8}
           disabled={isDisabled || isLoading}
         />
@@ -67,7 +67,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       <Button
         onClick={onSend}
         disabled={isDisabled}
-        className="self-end relative"
+        className={`self-end relative ${isLoading ? 'bg-muted' : ''}`}
       >
         {isLoading ? (
           <Square className="w-4 h-4" />
