@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection, Tool } from '../components/LlmChat/context/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
-import { GenericMessage, messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -22,11 +21,10 @@ const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   providerConfig: {
-    anthropic: { apiKey: '', model: DEFAULT_MODEL },
-    openai: { apiKey: '', model: 'gpt-4o' },
-    openrouter: { apiKey: '', model: '' },
-    groq: { apiKey: '', model: '' },
-    perplexity: { apiKey: '', model: '' },
+    type: 'anthropic',
+    settings: {
+      apiKey: '',
+    }
   },
   provider: 'anthropic',
   model: DEFAULT_MODEL,
@@ -202,7 +200,7 @@ export const useStore = create<RootState>((set, get) => {
               }
               const tools = response.result.tools.map((tool: Tool) => ({
                 ...tool,
-                input_schema: tool.inputSchema,
+                input_schema: tool.input_schema,
               }));
               const connectedServer = {
                 ...server,

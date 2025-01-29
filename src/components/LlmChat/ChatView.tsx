@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useImperativeHandle } 
 import Image from 'next/image';
 import { Anthropic } from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import { Tool, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
+import type { Tool as AnthropicToolType, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Send, Square, X, ChevronDown } from 'lucide-react';
 import type { MessageCreateParams } from '@anthropic-ai/sdk/resources/messages/messages';
 import { FileUpload } from './FileUpload';
@@ -20,8 +20,7 @@ import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
-import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '@/components/LlmChat/types/genericMessage';
-import { FunctionCall } from 'openai/resources/chat/completions';
+import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName, FunctionCall, toOpenAITool } from '@/components/LlmChat/types/genericMessage';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -149,19 +148,23 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       return [];
     }
 
-    const toolMap = new Map<string, Tool>();
+    const toolMap = new Map<string, AnthropicToolType>();
 
     servers
       .filter(server =>
         activeProject.settings.mcpServerIds.includes(server.id)
       )
       .flatMap(s => s.tools || [])
-      .forEach((tool: Tool) => {
+      .forEach((tool: AnthropicToolType) => {
         if (!toolMap.has(tool.name)) {
           toolMap.set(tool.name, {
             name: tool.name,
-            description: tool.description,
-            input_schema: tool.input_schema
+            description: tool.description || `Tool ${tool.name}`,  // Provide default description
+            input_schema: {
+              type: 'object',
+              properties: tool.input_schema?.properties || {},
+              required: tool.input_schema?.required || [],
+            }
           });
         }
       });
@@ -251,8 +254,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         maxRetries: 12,
       });
 
-      const savedToolResults = new Set<string>();
-
       const toolsCached = getUniqueTools(true);
       const tools = getUniqueTools(false);
 
@@ -266,31 +267,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       ] as TextBlockParam[] : undefined;
 
       console.log("Using provider:", activeProject.settings.provider);
-
-      // **[Existing] Get current conversation history as GenericMessage[]**
-      const currentGenericMessages: GenericMessage[] = (activeConversation?.messages || []).map(m => ({
-        role: m.role as 'user' | 'assistant' | 'system', // Ensure role is correctly typed
-        content: m.content,
-      }));
-
-      // **[Existing] Create user message as GenericMessage**
-      const userGenericMessage: GenericMessage = {
-        role: 'user',
-        content: userMessageContent,
-      };
-
-      // **[Existing] Combine current history with new user message in GenericMessage format**
-      const updatedGenericMessages = [...currentGenericMessages, userGenericMessage];
-
-      let apiFormatMessages;
-      if (activeProject.settings.provider === 'openai') {
-        apiFormatMessages = toOpenAIFormat(updatedGenericMessages, tools);
-      } else if (activeProject.settings.provider === 'anthropic') {
-        apiFormatMessages = toAnthropicFormat(updatedGenericMessages);
-      } else {
-        console.warn("Unknown provider:", activeProject.settings.provider);
-        apiFormatMessages = toAnthropicFormat(updatedGenericMessages); // Default to anthropic just in case, or handle error
-      }
 
       // Helper function to handle stream with retries
       const streamWithRetry = async (params: MessageCreateParams) => {
@@ -400,10 +376,11 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
           try {
             const openAIApiMessages = toOpenAIFormat(genericMessagesToSend, tools);
+            const openAITools = tools.map(tool => toOpenAITool(tool));
             stream = await openai.chat.completions.create({
               model: activeProject.settings.model || 'gpt-4o',
               messages: openAIApiMessages.messages,
-              tools: apiFormatMessages.tools,
+              tools: openAITools,
               stream: true,
               max_tokens: 4096,
             });
@@ -425,11 +402,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               if (functionCallDelta) {
                 const delta = functionCallDelta[0];
                 if (!functionCallBuffer) {
-                  functionCallBuffer = delta.function;
-                } else {
+                  // Create a new buffer with the initial function call
+                  if (delta.function) {
+                    functionCallBuffer = {
+                      name: delta.function.name,
+                      arguments: delta.function.arguments || '',
+                    };
+                  }
+                } else if (delta.function) {
+                  // Append to existing buffer
+                  const currentName: string = functionCallBuffer?.name || '';
+                  const currentArgs: string = functionCallBuffer?.arguments || '';
                   functionCallBuffer = {
-                    name: functionCallBuffer.name || delta.function?.name,
-                    arguments: (functionCallBuffer.arguments || '') + (delta.function?.arguments || ''),
+                    name: currentName || delta.function.name,
+                    arguments: currentArgs + (delta.function.arguments || ''),
                   };
                 }
               }
@@ -600,7 +586,8 @@ Example good titles:
               break;
             }
 
-          } catch (openaiError: any) { // Catch OpenAI errors
+          } catch (error) {
+            const openaiError = error as Error;
             console.error("OpenAI API error:", openaiError);
             setError(`OpenAI API error: ${openaiError.message || 'Unknown error'}`);
           }

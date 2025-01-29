@@ -2,7 +2,7 @@ import { Project, ConversationBrief } from '../components/LlmChat/context/types'
 import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
 import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
-import { GenericMessage, messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
+import { messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
 
 const DB_NAME = 'kibitz_db';
 const DB_VERSION = 6;
@@ -200,11 +200,18 @@ const initDb = async (): Promise<KibitzDb> => {
             const project = cursor.value;
 
             if (project.conversations && Array.isArray(project.conversations)) {
-              project.conversations = project.conversations.map(conversation => {
+              project.conversations = project.conversations.map((conversation: ConversationBrief) => {
                 if (conversation.messages && Array.isArray(conversation.messages)) {
-                  conversation.messages = conversation.messages.map(message => {
+                  conversation.messages = conversation.messages.map((message: Message) => {
                     try {
-                      return messageToGenericMessage(message);
+                      // Convert to generic message and back to maintain correct type
+                      const genericMessage = messageToGenericMessage(message);
+                      return {
+                        ...message,
+                        role: genericMessage.role === 'system' ? 'user' : genericMessage.role === 'tool' ? 'assistant' : genericMessage.role,
+                        content: genericMessage.content,
+                        toolInput: genericMessage.name
+                      } as Message;
                     } catch (error) {
                       console.error('Error migrating message:', error, message);
                       return message;
