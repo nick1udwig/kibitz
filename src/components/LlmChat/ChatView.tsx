@@ -1,5 +1,4 @@
 import React, { useState, useRef, useImperativeHandle } from 'react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
@@ -134,16 +133,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         </div>
       )}
 
-      {activeProject?.settings.provider === 'openrouter' && (
-        <div className="px-4">
-          <Alert>
-            <AlertDescription>
-              OpenRouter support is coming soon. Please switch to Anthropic provider in settings to chat.
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
-
       <div className="flex flex-col gap-2 p-2 bg-background fixed bottom-0 left-0 right-0 z-50 md:left-[280px] md:w-[calc(100%-280px)]">
         <FileContentList
           files={currentFileContent}
@@ -157,18 +146,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           onChange={setInputMessage}
           onSend={handleSubmit}
           isLoading={isLoading}
-          isDisabled={!activeProjectId || !activeConversationId || activeProject?.settings.provider === 'openrouter'}
+          isDisabled={!activeProjectId || !activeConversationId}
           onFileSelect={(content) => {
             setCurrentFileContent(prev => [...prev, { ...content }]);
           }}
           placeholder={
-            activeProject?.settings.provider === 'openrouter'
-              ? "⚠️ OpenRouter support coming soon"
-              : !activeProject?.settings.apiKey?.trim()
-                ? "⚠️ Set your API key in Settings to start chatting"
-                : isLoading
-                  ? "Processing response..."
-                  : "Type your message"
+            !activeProject?.settings.apiKey?.trim()
+              ? "⚠️ Set your API key in Settings to start chatting"
+              : isLoading
+                ? "Processing response..."
+                : "Type your message"
           }
         />
       </div>
