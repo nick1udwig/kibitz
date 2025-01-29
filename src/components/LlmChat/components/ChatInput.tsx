@@ -27,13 +27,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Reset height when loading starts
+  React.useEffect(() => {
+    if (isLoading && inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
+  }, [isLoading]);
+
   return (
     <div className="flex gap-2">
       <div className="relative flex-1">
         <Textarea
-          value={value}
+          value={isLoading ? "Processing..." : value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          readOnly={isLoading}
           onKeyDown={(e) => {
             // Only send on Enter in desktop mode
             const isMobile = window.matchMedia('(max-width: 768px)').matches;
@@ -43,7 +51,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             }
           }}
           ref={inputRef}
-          className={`pr-20 ${isLoading ? 'bg-muted text-muted-foreground' : ''}`}
+          className={`pr-20 transition-colors ${isLoading ? 'bg-muted text-muted-foreground resize-none' : ''}`}
           maxRows={8}
           disabled={isDisabled || isLoading}
         />
