@@ -57,6 +57,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     []
   );
 
+  const getToolResult = (toolUseIndex: number, toolId: string) => {
+    const nextMessage = activeConversation?.messages[toolUseIndex + 1];
+    let toolResult = null;
+    if (nextMessage && Array.isArray(nextMessage.content)) {
+      const resultContent = nextMessage.content.find(c =>
+        c.type === 'tool_result' && c.tool_use_id === toolId
+      );
+      if (resultContent && resultContent.type === 'tool_result') {
+        toolResult = resultContent.content;
+      }
+    }
+    return toolResult;
+  }
+
   const renderMessageContent = (message: Message, index: number) => {
     if (!Array.isArray(message.content)) {
       return (
@@ -85,12 +99,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         }}
         toolResult={
           Array.isArray(message.content) &&
-          message.content[contentIndex + 1] &&
-          typeof message.content[contentIndex + 1] === 'object' &&
-          'type' in message.content[contentIndex + 1] &&
-          message.content[contentIndex + 1].type === 'tool_result'
-            ? (message.content[contentIndex + 1] as { content: string })['content']
-            : null
+          typeof message.content[contentIndex] === 'object' &&
+          'type' in message.content[contentIndex] &&
+          message.content[contentIndex].type === 'tool_use' ?
+            getToolResult(index, message.content[contentIndex].id) : null
         }
         contentIndex={contentIndex}
         messageIndex={index}

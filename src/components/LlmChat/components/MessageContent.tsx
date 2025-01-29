@@ -189,7 +189,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
               onClick={() => onToolClick?.(content.name, content.input, toolResult)}
               className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline group"
             >
-              View Tool Call: {content.name}
+              🛠️: {content.name}
               {toolResult && (
                 <span className="ml-1 text-xs text-muted-foreground group-hover:text-muted-foreground/80">
                   (Click to view full details)
