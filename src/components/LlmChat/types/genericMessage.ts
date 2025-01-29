@@ -1,6 +1,6 @@
 import { MessageContent } from '../types';
-import type { 
-  ChatCompletionMessageParam as OpenAIMessageParam, 
+import type {
+  ChatCompletionMessageParam as OpenAIMessageParam,
   ChatCompletionTool,
   ChatCompletionToolMessageParam,
   ChatCompletionUserMessageParam,
@@ -9,22 +9,6 @@ import type {
 } from 'openai/resources/chat/completions';
 import type { Tool as AnthropicToolType } from '@anthropic-ai/sdk/resources/messages/messages';
 import { Tool } from './toolTypes';
-
-// Helper function to convert Tool to OpenAI's ChatCompletionTool format
-export function toOpenAITool(tool: Tool | AnthropicToolType): ChatCompletionTool {
-  return {
-    type: 'function',
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: {
-        type: 'object',
-        properties: tool.input_schema.properties || {},
-        required: tool.input_schema.required || [],
-      }
-    }
-  };
-}
 
 // Define OpenAI function call type
 export interface FunctionCall {
@@ -39,47 +23,21 @@ export interface GenericMessage {
   name?: string; // Ensure name is string or undefined to match with toolInput type
 }
 
-// Define the OpenAI function format
-interface OpenAIFunctionParameter {
-  type: string;
-  properties: Record<string, {
-    type: string;
-    description?: string;
-    enum?: string[];
-  }>;
-  required?: string[];
-  additionalProperties?: boolean;
-}
-
-interface OpenAIFunction {
-  type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: OpenAIFunctionParameter;
-  };
-}
-
-interface OpenAITool {
-  type: 'function';
-  function: OpenAIFunction['function'];
-}
-
 // Function to sanitize function names for OpenAI compatibility
 export function sanitizeFunctionName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase(); // Replace non-alphanumeric and non-underscore with underscore, and lowercase
 }
 
-function anthropicToolToOpenAIFunction(tool: Tool | AnthropicToolType): OpenAITool {
+function anthropicToolToOpenAIFunction(tool: Tool | AnthropicToolType): ChatCompletionTool {
   let description = tool.description || '';
   if (description.length > 1024) {
     console.warn(`Tool description for '${tool.name}' is too long (${description.length} characters). Truncating to 1024 characters.`);
     description = description.substring(0, 1021) + '...';
   }
 
-  const properties: Record<string, { type: string; description?: string; enum?: string[] }> = 
+  const properties: Record<string, { type: string; description?: string; enum?: string[] }> =
     tool.input_schema?.properties ?? Object.create(null);
-  
+
   const required = (tool.input_schema?.required ?? []) as string[];
 
   return {
@@ -138,7 +96,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 
 interface OpenAIPayload {
   messages: Array<ChatCompletionMessageParam>;
-  tools?: OpenAITool[];
+  tools?: ChatCompletionTool[];
   tool_choice?: string;
   function_calling?: {
     allow_nested_function_calls: boolean;

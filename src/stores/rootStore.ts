@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection, Tool } from '../components/LlmChat/context/types';
+import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection } from '../components/LlmChat/context/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
+import { WsTool } from '../components/LlmChat/types/toolTypes';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -198,9 +199,9 @@ export const useStore = create<RootState>((set, get) => {
                 console.log('Received unexpected WS-MCP message:', response.results);
                 return server;
               }
-              const tools = response.result.tools.map((tool: Tool) => ({
+              const tools = response.result.tools.map((tool: WsTool) => ({
                 ...tool,
-                input_schema: tool.input_schema,
+                input_schema: tool.inputSchema,
               }));
               const connectedServer = {
                 ...server,

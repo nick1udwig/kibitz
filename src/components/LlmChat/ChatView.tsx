@@ -20,7 +20,7 @@ import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
 import { Spinner } from '@/components/ui/spinner';
 import { throttle } from 'lodash';
-import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName, FunctionCall, toOpenAITool } from '@/components/LlmChat/types/genericMessage';
+import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName, FunctionCall } from '@/components/LlmChat/types/genericMessage';
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
@@ -376,11 +376,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
           try {
             const openAIApiMessages = toOpenAIFormat(genericMessagesToSend, tools);
-            const openAITools = tools.map(tool => toOpenAITool(tool));
             stream = await openai.chat.completions.create({
               model: activeProject.settings.model || 'gpt-4o',
               messages: openAIApiMessages.messages,
-              tools: openAITools,
+              tools: openAIApiMessages.tools,
               stream: true,
               max_tokens: 4096,
             });
