@@ -1033,7 +1033,7 @@ Example good titles:
                       }
                     }}
                   />
-                  <span className="text-xs text-muted-foreground">All Messages</span>
+                  <span className="text-xs text-muted-foreground">History</span>
                 </div>
                 <FileUpload
                   onFileSelect={(content) => {
