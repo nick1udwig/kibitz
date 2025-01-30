@@ -235,9 +235,10 @@ export const useMessageSender = () => {
 
         if (activeProject.settings.provider === 'openai' || activeProject.settings.provider === 'openrouter') {
           const baseURL = activeProject.settings.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : undefined;
+          const apiKey = activeProject.settings.provider === 'openrouter' ? activeProject.settings.openRouterApiKey : activeProject.settings.openaiApiKey;
           const openai = new OpenAI({
             baseURL,
-            apiKey: activeProject.settings.openaiApiKey,
+            apiKey,
             dangerouslyAllowBrowser: true,
           });
 
