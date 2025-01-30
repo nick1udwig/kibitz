@@ -5,17 +5,20 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProjectSettings, ProviderType } from '../context/types';
 import { getProviderModels } from '../types/provider';
 import { McpConfiguration } from './McpConfiguration';
+import ToolsView from './ToolsView';
 import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
+import { getDefaultModelForProvider } from '@/stores/rootStore';
 
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings, servers } = useStore();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [activeTab, setActiveTab] = useState('config');
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -37,7 +40,7 @@ export const AdminView = () => {
         mcpServerIds: activeServerIds
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProjectId, servers]);
 
 
@@ -50,6 +53,7 @@ export const AdminView = () => {
   }
 
   const handleSettingsChange = (settings: Partial<ProjectSettings>) => {
+    console.log("handleSettingsChange - settings received:", settings);
     // Special handling for provider changes to preserve API keys
     if (settings.provider !== undefined && settings.provider !== activeProject.settings.provider) {
       // When changing provider, ensure we preserve both API keys
@@ -63,7 +67,9 @@ export const AdminView = () => {
           // Keep legacy apiKey in sync with anthropicApiKey
           apiKey: settings.provider === 'anthropic'
             ? (activeProject.settings.anthropicApiKey || activeProject.settings.apiKey)
-            : activeProject.settings.apiKey
+            : activeProject.settings.apiKey,
+          // **[FIX] Update model to default for new provider**
+          model: getDefaultModelForProvider(settings.provider)
         }
       });
     } else {
@@ -84,7 +90,21 @@ export const AdminView = () => {
         <ThemeToggle />
       </div>
 
-      <Card>
+      <div className="mb-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="config">Configuration</TabsTrigger>
+            <TabsTrigger value="tools">Tools</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {activeTab === 'tools' ? (
+        <ToolsView />
+      ) : (
+
+        <>
+          <Card>
         <CardContent className="p-6">
           <h3 className="text-lg font-medium mb-4">API Settings</h3>
           <div className="space-y-4">
@@ -100,20 +120,10 @@ export const AdminView = () => {
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openrouter">OpenRouter (Coming Soon)</option>
+                <option value="openrouter">OpenRouter</option>
                 <option value="openai">OpenAI</option>
               </select>
             </div>
-
-            {(activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai') && (
-              <Alert>
-                <AlertDescription>
-                  {activeProject.settings.provider === 'openrouter'
-                    ? "OpenRouter support is coming soon. Please use Anthropic for now."
-                    : "OpenAI support is coming soon. Please use Anthropic for now."}
-                </AlertDescription>
-              </Alert>
-            )}
 
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -122,7 +132,7 @@ export const AdminView = () => {
               <p className="text-sm text-muted-foreground mb-2">
                 Required to chat. Get yours at{' '}
                 {(() => {
-                  switch(activeProject.settings.provider) {
+                  switch (activeProject.settings.provider) {
                     case 'openrouter':
                       return (
                         <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
@@ -150,12 +160,12 @@ export const AdminView = () => {
                   activeProject.settings.provider === 'openrouter'
                     ? activeProject.settings.openRouterApiKey || ''
                     : activeProject.settings.provider === 'openai'
-                    ? activeProject.settings.openaiApiKey || ''
-                    : activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || ''  // Fallback for backward compatibility
+                      ? activeProject.settings.openaiApiKey || ''
+                      : activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || ''  // Fallback for backward compatibility
                 }
                 onChange={(e) => {
                   const value = e.target.value.trim();
-                  switch(activeProject.settings.provider) {
+                  switch (activeProject.settings.provider) {
                     case 'openrouter':
                       handleSettingsChange({
                         openRouterApiKey: value
@@ -174,20 +184,19 @@ export const AdminView = () => {
                   }
                 }}
                 placeholder={
-                  activeProject.settings.provider === 'openrouter'
-                    ? "⚠️ OpenRouter support coming soon"
-                    : activeProject.settings.provider === 'openai'
-                    ? "⚠️ OpenAI support coming soon"
-                    : "⚠️ Enter your Anthropic API key to use the chat"
+                  activeProject.settings.provider === 'openai'
+                    ? "⚠️ Enter your OpenAI API key to use the chat"
+                    : activeProject.settings.provider === 'openrouter'
+                      ? "⚠️ Enter your OpenRouter API key to use the chat"
+                      : "⚠️ Enter your Anthropic API key to use the chat"
                 }
                 className={
                   activeProject.settings.provider === 'openrouter'
                     ? ""
                     : (!activeProject.settings.anthropicApiKey?.trim() && !activeProject.settings.apiKey?.trim())
-                    ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
-                    : ""
+                      ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
+                      : ""
                 }
-                disabled={activeProject.settings.provider === 'openrouter' || activeProject.settings.provider === 'openai'}
               />
             </div>
 
@@ -220,9 +229,12 @@ export const AdminView = () => {
               </label>
               <select
                 value={activeProject.settings.model}
-                onChange={(e) => handleSettingsChange({
-                  model: e.target.value
-                })}
+                onChange={(e) => {
+                  console.log("Model dropdown onChange event:", e.target.value);
+                  handleSettingsChange({
+                    model: e.target.value
+                  });
+                }}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 {getProviderModels(activeProject.settings.provider || 'anthropic').map(model => (
@@ -320,6 +332,8 @@ export const AdminView = () => {
           </AlertDialog>
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 };
