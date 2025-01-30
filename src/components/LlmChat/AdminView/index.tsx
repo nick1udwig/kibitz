@@ -282,6 +282,29 @@ export const AdminView = () => {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Message Window Size
+              </label>
+              <p className="text-sm text-muted-foreground mb-2">
+                Number of messages to show when History is disabled
+              </p>
+              <Input
+                type="number"
+                value={activeProject.settings.messageWindowSize ?? 30}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value);
+                  if (!isNaN(value) && value > 0) {
+                    handleSettingsChange({
+                      messageWindowSize: value
+                    });
+                  }
+                }}
+                min="1"
+                className="w-32"
+              />
+            </div>
+
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"

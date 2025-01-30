@@ -33,6 +33,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   elideToolResults: false,
   mcpServerIds: [],
   showAllMessages: true,  // ensure all required fields are set
+  messageWindowSize: 30,  // default number of messages in truncated view
 };
 
 interface RootState extends ProjectState, McpState {
