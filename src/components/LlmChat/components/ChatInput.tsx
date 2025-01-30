@@ -5,6 +5,7 @@ import { VoiceRecorder } from '../VoiceRecorder';
 import { Button } from '@/components/ui/button';
 import { Send, Square } from 'lucide-react';
 import { MessageContent } from '../types';
+import { Switch } from '@/components/ui/switch';
 
 interface ChatInputProps {
   value: string;
@@ -58,20 +59,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           disabled={isDisabled || isLoading}
         />
         <div className="absolute right-2 bottom-2 flex gap-1">
-          <FileUpload
-            onFileSelect={onFileSelect}
-            onUploadComplete={() => {
-              if (inputRef.current) {
-                inputRef.current.focus();
-              }
-            }}
-          />
-          <VoiceRecorder
-            onTranscriptionComplete={(text) => {
-              const newText = value.trim() ? `${value}\n${text}` : text;
-              onChange(newText);
-            }}
-          />
+          <div className="flex items-center gap-3">
+            <FileUpload
+              onFileSelect={onFileSelect}
+              onUploadComplete={() => {
+                if (inputRef.current) {
+                  inputRef.current.focus();
+                }
+              }}
+            />
+            <VoiceRecorder
+              onTranscriptionComplete={(text) => {
+                const newText = value.trim() ? `${value}\n${text}` : text;
+                onChange(newText);
+              }}
+            />
+          </div>
         </div>
       </div>
       <Button

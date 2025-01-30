@@ -1,4 +1,4 @@
-import React, { useState, useRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useImperativeHandle, useMemo } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
@@ -8,8 +8,11 @@ import { MessageContentRenderer } from './components/MessageContent';
 import { FileContentList } from './components/FileContentList';
 import { ChatInput } from './components/ChatInput';
 import { ScrollToBottomButton } from './components/ScrollToBottomButton';
+import { HistoryToggle } from './components/HistoryToggle';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
+
+const MESSAGE_WINDOW = 30;
 
 export interface ChatViewRef {
   focus: () => void;
@@ -28,12 +31,48 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     projects,
     activeProjectId,
     activeConversationId,
+    updateProjectSettings,
   } = useStore();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
   const activeConversation = activeProject?.conversations.find(
     c => c.id === activeConversationId
   );
+
+  const numMessages = activeConversation?.messages.length;
+  const visibleMessages = useMemo(() => {
+    if (!activeConversation?.messages) return [];
+
+    if (activeProject?.settings.showAllMessages) {
+      return activeConversation.messages;
+    }
+
+    const messages = activeConversation.messages.slice(numMessages ? numMessages - MESSAGE_WINDOW : 0, numMessages);
+
+    // Only add the hint if there are more messages than what we're showing
+    if (numMessages && numMessages > MESSAGE_WINDOW) {
+      return [
+        {
+          role: 'assistant',
+          content: [{
+            type: 'text',
+            text: `_Showing last ${MESSAGE_WINDOW} messages. Enable "History" to see all ${numMessages} messages._`
+          }],
+          timestamp: new Date()
+        } as Message,
+        ...messages
+      ];
+    }
+
+    return messages;
+  }, [activeConversation?.messages, activeProject?.settings.showAllMessages, numMessages]);
+
+  //const [inputMessage, setInputMessage] = useState('');
+  //const [isLoading, setIsLoading] = useState(false);
+  //const [error, setError] = useState<string | null>(null);
+  //const shouldCancelRef = useRef<boolean>(false);
+  //const streamRef = useRef<{ abort: () => void } | null>(null);
+  //const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -128,7 +167,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     <div className="flex flex-col h-full relative">
       <div ref={chatContainerRef} className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
         <div className="space-y-4 mb-4">
-          {activeConversation.messages.map((message, index) => (
+          {visibleMessages?.map((message, index) => (
             renderMessageContent(message, index)
           ))}
         </div>
@@ -137,6 +176,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       <ScrollToBottomButton
         onClick={scrollToBottom}
         visible={!isAtBottom}
+      />
+
+      <HistoryToggle
+        checked={activeProject?.settings.showAllMessages ?? false}
+        onChange={(checked) => {
+          if (activeProject) {
+            updateProjectSettings(activeProject.id, {
+              settings: {
+                ...activeProject.settings,
+                showAllMessages: checked
+              }
+            });
+          }
+        }}
       />
 
       {error && (

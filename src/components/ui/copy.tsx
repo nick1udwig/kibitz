@@ -4,9 +4,10 @@ import { ClipboardIcon, CheckIcon } from 'lucide-react';
 interface CopyButtonProps {
   text: string;
   className?: string;
+  light?: boolean;
 }
 
-export const CopyButton = ({ text, className = '' }: CopyButtonProps) => {
+export const CopyButton = ({ text, className = '', light = false }: CopyButtonProps) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async (e: React.MouseEvent) => {
@@ -24,7 +25,9 @@ export const CopyButton = ({ text, className = '' }: CopyButtonProps) => {
   return (
     <button
       onClick={handleCopy}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm hover:bg-kinode-orange/10 ${className}`}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm ${
+        light ? 'text-accent-foreground hover:bg-accent-foreground/10' : 'hover:bg-kinode-orange/10'
+      } ${className}`}
     >
       {copied ? (
         <CheckIcon className="h-4 w-4" />

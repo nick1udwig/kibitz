@@ -33,6 +33,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
             <div className="absolute right-2 top-0 z-10">
               <CopyButton
                 text={content.text.trim()}
+                light={isUserMessage}
                 className="opacity-0 group-hover:opacity-100 transition-opacity"
               />
             </div>
@@ -80,6 +81,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
                       <div className="absolute top-2 right-2 z-10">
                         <CopyButton
                           text={text}
+                          light={isUserMessage}
                           className="opacity-0 group-hover/code:opacity-100 transition-opacity"
                         />
                       </div>
