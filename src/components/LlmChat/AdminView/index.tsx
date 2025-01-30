@@ -5,9 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProjectSettings, ProviderType } from '../context/types';
 import { getProviderModels } from '../types/provider';
 import { McpConfiguration } from './McpConfiguration';
@@ -121,7 +120,7 @@ export const AdminView = () => {
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openrouter">OpenRouter (Coming Soon)</option>
+                <option value="openrouter">OpenRouter</option>
                 <option value="openai">OpenAI</option>
               </select>
             </div>
@@ -185,10 +184,10 @@ export const AdminView = () => {
                   }
                 }}
                 placeholder={
-                  activeProject.settings.provider === 'openrouter'
-                    ? "⚠️ OpenRouter support coming soon"
-                    : activeProject.settings.provider === 'openai'
-                      ? "⚠️ Enter your OpenAI API key to use the chat"
+                  activeProject.settings.provider === 'openai'
+                    ? "⚠️ Enter your OpenAI API key to use the chat"
+                    : activeProject.settings.provider === 'openrouter'
+                      ? "⚠️ Enter your OpenRouter API key to use the chat"
                       : "⚠️ Enter your Anthropic API key to use the chat"
                 }
                 className={
@@ -198,7 +197,6 @@ export const AdminView = () => {
                       ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
                       : ""
                 }
-                disabled={activeProject.settings.provider === 'openrouter'}
               />
             </div>
 
