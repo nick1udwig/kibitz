@@ -229,19 +229,19 @@ export const AdminView = () => {
               </label>
                 <div className="space-y-2">
                   <select
-                    value={activeProject.settings.model && getProviderModels(activeProject.settings.provider || 'anthropic').includes(activeProject.settings.model)
-                      ? activeProject.settings.model
-                      : 'custom'}
+                    value={activeProject.settings.model === '__CUSTOM__' || !getProviderModels(activeProject.settings.provider || 'anthropic').includes(activeProject.settings.model || '')
+                      ? 'custom'
+                      : activeProject.settings.model}
                     onChange={(e) => {
                       console.log("Model dropdown onChange event:", e.target.value);
-                      if (e.target.value !== 'custom') {
+                      if (e.target.value === 'custom') {
+                        // Set special value to indicate custom mode
                         handleSettingsChange({
-                          model: e.target.value
+                          model: '__CUSTOM__'
                         });
                       } else {
-                        // When selecting custom, keep the existing custom value if any
                         handleSettingsChange({
-                          model: activeProject.settings.model || ''
+                          model: e.target.value
                         });
                       }
                     }}
@@ -252,14 +252,13 @@ export const AdminView = () => {
                     ))}
                     <option value="custom">Custom</option>
                   </select>
-                  {(activeProject.settings.model === '' ||
-                    activeProject.settings.model === 'custom' ||
-                    !getProviderModels(activeProject.settings.provider || 'anthropic').includes(activeProject.settings.model)) && (
+                  {(activeProject.settings.model === '__CUSTOM__' ||
+                    !getProviderModels(activeProject.settings.provider || 'anthropic').includes(activeProject.settings.model || '')) && (
                     <Input
-                      value={activeProject.settings.model === 'custom' ? '' : (activeProject.settings.model || '')}
+                      value={activeProject.settings.model === '__CUSTOM__' ? '' : (activeProject.settings.model || '')}
                       onChange={(e) => {
                         handleSettingsChange({
-                          model: e.target.value
+                          model: e.target.value || '__CUSTOM__'
                         });
                       }}
                       placeholder="Enter custom model name"
