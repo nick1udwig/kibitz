@@ -27,11 +27,12 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
       apiKey: '',
     }
   },
-  provider: 'anthropic',
+  provider: 'anthropic' as const,  // ensure TypeScript treats this as a literal type
   model: DEFAULT_MODEL,
   systemPrompt: '',
   elideToolResults: false,
   mcpServerIds: [],
+  showAllMessages: true,  // ensure all required fields are set
 };
 
 interface RootState extends ProjectState, McpState {

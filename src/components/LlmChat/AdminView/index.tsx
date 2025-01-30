@@ -113,7 +113,7 @@ export const AdminView = () => {
                 Provider
               </label>
               <select
-                value={activeProject.settings.provider || 'anthropic'}
+                value={activeProject.settings.provider ?? 'anthropic'}
                 onChange={(e) => handleSettingsChange({
                   provider: e.target.value as ProviderType
                 })}
