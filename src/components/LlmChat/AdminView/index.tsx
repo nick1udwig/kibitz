@@ -227,20 +227,40 @@ export const AdminView = () => {
               <label className="block text-sm font-medium mb-1">
                 Model
               </label>
-              <select
-                value={activeProject.settings.model}
-                onChange={(e) => {
-                  console.log("Model dropdown onChange event:", e.target.value);
-                  handleSettingsChange({
-                    model: e.target.value
-                  });
-                }}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                {getProviderModels(activeProject.settings.provider || 'anthropic').map(model => (
-                  <option key={model} value={model}>{model}</option>
-                ))}
-              </select>
+              <div className="space-y-2">
+                <select
+                  value={activeProject.settings.model && getProviderModels(activeProject.settings.provider || 'anthropic').includes(activeProject.settings.model)
+                    ? activeProject.settings.model
+                    : 'custom'}
+                  onChange={(e) => {
+                    console.log("Model dropdown onChange event:", e.target.value);
+                    if (e.target.value !== 'custom') {
+                      handleSettingsChange({
+                        model: e.target.value
+                      });
+                    }
+                  }}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  {getProviderModels(activeProject.settings.provider || 'anthropic').map(model => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                  <option value="custom">Custom</option>
+                </select>
+                {(!activeProject.settings.model ||
+                  !getProviderModels(activeProject.settings.provider || 'anthropic').includes(activeProject.settings.model)) && (
+                  <Input
+                    value={activeProject.settings.model || ''}
+                    onChange={(e) => {
+                      handleSettingsChange({
+                        model: e.target.value
+                      });
+                    }}
+                    placeholder="Enter custom model name"
+                    className="w-full"
+                  />
+                )}
+              </div>
             </div>
 
             <div>
