@@ -423,6 +423,9 @@ Format: Only output the title, no quotes or explanation`
           } catch (error) {
             console.error("OpenAI API error:", error);
             setError(`OpenAI API error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            setIsLoading(false);
+            wakeLock.release();
+            return;
           }
 
         } else if (activeProject.settings.provider === 'anthropic') {
