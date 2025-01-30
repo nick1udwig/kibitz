@@ -249,7 +249,7 @@ export const useMessageSender = () => {
               messages: openAIApiMessages.messages,
               tools: openAIApiMessages.tools,
               stream: true,
-              max_tokens: 4096,
+              //max_tokens: 4096,
             });
 
             let functionCallBuffer: { name: string; arguments: string } | null = null;
