@@ -89,13 +89,15 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
                     </div>
                   );
                 },
-                code({ inline, children, ...props }) {
-                  return inline ? (
-                    <code className="text-inherit whitespace-nowrap inline" {...props}>
+                code(props: { className?: string } & React.HTMLProps<HTMLElement>) {
+                  const { className, children } = props;
+                  const isInline = className?.includes('language-') === false;
+                  return isInline ? (
+                    <code className="text-inherit whitespace-nowrap inline">
                       {children}
                     </code>
                   ) : (
-                    <code className="block overflow-x-auto whitespace-pre-wrap" {...props}>
+                    <code className="block overflow-x-auto whitespace-pre-wrap">
                       {children}
                     </code>
                   );
