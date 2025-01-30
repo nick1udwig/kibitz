@@ -105,16 +105,31 @@
 
   input, textarea, select {
     @apply font-['JetBrains_Mono'];
-    font-size: 13px !important;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
     touch-action: manipulation;
   }
 
+  /* Desktop size */
+  @media screen and (min-width: 769px) {
+    input, textarea, select {
+      font-size: 13px !important;
+    }
+  }
+
+  /* Mobile size - using transform to visually reduce size while keeping base size at 16px */
   @media screen and (max-width: 768px) {
-    /* On mobile, keep font size at 16px to prevent zoom */
     input, textarea, select {
       font-size: 16px !important;
+      transform: scale(0.8125);  /* 13px / 16px = 0.8125 */
+      transform-origin: left top;
+      width: 123% !important;  /* 1 / 0.8125 = 1.23 */
+    }
+
+    /* Adjust the container to accommodate the scaled width */
+    .input-container, .textarea-container {
+      width: 100%;
+      overflow: hidden;
     }
   }
 }
