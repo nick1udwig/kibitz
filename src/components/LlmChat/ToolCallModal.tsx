@@ -33,8 +33,8 @@ export const ToolCallModal = ({ toolCall, onClose }: ToolCallModalProps) => {
         </DialogHeader>
 
         <div className={cn(
-          "space-y-4 overflow-hidden flex-grow",
-          isExpanded ? "overflow-y-auto pr-2" : "max-h-[240px] sm:max-h-[280px]"
+          "space-y-4 overflow-hidden flex-grow overflow-y-auto pr-2",
+          isExpanded && "h-[75vh]"
         )}>
           <div>
             <h4 className="font-medium mb-2">Input:</h4>
