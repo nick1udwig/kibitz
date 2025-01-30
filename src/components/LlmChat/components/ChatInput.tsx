@@ -15,8 +15,6 @@ interface ChatInputProps {
   isLoading: boolean;
   isDisabled: boolean;
   onFileSelect: (content: MessageContent) => void;
-  showAllMessagesChecked: boolean;
-  onAllMessagesCheckedChange: (checked: boolean) => void;
   placeholder?: string;
 }
 
@@ -28,8 +26,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   isLoading,
   isDisabled,
   onFileSelect,
-  onAllMessagesCheckedChange,
-  showAllMessagesChecked,
   placeholder = "Type your message"
 }) => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -64,15 +60,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         />
         <div className="absolute right-2 bottom-2 flex gap-1">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={showAllMessagesChecked}
-                onCheckedChange={(checked: boolean) => onAllMessagesCheckedChange(checked)}
-              />
-              <div className="border border-input rounded-md px-2 py-0.5">
-                <span className="text-xs text-muted-foreground">History</span>
-              </div>
-            </div>
             <FileUpload
               onFileSelect={onFileSelect}
               onUploadComplete={() => {

@@ -8,6 +8,7 @@ import { MessageContentRenderer } from './components/MessageContent';
 import { FileContentList } from './components/FileContentList';
 import { ChatInput } from './components/ChatInput';
 import { ScrollToBottomButton } from './components/ScrollToBottomButton';
+import { HistoryToggle } from './components/HistoryToggle';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
 
@@ -55,7 +56,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           role: 'assistant',
           content: [{
             type: 'text',
-            text: `_Showing last ${MESSAGE_WINDOW} messages. Enable "History" in the chat box to see all ${numMessages} messages._`
+            text: `_Showing last ${MESSAGE_WINDOW} messages. Enable "History" to see all ${numMessages} messages._`
           }],
           timestamp: new Date()
         } as Message,
@@ -177,6 +178,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         visible={!isAtBottom}
       />
 
+      <HistoryToggle
+        checked={activeProject?.settings.showAllMessages ?? false}
+        onChange={(checked) => {
+          if (activeProject) {
+            updateProjectSettings(activeProject.id, {
+              settings: {
+                ...activeProject.settings,
+                showAllMessages: checked
+              }
+            });
+          }
+        }}
+      />
+
       {error && (
         <div className="px-4 py-2 text-sm text-red-500">
           {error}
@@ -200,17 +215,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           isDisabled={!activeProjectId || !activeConversationId}
           onFileSelect={(content) => {
             setCurrentFileContent(prev => [...prev, { ...content }]);
-          }}
-          showAllMessagesChecked={activeProject?.settings.showAllMessages ?? false}
-          onAllMessagesCheckedChange={(checked) => {
-            if (activeProject) {
-              updateProjectSettings(activeProject.id, {
-                settings: {
-                  ...activeProject.settings,
-                  showAllMessages: checked
-                }
-              });
-            }
           }}
           placeholder={
             !activeProject?.settings.apiKey?.trim()
