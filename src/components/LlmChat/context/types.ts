@@ -1,7 +1,7 @@
 import { Message } from '../types';
 import { McpServer } from '../types/mcp';
-import { Tool as ATool } from '@anthropic-ai/sdk/resources/messages/messages';
 import { ProviderConfig, LegacyProviderType, LegacyProviderSettings } from '../types/provider';
+import { Tool } from '../types/toolTypes';
 
 // Keep for backwards compatibility
 export type ProviderType = LegacyProviderType;
@@ -67,8 +67,5 @@ export interface ProjectState {
   setActiveConversation: (conversationId: string | null) => void;
 }
 
-export interface Tool {
-  name: string,
-  inputSchema: ATool.InputSchema,
-  description?: string,
-};
+// Re-export Tool for convenience
+export type { Tool };
