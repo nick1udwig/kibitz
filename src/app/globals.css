@@ -117,19 +117,10 @@
     }
   }
 
-  /* Mobile size - using transform to visually reduce size while keeping base size at 16px */
+  /* Mobile size - keep at 16px to prevent zoom */
   @media screen and (max-width: 768px) {
     input, textarea, select {
       font-size: 16px !important;
-      transform: scale(0.8125);  /* 13px / 16px = 0.8125 */
-      transform-origin: left top;
-      width: 123% !important;  /* 1 / 0.8125 = 1.23 */
-    }
-
-    /* Adjust the container to accommodate the scaled width */
-    .input-container, .textarea-container {
-      width: 100%;
-      overflow: hidden;
     }
   }
 }

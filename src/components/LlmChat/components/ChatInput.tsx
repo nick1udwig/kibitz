@@ -39,7 +39,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div className="flex gap-2">
-      <div className="relative flex-1 textarea-container">
+      <div className="relative flex-1">
         <Textarea
           value={isLoading ? "Processing..." : value}
           onChange={(e) => onChange(e.target.value)}
