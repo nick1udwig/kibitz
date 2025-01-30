@@ -170,7 +170,7 @@ export const ConversationSidebar = ({
               <div
                 className={`p-2 rounded-lg flex items-center gap-2 transition-colors cursor-pointer
                 ${project.id === activeProjectId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
-                text-base font-medium`}
+                text-sm font-medium`}
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleProjectExpanded(project.id);
@@ -274,7 +274,7 @@ export const ConversationSidebar = ({
                         key={convo.id}
                         className={`p-2 rounded-lg cursor-pointer flex items-center gap-2 transition-colors
                       ${convo.id === activeConversationId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}
-                      text-sm truncate max-w-[250px]`}
+                      text-xs truncate max-w-[250px]`}
                         onClick={() => {
                           handleProjectSelect(project.id);
                           setActiveConversation(convo.id);
