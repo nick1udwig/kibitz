@@ -54,7 +54,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             }
           }}
           ref={inputRef}
-          className={`pr-20 transition-colors text-sm ${isLoading ? 'bg-muted text-muted-foreground resize-none' : ''}`}
+          className={`pr-20 transition-colors text-xs ${isLoading ? 'bg-muted text-muted-foreground resize-none' : ''}`}
           maxRows={8}
           disabled={isDisabled || isLoading}
         />
