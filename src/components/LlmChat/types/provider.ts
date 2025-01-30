@@ -32,7 +32,7 @@ export function convertLegacyToProviderConfig(
       type: 'openrouter',
       settings: {
         apiKey: settings.openRouterApiKey || '',
-        baseUrl: settings.openRouterBaseUrl || '',
+        baseUrl: settings.openRouterBaseUrl || 'https://openrouter.ai/api/v1',
       }
     };
   } else if (provider === 'openai') {

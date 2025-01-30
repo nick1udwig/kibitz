@@ -1,9 +1,13 @@
-import { Tool } from '@anthropic-ai/sdk/resources/messages/messages';
+import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages/messages';
+import { ChatCompletionTool } from 'openai/resources/chat/completions';
 import { McpServer } from '../types/mcp';
+
+// Union type for both provider's tool formats
+type Tool = AnthropicTool | ChatCompletionTool;
 
 interface ToolReference {
   serverId: string;  // Which server provides this tool
-  tool: Tool;        // The tool definition
+  tool: AnthropicTool;  // The tool definition (we store in Anthropic format internally)
   provider: 'openai' | 'anthropic'; // Which provider format it's in
 }
 
@@ -39,7 +43,7 @@ export class DynamicToolRegistry {
   }
 
   // Register a single tool
-  private registerTool(serverId: string, tool: Tool) {
+  private registerTool(serverId: string, tool: AnthropicTool) {
     const internalName = tool.name;
     
     // Store tool with server reference
@@ -86,7 +90,7 @@ export class DynamicToolRegistry {
   }
 
   // Convert tool format between providers
-  private convertToolForProvider(tool: Tool, provider: 'openai' | 'anthropic'): Tool {
+  private convertToolForProvider(tool: AnthropicTool, provider: 'openai' | 'anthropic'): Tool {
     if (provider === 'openai') {
       return {
         type: 'function',
@@ -99,7 +103,7 @@ export class DynamicToolRegistry {
             required: []
           }
         }
-      };
+      } as ChatCompletionTool;
     }
     
     // Return in Anthropic format
@@ -111,7 +115,7 @@ export class DynamicToolRegistry {
         properties: {},
         required: []
       }
-    };
+    } as AnthropicTool;
   }
 
   private sanitizeToolName(name: string, provider: 'openai' | 'anthropic'): string {
