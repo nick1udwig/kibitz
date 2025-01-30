@@ -32,7 +32,7 @@ export function convertLegacyToProviderConfig(
       type: 'openrouter',
       settings: {
         apiKey: settings.openRouterApiKey || '',
-        baseUrl: settings.openRouterBaseUrl || '',
+        baseUrl: settings.openRouterBaseUrl || 'https://openrouter.ai/api/v1',
       }
     };
   } else if (provider === 'openai') {
@@ -77,28 +77,26 @@ export function getProviderModels(type: string): string[] {
   switch (type) {
     case 'anthropic':
       return [
-        'claude-3-opus-20240229',
-        'claude-3-sonnet-20240229',
-        'claude-3-haiku-20240307',
         'claude-3-5-sonnet-20241022',
         'claude-3-5-haiku-20241022',
+        'claude-3-opus-20240229',
       ];
     case 'openai':
       return [
-        'gpt-4o',           // Most capable
-        'gpt-4-turbo',      // Fast, up to date
-        'gpt-4o-mini',      // Smaller but fast
-        'gpt-4',            // Original GPT-4
-        'gpt-3.5-turbo',    // Fast, cost-effective
-        'gpt-3.5-turbo-16k' // Larger context
+        'gpt-4-turbo',
+        'gpt-4o',
+        'gpt-4o-mini',
+        'gpt-4',
       ];
     case 'openrouter':
       return [
-        'openai/gpt-4-turbo-preview',
-        'anthropic/claude-3-opus-20240229',
-        'anthropic/claude-3-sonnet-20240229',
-        'meta-llama/llama-2-70b-chat',
-        'google/gemini-pro',
+        'deepseek/deepseek-r1',
+        'anthropic/claude-3.5-sonnet',
+        'google/gemini-2.0-flash-thinking-exp:free',
+        'google/gemini-2.0-flash-exp:free',
+        'openai/o1',
+        'openai/o1-preview',
+        'openai/gpt-4-turbo',
       ];
     default:
       return [];

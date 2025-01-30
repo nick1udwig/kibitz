@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection, Tool } from '../components/LlmChat/context/types';
+import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection } from '../components/LlmChat/context/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
+import { WsTool } from '../components/LlmChat/types/toolTypes';
 
 const WS_MCP_PORT = "10126";
 const generateId = () => Math.random().toString(36).substring(7);
 
-const getDefaultModelForProvider = (provider?: string): string => {
+export const getDefaultModelForProvider = (provider?: string): string => {
   switch (provider) {
     case 'openai':
       return 'gpt-4o';
@@ -18,13 +19,20 @@ const getDefaultModelForProvider = (provider?: string): string => {
   }
 };
 
+const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
-  apiKey: '',
-  groqApiKey: '',
-  model: getDefaultModelForProvider('anthropic'),
+  providerConfig: {
+    type: 'anthropic',
+    settings: {
+      apiKey: '',
+    }
+  },
+  provider: 'anthropic',
+  model: DEFAULT_MODEL,
   systemPrompt: '',
-  mcpServerIds: [],
   elideToolResults: false,
+  mcpServerIds: [],
 };
 
 interface RootState extends ProjectState, McpState {
@@ -192,7 +200,7 @@ export const useStore = create<RootState>((set, get) => {
                 console.log('Received unexpected WS-MCP message:', response.results);
                 return server;
               }
-              const tools = response.result.tools.map((tool: Tool) => ({
+              const tools = response.result.tools.map((tool: WsTool) => ({
                 ...tool,
                 input_schema: tool.inputSchema,
               }));
@@ -270,7 +278,6 @@ export const useStore = create<RootState>((set, get) => {
 
         // Always try to load saved servers first
         const savedServers = await loadMcpServers();
-        console.log('Loading servers from IndexedDB:', JSON.stringify(savedServers));
 
         const connectedServers: McpServerConnection[] = [];
 
@@ -490,12 +497,12 @@ export const useStore = create<RootState>((set, get) => {
               ...p,
               settings: updates.settings
                 ? {
-                    ...p.settings,
-                    ...updates.settings,
-                    mcpServerIds: updates.settings.mcpServerIds !== undefined
-                      ? updates.settings.mcpServerIds
-                      : p.settings.mcpServerIds
-                  }
+                  ...p.settings,
+                  ...updates.settings,
+                  mcpServerIds: updates.settings.mcpServerIds !== undefined
+                    ? updates.settings.mcpServerIds
+                    : p.settings.mcpServerIds
+                }
                 : p.settings,
               conversations: updatedConversations,
               updatedAt: new Date()
