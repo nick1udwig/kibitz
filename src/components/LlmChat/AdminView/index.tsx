@@ -113,7 +113,7 @@ export const AdminView = () => {
                 Provider
               </label>
               <select
-                value={activeProject.settings.provider || 'anthropic'}
+                value={activeProject.settings.provider ?? 'anthropic'}
                 onChange={(e) => handleSettingsChange({
                   provider: e.target.value as ProviderType
                 })}
@@ -279,6 +279,29 @@ export const AdminView = () => {
                 })}
                 placeholder="Enter a system prompt..."
                 className="min-h-[100px]"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Message Window Size
+              </label>
+              <p className="text-sm text-muted-foreground mb-2">
+                Number of messages to show when History is disabled
+              </p>
+              <Input
+                type="number"
+                value={activeProject.settings.messageWindowSize ?? 30}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value);
+                  if (!isNaN(value) && value > 0) {
+                    handleSettingsChange({
+                      messageWindowSize: value
+                    });
+                  }
+                }}
+                min="1"
+                className="w-32"
               />
             </div>
 

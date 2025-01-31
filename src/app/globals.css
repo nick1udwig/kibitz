@@ -105,37 +105,23 @@
 
   input, textarea, select {
     @apply font-['JetBrains_Mono'];
-    font-size: 16px !important;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
     touch-action: manipulation;
   }
 
-  /* Prevent zoom on focus */
-  input[type="color"],
-  input[type="date"],
-  input[type="datetime"],
-  input[type="datetime-local"],
-  input[type="email"],
-  input[type="month"],
-  input[type="number"],
-  input[type="password"],
-  input[type="search"],
-  input[type="tel"],
-  input[type="text"],
-  input[type="time"],
-  input[type="url"],
-  input[type="week"],
-  select,
-  textarea {
-    font-size: 16px !important;
-    transform: scale(1);
+  /* Desktop size */
+  @media screen and (min-width: 769px) {
+    input, textarea, select {
+      font-size: 13px !important;
+    }
   }
 
-  /* Ensure placeholders also have correct size */
-  input::placeholder,
-  textarea::placeholder {
-    font-size: 16px !important;
+  /* Mobile size - keep at 16px to prevent zoom */
+  @media screen and (max-width: 768px) {
+    input, textarea, select {
+      font-size: 16px !important;
+    }
   }
 }
 

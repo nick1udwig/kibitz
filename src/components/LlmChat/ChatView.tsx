@@ -12,7 +12,8 @@ import { HistoryToggle } from './components/HistoryToggle';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
 
-const MESSAGE_WINDOW = 30;
+// Default message window size if not configured
+const DEFAULT_MESSAGE_WINDOW = 30;
 
 export interface ChatViewRef {
   focus: () => void;
@@ -47,16 +48,17 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       return activeConversation.messages;
     }
 
-    const messages = activeConversation.messages.slice(numMessages ? numMessages - MESSAGE_WINDOW : 0, numMessages);
+    const messageWindow = activeProject?.settings.messageWindowSize ?? DEFAULT_MESSAGE_WINDOW;
+    const messages = activeConversation.messages.slice(numMessages ? numMessages - messageWindow : 0, numMessages);
 
     // Only add the hint if there are more messages than what we're showing
-    if (numMessages && numMessages > MESSAGE_WINDOW) {
+    if (numMessages && numMessages > messageWindow) {
       return [
         {
           role: 'assistant',
           content: [{
             type: 'text',
-            text: `_Showing last ${MESSAGE_WINDOW} messages. Enable "History" to see all ${numMessages} messages._`
+            text: `_Showing last ${messageWindow} messages. Enable "History" to see all ${numMessages} messages._`
           }],
           timestamp: new Date()
         } as Message,
