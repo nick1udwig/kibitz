@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { DB_VERSION } from '@/lib/db';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -330,7 +331,7 @@ export const AdminView = () => {
       <Card className="mt-6">
         <CardContent className="p-6">
           <h3 className="text-lg font-medium mb-4">Advanced Settings</h3>
-          <div className="text-xs text-muted-foreground mb-4">Database Version: 5</div>
+          <div className="text-xs text-muted-foreground mb-4">Database Version: {DB_VERSION}</div>
           <Button
             variant="destructive"
             onClick={() => setShowResetConfirm(true)}
