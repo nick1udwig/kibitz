@@ -347,45 +347,49 @@ export const AdminView = () => {
             {/* Save Prompt Dialog */}
             <Dialog open={showSavePromptDialog} onOpenChange={setShowSavePromptDialog}>
               <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Save System Prompt</DialogTitle>
-                </DialogHeader>
-                <div className="py-4">
-                  <label className="block text-sm font-medium mb-2">
-                    Name your prompt
-                  </label>
-                  <Input
-                    value={newPromptName}
-                    onChange={(e) => setNewPromptName(e.target.value)}
-                    placeholder="Enter a name for this prompt"
-                  />
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowSavePromptDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      if (newPromptName.trim()) {
-                        const newPrompt = {
-                          id: crypto.randomUUID(),
-                          name: newPromptName.trim(),
-                          content: activeProject.settings.systemPrompt,
-                          createdAt: new Date()
-                        };
-                        handleSettingsChange({
-                          savedPrompts: [
-                            ...(activeProject.settings.savedPrompts || []),
-                            newPrompt
-                          ]
-                        });
-                        setShowSavePromptDialog(false);
-                      }
-                    }}
-                  >
-                    Save
-                  </Button>
-                </DialogFooter>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (newPromptName.trim()) {
+                      const newPrompt = {
+                        id: crypto.randomUUID(),
+                        name: newPromptName.trim(),
+                        content: activeProject.settings.systemPrompt,
+                        createdAt: new Date()
+                      };
+                      handleSettingsChange({
+                        savedPrompts: [
+                          ...(activeProject.settings.savedPrompts || []),
+                          newPrompt
+                        ]
+                      });
+                      setShowSavePromptDialog(false);
+                    }
+                  }}
+                >
+                  <DialogHeader>
+                    <DialogTitle>Save System Prompt</DialogTitle>
+                  </DialogHeader>
+                  <div className="py-4">
+                    <label className="block text-sm font-medium mb-2">
+                      Name your prompt
+                    </label>
+                    <Input
+                      value={newPromptName}
+                      onChange={(e) => setNewPromptName(e.target.value)}
+                      placeholder="Enter a name for this prompt"
+                      autoFocus // Automatically focus the input when dialog opens
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setShowSavePromptDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">
+                      Save
+                    </Button>
+                  </DialogFooter>
+                </form>
               </DialogContent>
             </Dialog>
 
