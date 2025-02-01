@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import { DB_VERSION } from '@/lib/db';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { SaveIcon, ChevronDownIcon, Trash2Icon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,6 +23,8 @@ export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings, servers } = useStore();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
+  const [showSavePromptDialog, setShowSavePromptDialog] = useState(false);
+  const [newPromptName, setNewPromptName] = useState('');
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -269,9 +275,65 @@ export const AdminView = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">
-                System Prompt
-              </label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-sm font-medium">
+                  System Prompt
+                </label>
+                <div className="flex gap-2">
+                  {activeProject.settings.savedPrompts?.length ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          Load Prompt <ChevronDownIcon className="ml-2 h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent>
+                        {activeProject.settings.savedPrompts.map((prompt) => (
+                          <DropdownMenuItem
+                            key={prompt.id}
+                            className="flex justify-between items-center"
+                          >
+                            <div
+                              onClick={() => handleSettingsChange({
+                                systemPrompt: prompt.content
+                              })}
+                              className="flex-grow cursor-pointer"
+                            >
+                              {prompt.name}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-4 w-4 ml-2 hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSettingsChange({
+                                  savedPrompts: activeProject.settings.savedPrompts?.filter(
+                                    p => p.id !== prompt.id
+                                  ) || []
+                                });
+                              }}
+                            >
+                              <Trash2Icon className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setNewPromptName('');
+                      setShowSavePromptDialog(true);
+                    }}
+                  >
+                    <SaveIcon className="mr-2 h-4 w-4" />
+                    Save Prompt
+                  </Button>
+                </div>
+              </div>
               <Textarea
                 value={activeProject.settings.systemPrompt}
                 onChange={(e) => handleSettingsChange({
@@ -281,6 +343,55 @@ export const AdminView = () => {
                 className="min-h-[100px]"
               />
             </div>
+
+            {/* Save Prompt Dialog */}
+            <Dialog open={showSavePromptDialog} onOpenChange={setShowSavePromptDialog}>
+              <DialogContent>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (newPromptName.trim()) {
+                      const newPrompt = {
+                        id: crypto.randomUUID(),
+                        name: newPromptName.trim(),
+                        content: activeProject.settings.systemPrompt,
+                        createdAt: new Date()
+                      };
+                      handleSettingsChange({
+                        savedPrompts: [
+                          ...(activeProject.settings.savedPrompts || []),
+                          newPrompt
+                        ]
+                      });
+                      setShowSavePromptDialog(false);
+                    }
+                  }}
+                >
+                  <DialogHeader>
+                    <DialogTitle>Save System Prompt</DialogTitle>
+                  </DialogHeader>
+                  <div className="py-4">
+                    <label className="block text-sm font-medium mb-2">
+                      Name your prompt
+                    </label>
+                    <Input
+                      value={newPromptName}
+                      onChange={(e) => setNewPromptName(e.target.value)}
+                      placeholder="Enter a name for this prompt"
+                      autoFocus // Automatically focus the input when dialog opens
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setShowSavePromptDialog(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">
+                      Save
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
 
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -330,7 +441,7 @@ export const AdminView = () => {
       <Card className="mt-6">
         <CardContent className="p-6">
           <h3 className="text-lg font-medium mb-4">Advanced Settings</h3>
-          <div className="text-xs text-muted-foreground mb-4">Database Version: 5</div>
+          <div className="text-xs text-muted-foreground mb-4">Database Version: {DB_VERSION}</div>
           <Button
             variant="destructive"
             onClick={() => setShowResetConfirm(true)}

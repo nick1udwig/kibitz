@@ -3,6 +3,13 @@ import { McpServer } from '../types/mcp';
 import { ProviderConfig, LegacyProviderType, LegacyProviderSettings } from '../types/provider';
 import { Tool } from '../types/toolTypes';
 
+export interface SavedPrompt {
+  id: string;
+  name: string;
+  content: string;
+  createdAt: Date;
+}
+
 // Keep for backwards compatibility
 export type ProviderType = LegacyProviderType;
 
@@ -12,6 +19,7 @@ export interface ProjectSettings extends LegacyProviderSettings {
   model: string;
   groqApiKey?: string;  // API key for GROQ services
   systemPrompt: string;
+  savedPrompts?: SavedPrompt[];  // Collection of saved system prompts
   mcpServerIds: string[];  // Store server IDs instead of full server objects
   elideToolResults: boolean;
   showAllMessages: boolean;  // Toggle for showing all messages vs truncated view

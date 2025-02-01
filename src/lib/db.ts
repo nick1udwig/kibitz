@@ -5,7 +5,7 @@ import { McpServer } from '../components/LlmChat/types/mcp';
 import { messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
 
 const DB_NAME = 'kibitz_db';
-const DB_VERSION = 6;
+export const DB_VERSION = 7;
 
 interface DbState {
   projects: Project[];
@@ -242,6 +242,40 @@ const initDb = async (): Promise<KibitzDb> => {
         // Add error handling for the cursor operation
         projectStore.openCursor().onerror = (error) => {
           console.error('Error during v6 migration:', error);
+        };
+      } else if (event.oldVersion < 7) {
+        // Add savedPrompts array to existing projects
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during upgrade');
+          return;
+        }
+        const projectStore = transaction.objectStore('projects');
+
+        // Migrate existing projects
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const project = cursor.value;
+
+            try {
+              // Ensure settings exists and add empty savedPrompts array if not present
+              if (project.settings) {
+                if (!project.settings.savedPrompts) {
+                  project.settings.savedPrompts = [];
+                }
+                cursor.update(project);
+              }
+            } catch (error) {
+              console.error('Error updating project during v7 migration:', error);
+            }
+            cursor.continue();
+          }
+        };
+
+        // Add error handling for the cursor operation
+        projectStore.openCursor().onerror = (error) => {
+          console.error('Error during v7 migration:', error);
         };
       }
     };
