@@ -5,7 +5,6 @@ import { VoiceRecorder } from '../VoiceRecorder';
 import { Button } from '@/components/ui/button';
 import { Send, Square } from 'lucide-react';
 import { MessageContent } from '../types';
-import { Switch } from '@/components/ui/switch';
 
 interface ChatInputProps {
   value: string;
