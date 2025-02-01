@@ -5,7 +5,7 @@ import { DB_VERSION } from '@/lib/db';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { SaveIcon, ChevronDownIcon } from 'lucide-react';
+import { SaveIcon, ChevronDownIcon, Trash2Icon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -291,11 +291,31 @@ export const AdminView = () => {
                         {activeProject.settings.savedPrompts.map((prompt) => (
                           <DropdownMenuItem
                             key={prompt.id}
-                            onClick={() => handleSettingsChange({
-                              systemPrompt: prompt.content
-                            })}
+                            className="flex justify-between items-center"
                           >
-                            {prompt.name}
+                            <div
+                              onClick={() => handleSettingsChange({
+                                systemPrompt: prompt.content
+                              })}
+                              className="flex-grow cursor-pointer"
+                            >
+                              {prompt.name}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-4 w-4 ml-2 hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSettingsChange({
+                                  savedPrompts: activeProject.settings.savedPrompts?.filter(
+                                    p => p.id !== prompt.id
+                                  ) || []
+                                });
+                              }}
+                            >
+                              <Trash2Icon className="h-3 w-3" />
+                            </Button>
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
