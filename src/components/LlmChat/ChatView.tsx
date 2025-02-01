@@ -67,7 +67,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     }
 
     return messages;
-  }, [activeConversation?.messages, activeProject?.settings.showAllMessages, numMessages]);
+  }, [activeConversation?.messages, activeProject?.settings.showAllMessages, activeProject?.settings.messageWindowSize, numMessages]);
 
   //const [inputMessage, setInputMessage] = useState('');
   //const [isLoading, setIsLoading] = useState(false);
