@@ -31,6 +31,10 @@ export const ChatApp = () => {
     }
   };
 
+  React.useEffect(() => {
+    console.log('ChatApp mounted');
+  }, []);
+
   // Handle initial mobile state
   React.useEffect(() => {
     setIsMobileMenuOpen(window.innerWidth >= 768);

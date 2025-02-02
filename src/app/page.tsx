@@ -1,4 +1,4 @@
-import LlmChat from '@/components/LlmChat';
+import LlmChat from "@/components/LlmChat";
 
 export default function Home() {
   return (
