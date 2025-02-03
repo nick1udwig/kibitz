@@ -27,9 +27,48 @@ export const AdminView = () => {
   const [newPromptName, setNewPromptName] = useState('');
 
   const activeProject = projects.find(p => p.id === activeProjectId);
+  
+  // Debug log project settings
+  useEffect(() => {
+    if (activeProject) {
+      console.log('Project settings:', activeProject.settings);
+      console.log('Default system prompt:', process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT);
+    }
+  }, [activeProject]);
+
+  // Initialize default settings from environment
+  useEffect(() => {
+    if (!activeProject) return;
+
+    const needsInitialization = 
+      (!activeProject.settings.anthropicApiKey && !activeProject.settings.apiKey) ||
+      !activeProject.settings.systemPrompt;
+
+    if (needsInitialization) {
+      const updates: any = {};
+      
+      // Set API key if needed
+      const envKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
+      if (envKey && !activeProject.settings.anthropicApiKey && !activeProject.settings.apiKey) {
+        updates.anthropicApiKey = envKey;
+        updates.apiKey = envKey;  // For backward compatibility
+      }
+
+      // Set system prompt if needed
+      const envPrompt = process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT?.replace(/\\n/g, '\n');
+      if (envPrompt && !activeProject.settings.systemPrompt) {
+        updates.systemPrompt = envPrompt;
+      }
+
+      // Apply updates if any
+      if (Object.keys(updates).length > 0) {
+        console.log('Initializing project with env values:', updates);
+        handleSettingsChange(updates);
+      }
+    }
+  }, [activeProject?.id]);
 
   useEffect(() => {
-    // Set environment API key if available and no key is set
     console.log('Environment variables:', process.env);
     console.log('NEXT_PUBLIC_ANTHROPIC_API_KEY:', process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY);
     const envKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
