@@ -40,33 +40,23 @@ export const AdminView = () => {
   useEffect(() => {
     if (!activeProject) return;
 
-    const needsInitialization = 
-      (!activeProject.settings.anthropicApiKey && !activeProject.settings.apiKey) ||
-      !activeProject.settings.systemPrompt;
-
-    if (needsInitialization) {
-      const updates: any = {};
-      
-      // Set API key if needed
-      const envKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
-      if (envKey && !activeProject.settings.anthropicApiKey && !activeProject.settings.apiKey) {
-        updates.anthropicApiKey = envKey;
-        updates.apiKey = envKey;  // For backward compatibility
-      }
-
-      // Set system prompt if needed
-      const envPrompt = process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT?.replace(/\\n/g, '\n');
-      if (envPrompt && !activeProject.settings.systemPrompt) {
-        updates.systemPrompt = envPrompt;
-      }
-
-      // Apply updates if any
-      if (Object.keys(updates).length > 0) {
-        console.log('Initializing project with env values:', updates);
-        handleSettingsChange(updates);
-      }
+    // Initialize API key if needed
+    const envKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
+    if (envKey && !activeProject.settings.anthropicApiKey && !activeProject.settings.apiKey) {
+      handleSettingsChange({
+        anthropicApiKey: envKey,
+        apiKey: envKey  // For backward compatibility
+      });
     }
-  }, [activeProject?.id]);
+
+    // Initialize system prompt if needed
+    const envPrompt = process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT?.replace(/\\n/g, '\n');
+    if (envPrompt && !activeProject.settings.systemPrompt) {
+      handleSettingsChange({
+        systemPrompt: envPrompt
+      });
+    }
+  }, [activeProject, handleSettingsChange]);
 
   useEffect(() => {
     console.log('Environment variables:', process.env);
