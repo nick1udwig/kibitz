@@ -33,7 +33,7 @@ const getDefaultProjectSettings = (): ProjectSettings => ({
   },
   provider: 'anthropic' as const,  // ensure TypeScript treats this as a literal type
   model: DEFAULT_MODEL,
-  systemPrompt: process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT || '',
+  systemPrompt: process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT?.replace(/\\n/g, '\n') || '',
   elideToolResults: false,
   mcpServerIds: [],
   showAllMessages: true,  // ensure all required fields are set
