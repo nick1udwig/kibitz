@@ -100,7 +100,7 @@ export const AdminView = () => {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId, servers]);
+  }, [activeProjectId, servers, activeProject, handleSettingsChange]);
 
 
   if (!activeProject) {
