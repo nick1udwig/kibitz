@@ -1,11 +1,14 @@
 import { create } from 'zustand';
-import { getEnvironmentApiKey } from '@/lib/config';
 import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection } from '../components/LlmChat/context/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
 import { WsTool } from '../components/LlmChat/types/toolTypes';
 
 const generateId = () => Math.random().toString(36).substring(7);
+
+// Load API key from environment
+const ANTHROPIC_KEY = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY || '';
+console.log('Anthropic key loaded:', ANTHROPIC_KEY ? 'Yes' : 'No');
 
 export const getDefaultModelForProvider = (provider?: string): string => {
   switch (provider) {
@@ -25,7 +28,7 @@ const getDefaultProjectSettings = (): ProjectSettings => ({
   providerConfig: {
     type: 'anthropic',
     settings: {
-      apiKey: getEnvironmentApiKey(),
+      apiKey: ANTHROPIC_KEY,
     }
   },
   provider: 'anthropic' as const,  // ensure TypeScript treats this as a literal type
