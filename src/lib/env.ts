@@ -1,9 +1,21 @@
 export function getRequiredEnvVar(name: string): string {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(`Missing required environment variable in production: ${name}`);
+    }
+    console.warn(`Missing environment variable: ${name}, using development fallback`);
+    return 'dev_fallback';
   }
   return value;
+}
+
+export function getAnthropicKey(): string {
+  const key = getRequiredEnvVar('ANTHROPIC_API_KEY');
+  if (process.env.NODE_ENV === 'production') {
+    console.log('Anthropic API key configured:', key ? 'Yes' : 'No');
+  }
+  return key;
 }
 
 export function getAppPassword(): string {

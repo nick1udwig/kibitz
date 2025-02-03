@@ -20,11 +20,11 @@ export const getDefaultModelForProvider = (provider?: string): string => {
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
-const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+const getDefaultProjectSettings = (): ProjectSettings => ({
   providerConfig: {
     type: 'anthropic',
     settings: {
-      apiKey: '',
+      apiKey: process.env.ANTHROPIC_API_KEY || '',
     }
   },
   provider: 'anthropic' as const,  // ensure TypeScript treats this as a literal type
@@ -34,7 +34,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   mcpServerIds: [],
   showAllMessages: true,  // ensure all required fields are set
   messageWindowSize: 30,  // default number of messages in truncated view
-};
+});
 
 interface RootState extends ProjectState, McpState {
   initialized: boolean;
@@ -352,7 +352,7 @@ export const useStore = create<RootState>((set, get) => {
             id: generateId(),
             name: 'Default Project',
             settings: {
-              ...DEFAULT_PROJECT_SETTINGS,
+              ...getDefaultProjectSettings(),
               apiKey: apiKeys.apiKey ?? '',
               groqApiKey: apiKeys.groqApiKey ?? '',
               mcpServers: []
@@ -375,9 +375,9 @@ export const useStore = create<RootState>((set, get) => {
         const defaultProject = {
           id: generateId(),
           name: 'Default Project',
-          settings: {
-            ...DEFAULT_PROJECT_SETTINGS,
-            mcpServers: []
+            settings: {
+              ...getDefaultProjectSettings(),
+              mcpServers: []
           },
           conversations: [],
           createdAt: new Date(),
@@ -406,9 +406,9 @@ export const useStore = create<RootState>((set, get) => {
       const newProject: Project = {
         id: projectId,
         name,
-        settings: {
-          ...DEFAULT_PROJECT_SETTINGS,
-          ...(currentProject && {
+          settings: {
+            ...getDefaultProjectSettings(),
+            ...(currentProject && {
             apiKey: currentProject.settings.apiKey,
             groqApiKey: currentProject.settings.groqApiKey,
             systemPrompt: '',
