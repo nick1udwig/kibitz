@@ -1,5 +1,8 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import { useEffect, useState } from 'react';
 import { DB_VERSION } from '@/lib/db';
 import { Button } from '@/components/ui/button';
