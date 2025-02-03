@@ -29,6 +29,18 @@ export const AdminView = () => {
   const activeProject = projects.find(p => p.id === activeProjectId);
 
   useEffect(() => {
+    // Set environment API key if available and no key is set
+    const envKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
+    if (activeProject && envKey && !activeProject.settings.anthropicApiKey && !activeProject.settings.apiKey) {
+      console.log('Setting Anthropic API key from environment');
+      handleSettingsChange({
+        anthropicApiKey: envKey,
+        apiKey: envKey  // For backward compatibility
+      });
+    }
+  }, [activeProject?.id]); // Only run when project changes
+
+  useEffect(() => {
     if (!activeProject) return;
 
     // Only update if server connections have changed to maintain ID references
