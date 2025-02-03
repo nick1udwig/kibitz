@@ -219,7 +219,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             setCurrentFileContent(prev => [...prev, { ...content }]);
           }}
           placeholder={
-            !activeProject?.settings.apiKey?.trim()
+            (!activeProject?.settings.apiKey?.trim() && !activeProject?.settings.anthropicApiKey?.trim())
               ? "⚠️ Set your API key in Settings to start chatting"
               : isLoading
                 ? "Processing response..."
