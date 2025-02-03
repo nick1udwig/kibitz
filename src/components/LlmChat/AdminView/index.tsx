@@ -30,6 +30,8 @@ export const AdminView = () => {
 
   useEffect(() => {
     // Set environment API key if available and no key is set
+    console.log('Environment variables:', process.env);
+    console.log('NEXT_PUBLIC_ANTHROPIC_API_KEY:', process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY);
     const envKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
     if (activeProject && envKey && !activeProject.settings.anthropicApiKey && !activeProject.settings.apiKey) {
       console.log('Setting Anthropic API key from environment');
