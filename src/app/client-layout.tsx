@@ -1,15 +1,14 @@
 'use client';
 
-import dynamic from 'next/dynamic';
-
-const PasswordGate = dynamic(() => import('../components/auth/PasswordGate'), { 
-  ssr: false 
-});
+import { Suspense } from 'react';
+import PasswordGate from '../components/auth/PasswordGate';
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
-    <PasswordGate>
-      {children}
-    </PasswordGate>
+    <Suspense fallback={null}>
+      <PasswordGate>
+        {children}
+      </PasswordGate>
+    </Suspense>
   );
 }

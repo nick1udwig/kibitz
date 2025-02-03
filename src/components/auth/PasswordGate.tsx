@@ -12,10 +12,12 @@ export default function PasswordGate({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     // Check localStorage on mount
-    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-    setState({ isAuthenticated: isLoggedIn });
-    setMounted(true);
-  }, []);
+    if (typeof window !== 'undefined') {
+      const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+      setState({ isAuthenticated: isLoggedIn });
+      setMounted(true);
+    }
+  }, [setState]);
 
 
   const handleAuthenticated = () => {

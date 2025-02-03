@@ -7,5 +7,10 @@ export function getRequiredEnvVar(name: string): string {
 }
 
 export function getAppPassword(): string {
-  return process.env.NEXT_PUBLIC_APP_PASSWORD || '';
+  const password = process.env.NEXT_PUBLIC_APP_PASSWORD;
+  if (!password) {
+    console.warn('No password set in NEXT_PUBLIC_APP_PASSWORD');
+    return 'kibitz123'; // fallback for development
+  }
+  return password;
 }
