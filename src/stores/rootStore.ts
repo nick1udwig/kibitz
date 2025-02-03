@@ -38,9 +38,11 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
 
 interface RootState extends ProjectState, McpState {
   initialized: boolean;
+  isAuthenticated: boolean;
   apiKeys: Record<string, string>;
   hasLoadedApiKeysFromServer: boolean;
   saveApiKeysToServer: (keys: Record<string, string>) => void;
+  setState: (updates: Partial<RootState>) => void;
   initialize: () => Promise<void>;
   // Project methods
   createProject: (name: string, settings?: Partial<ProjectSettings>) => void;
@@ -64,6 +66,7 @@ interface RootState extends ProjectState, McpState {
 }
 
 export const useStore = create<RootState>((set, get) => {
+  const setState = (updates: Partial<RootState>) => set(updates);
   // Using refs outside the store to maintain WebSocket connections
   const connectionsRef = new Map<string, WebSocket>();
   const reconnectTimeoutsRef = new Map<string, NodeJS.Timeout>();
@@ -245,11 +248,13 @@ export const useStore = create<RootState>((set, get) => {
   };
 
   return {
+    setState,
     // State
     projects: [],
     activeProjectId: null,
     activeConversationId: null,
     initialized: false,
+    isAuthenticated: false,
     servers: [],
     apiKeys: {},
     hasLoadedApiKeysFromServer: false,

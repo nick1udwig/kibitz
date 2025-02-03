@@ -1,5 +1,6 @@
 import { ThemeProvider } from "./providers";
 import "./globals.css";
+import ClientLayout from './client-layout';
 
 export const metadata = {
   title: 'Kibitz',
@@ -26,7 +27,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <ClientLayout>
+            {children}
+          </ClientLayout>
         </ThemeProvider>
       </body>
     </html>
