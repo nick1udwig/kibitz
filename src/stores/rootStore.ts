@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getEnvironmentApiKey, initializeConfig } from '@/lib/config';
+import { getEnvironmentApiKey } from '@/lib/config';
 import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection } from '../components/LlmChat/context/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
@@ -271,8 +271,6 @@ export const useStore = create<RootState>((set, get) => {
       if (get().initialized) return;
 
       try {
-        // Initialize config first
-        await initializeConfig();
         // Try to load API keys from server if none exist locally
         const { apiKeys } = get();
         if (Object.keys(apiKeys).length === 0 && !get().hasLoadedApiKeysFromServer) {
