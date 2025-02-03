@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '@/stores/rootStore';
 import { PasswordDialog } from './PasswordDialog';
 
@@ -8,14 +8,25 @@ export default function PasswordGate({ children }: { children: React.ReactNode }
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const setState = useStore((state) => state.setState);
 
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
-    // Reset authentication on page refresh
-    setState({ isAuthenticated: false });
+    // Check localStorage on mount
+    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    setState({ isAuthenticated: isLoggedIn });
+    setMounted(true);
   }, []);
 
+
   const handleAuthenticated = () => {
+    localStorage.setItem('isLoggedIn', 'true');
     setState({ isAuthenticated: true });
   };
+
+  // Don't render anything until we've checked localStorage
+  if (!mounted) {
+    return null;
+  }
 
   return (
     <>

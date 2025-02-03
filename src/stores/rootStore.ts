@@ -43,6 +43,7 @@ interface RootState extends ProjectState, McpState {
   hasLoadedApiKeysFromServer: boolean;
   saveApiKeysToServer: (keys: Record<string, string>) => void;
   setState: (updates: Partial<RootState>) => void;
+  logout: () => void;
   initialize: () => Promise<void>;
   // Project methods
   createProject: (name: string, settings?: Partial<ProjectSettings>) => void;
@@ -249,6 +250,10 @@ export const useStore = create<RootState>((set, get) => {
 
   return {
     setState,
+    logout: () => {
+      localStorage.removeItem('isLoggedIn');
+      set({ isAuthenticated: false });
+    },
     // State
     projects: [],
     activeProjectId: null,
