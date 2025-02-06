@@ -1,5 +1,6 @@
 import { Project, ConversationBrief } from '../components/LlmChat/context/types';
 import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
+import { DEFAULT_PROJECT_SETTINGS } from '../stores/rootStore';
 import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
@@ -285,6 +286,22 @@ const initDb = async (): Promise<KibitzDb> => {
 export const loadState = async (): Promise<DbState> => {
   const db = await initDb();
 
+  // Helper to validate and fix project settings
+  const validateProject = (project: Project): Project => {
+    if (!project.settings) {
+      project.settings = { ...DEFAULT_PROJECT_SETTINGS };
+    } else {
+      project.settings = {
+        ...DEFAULT_PROJECT_SETTINGS,
+        ...project.settings,
+        provider: project.settings.provider || DEFAULT_PROJECT_SETTINGS.provider,
+        providerConfig: project.settings.providerConfig || 
+          convertLegacyToProviderConfig(project.settings.provider || DEFAULT_PROJECT_SETTINGS.provider, project.settings)
+      };
+    }
+    return project;
+  };
+
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['projects', 'appState'], 'readonly');
     const projectStore = transaction.objectStore('projects');
@@ -296,7 +313,7 @@ export const loadState = async (): Promise<DbState> => {
     projectStore.index('order').openCursor().onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
       if (cursor) {
-        projects.push(cursor.value);
+        projects.push(validateProject(cursor.value));
         cursor.continue();
       }
     };
@@ -365,8 +382,9 @@ const sanitizeProjectForStorage = (project: Project): Project => {
     settings: {
       ...project.settings,
       mcpServerIds: project.settings.mcpServerIds || [],
+      provider: project.settings.provider || 'anthropic', // Ensure provider is never undefined
       // Ensure providerConfig exists by converting from legacy if needed
-      providerConfig: project.settings.providerConfig // No legacy conversion
+      providerConfig: project.settings.providerConfig || convertLegacyToProviderConfig('anthropic', project.settings)
     },
     conversations: project.conversations.map(conv => ({
       ...conv,
