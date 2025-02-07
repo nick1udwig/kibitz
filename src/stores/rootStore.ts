@@ -20,7 +20,7 @@ export const getDefaultModelForProvider = (provider?: string): string => {
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
 
-const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   providerConfig: {
     type: 'anthropic',
     settings: {
