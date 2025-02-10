@@ -11,6 +11,7 @@ import { ScrollToBottomButton } from './components/ScrollToBottomButton';
 import { HistoryToggle } from './components/HistoryToggle';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
+import { useErrorDisplay } from './hooks/useErrorDisplay';
 
 // Default message window size if not configured
 const DEFAULT_MESSAGE_WINDOW = 30;
@@ -80,7 +81,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   // Use custom hooks
   useFocusControl();
-  const { isLoading, error, handleSendMessage, cancelCurrentCall } = useMessageSender();
+  const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall } = useMessageSender();
+  const { error, showError, clearError } = useErrorDisplay();
   const { chatContainerRef, isAtBottom, scrollToBottom } = useScrollControl({
     messages: activeConversation?.messages || []
   });
@@ -160,9 +162,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   }
 
   const handleSubmit = async () => {
-    await handleSendMessage(inputMessage, currentFileContent);
-    setInputMessage('');
-    setCurrentFileContent([]);
+    try {
+      await handleSendMessage(inputMessage, currentFileContent);
+      setInputMessage('');
+      setCurrentFileContent([]);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'An error occurred');
+    }
   };
 
   return (
@@ -194,9 +200,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         }}
       />
 
-      {error && (
+      {(error || sendError) && (
         <div
-          onClick={() => error && handleSendMessage('', [])}
+          onClick={clearError}
           className="fixed cursor-pointer top-4 left-1/2 transform -translate-x-1/2 z-50 w-auto min-w-[200px] max-w-[90vw]"
         >
           <div className="bg-destructive/10 dark:bg-destructive/20 text-destructive dark:text-destructive-foreground border-l-4 border-destructive p-4 rounded shadow-lg backdrop-blur-sm">
@@ -208,7 +214,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               </div>
               <div className="break-words">
                 <p className="text-sm font-mono">
-                  {error}
+                  {error || sendError}
                 </p>
               </div>
             </div>
