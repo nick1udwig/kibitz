@@ -101,6 +101,27 @@ export const useMessageSender = () => {
       return;
     }
 
+    // Format error messages to be more user-friendly
+    const formatErrorMessage = (error: unknown): string => {
+      if (error instanceof Error) {
+        // Handle API error responses
+        try {
+          const errorData = JSON.parse(error.message);
+          if (errorData.error?.type === 'invalid_request_error') {
+            if (errorData.error.message.includes('tokens > 200000')) {
+              return 'Message is too long. Please reduce the length of your message or clear some conversation history.';
+            }
+            return `API Error: ${errorData.error.message}`;
+          }
+        } catch {
+          // If error message isn't JSON, use it directly
+          return error.message;
+        }
+        return error.message;
+      }
+      return 'An unknown error occurred';
+    };
+
     await wakeLock.acquire();
     try {
       const userMessageContent: MessageContent[] = currentFileContent.map(c =>
@@ -181,27 +202,6 @@ export const useMessageSender = () => {
 
       while (true) {
         if (shouldCancelRef.current) break;
-
-          // Format error messages to be more user-friendly
-          const formatErrorMessage = (error: unknown): string => {
-            if (error instanceof Error) {
-              // Handle API error responses
-              try {
-                const errorData = JSON.parse(error.message);
-                if (errorData.error?.type === 'invalid_request_error') {
-                  if (errorData.error.message.includes('tokens > 200000')) {
-                    return 'Message is too long. Please reduce the length of your message or clear some conversation history.';
-                  }
-                  return `API Error: ${errorData.error.message}`;
-                }
-              } catch (e) {
-                // If error message isn't JSON, use it directly
-                return error.message;
-              }
-              return error.message;
-            }
-            return 'An unknown error occurred';
-          };
 
           const apiMessagesToSend = currentMessages.filter((message, index, array) => {
           if (typeof message.content === 'string') return true;
