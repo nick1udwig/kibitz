@@ -143,19 +143,33 @@ export const useMessageSender = () => {
 
       console.log("Using provider:", activeProject.settings.provider);
 
+      // Calculate delay with exponential backoff and jitter
+      const calculateBackoffDelay = (attempt: number, baseDelay = 1000) => {
+        const exponentialDelay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+        const jitter = Math.random() * 1000; // Add up to 1s of random jitter
+        return Math.min(exponentialDelay + jitter, 30000); // Cap at 30 seconds
+      };
+
       const streamWithRetry = async (params: Parameters<typeof anthropic.messages.create>[0]) => {
         let lastError: unknown;
-        for (let attempt = 0; attempt < 12; attempt++) {
+        const maxAttempts = 12;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
             const stream = await anthropic.messages.stream(params);
             return stream;
           } catch (error) {
             lastError = error;
+            console.log(`got error ${JSON.stringify(error)}`);
             if (typeof error === 'object' && error !== null) {
               const errorObj = error as { error?: { type?: string }; status?: number };
               const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-              if (isOverloaded && attempt < 11) {
-                await new Promise(resolve => setTimeout(resolve, 5000));
+
+              if (isOverloaded && attempt < maxAttempts - 1) {
+                const delay = calculateBackoffDelay(attempt);
+                console.log(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+                setError(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
                 continue;
               }
             }
