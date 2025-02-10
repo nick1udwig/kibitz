@@ -182,7 +182,28 @@ export const useMessageSender = () => {
       while (true) {
         if (shouldCancelRef.current) break;
 
-        const apiMessagesToSend = currentMessages.filter((message, index, array) => {
+          // Format error messages to be more user-friendly
+          const formatErrorMessage = (error: unknown): string => {
+            if (error instanceof Error) {
+              // Handle API error responses
+              try {
+                const errorData = JSON.parse(error.message);
+                if (errorData.error?.type === 'invalid_request_error') {
+                  if (errorData.error.message.includes('tokens > 200000')) {
+                    return 'Message is too long. Please reduce the length of your message or clear some conversation history.';
+                  }
+                  return `API Error: ${errorData.error.message}`;
+                }
+              } catch (e) {
+                // If error message isn't JSON, use it directly
+                return error.message;
+              }
+              return error.message;
+            }
+            return 'An unknown error occurred';
+          };
+
+          const apiMessagesToSend = currentMessages.filter((message, index, array) => {
           if (typeof message.content === 'string') return true;
 
           const messageContent = message.content as MessageContent[];
@@ -436,7 +457,7 @@ Format: Only output the title, no quotes or explanation`
 
           } catch (error) {
             console.error("OpenAI API error:", error);
-            setError(`OpenAI API error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            setError(formatErrorMessage(error));
             setIsLoading(false);
             wakeLock.release();
             return;
@@ -607,7 +628,10 @@ Format: Only output the title, no quotes or explanation`
       }
 
     } catch (error) {
-      console.error('Failed to send message:', error);
+        console.error('Failed to send message:', error);
+
+        // Use our new error formatting function
+        const errorMessage = formatErrorMessage(error);
       if (error instanceof Error && error.message === 'Request was aborted.') {
         console.log('Request was cancelled by user');
       } else if (typeof error === 'object' && error !== null) {
@@ -621,12 +645,12 @@ Format: Only output the title, no quotes or explanation`
           }
         } else {
           if (!shouldCancelRef.current) {
-            setError(error instanceof Error ? error.message : 'An error occurred');
+            setError(errorMessage);
           }
         }
       } else {
         if (!shouldCancelRef.current) {
-          setError(error instanceof Error ? error.message : 'An error occurred');
+          setError(errorMessage);
         }
       }
     } finally {
