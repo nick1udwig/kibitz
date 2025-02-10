@@ -101,6 +101,27 @@ export const useMessageSender = () => {
       return;
     }
 
+    // Format error messages to be more user-friendly
+    const formatErrorMessage = (error: unknown): string => {
+      if (error instanceof Error) {
+        // Handle API error responses
+        try {
+          const errorData = JSON.parse(error.message);
+          if (errorData.error?.type === 'invalid_request_error') {
+            if (errorData.error.message.includes('tokens > 200000')) {
+              return 'Message is too long. Please reduce the length of your message or clear some conversation history.';
+            }
+            return `API Error: ${errorData.error.message}`;
+          }
+        } catch {
+          // If error message isn't JSON, use it directly
+          return error.message;
+        }
+        return error.message;
+      }
+      return 'An unknown error occurred';
+    };
+
     await wakeLock.acquire();
     try {
       const userMessageContent: MessageContent[] = currentFileContent.map(c =>
@@ -143,19 +164,33 @@ export const useMessageSender = () => {
 
       console.log("Using provider:", activeProject.settings.provider);
 
+      // Calculate delay with exponential backoff and jitter
+      const calculateBackoffDelay = (attempt: number, baseDelay = 1000) => {
+        const exponentialDelay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+        const jitter = Math.random() * 1000; // Add up to 1s of random jitter
+        return Math.min(exponentialDelay + jitter, 30000); // Cap at 30 seconds
+      };
+
       const streamWithRetry = async (params: Parameters<typeof anthropic.messages.create>[0]) => {
         let lastError: unknown;
-        for (let attempt = 0; attempt < 12; attempt++) {
+        const maxAttempts = 12;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
             const stream = await anthropic.messages.stream(params);
             return stream;
           } catch (error) {
             lastError = error;
+            console.log(`got error ${JSON.stringify(error)}`);
             if (typeof error === 'object' && error !== null) {
               const errorObj = error as { error?: { type?: string }; status?: number };
               const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-              if (isOverloaded && attempt < 11) {
-                await new Promise(resolve => setTimeout(resolve, 5000));
+
+              if (isOverloaded && attempt < maxAttempts - 1) {
+                const delay = calculateBackoffDelay(attempt);
+                console.log(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+                setError(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
                 continue;
               }
             }
@@ -168,7 +203,7 @@ export const useMessageSender = () => {
       while (true) {
         if (shouldCancelRef.current) break;
 
-        const apiMessagesToSend = currentMessages.filter((message, index, array) => {
+          const apiMessagesToSend = currentMessages.filter((message, index, array) => {
           if (typeof message.content === 'string') return true;
 
           const messageContent = message.content as MessageContent[];
@@ -422,7 +457,7 @@ Format: Only output the title, no quotes or explanation`
 
           } catch (error) {
             console.error("OpenAI API error:", error);
-            setError(`OpenAI API error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            setError(formatErrorMessage(error));
             setIsLoading(false);
             wakeLock.release();
             return;
@@ -593,7 +628,10 @@ Format: Only output the title, no quotes or explanation`
       }
 
     } catch (error) {
-      console.error('Failed to send message:', error);
+        console.error('Failed to send message:', error);
+
+        // Use our new error formatting function
+        const errorMessage = formatErrorMessage(error);
       if (error instanceof Error && error.message === 'Request was aborted.') {
         console.log('Request was cancelled by user');
       } else if (typeof error === 'object' && error !== null) {
@@ -607,12 +645,12 @@ Format: Only output the title, no quotes or explanation`
           }
         } else {
           if (!shouldCancelRef.current) {
-            setError(error instanceof Error ? error.message : 'An error occurred');
+            setError(errorMessage);
           }
         }
       } else {
         if (!shouldCancelRef.current) {
-          setError(error instanceof Error ? error.message : 'An error occurred');
+          setError(errorMessage);
         }
       }
     } finally {
@@ -623,10 +661,15 @@ Format: Only output the title, no quotes or explanation`
     }
   };
 
+  const clearError = () => {
+    setError(null);
+  };
+
   return {
     isLoading,
     error,
     handleSendMessage,
-    cancelCurrentCall
+    cancelCurrentCall,
+    clearError
   };
 };

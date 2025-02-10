@@ -11,6 +11,7 @@ import { ScrollToBottomButton } from './components/ScrollToBottomButton';
 import { HistoryToggle } from './components/HistoryToggle';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
+import { useErrorDisplay } from './hooks/useErrorDisplay';
 
 // Default message window size if not configured
 const DEFAULT_MESSAGE_WINDOW = 30;
@@ -80,7 +81,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   // Use custom hooks
   useFocusControl();
-  const { isLoading, error, handleSendMessage, cancelCurrentCall } = useMessageSender();
+  const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall, clearError: clearSendError } = useMessageSender();
+  const { error, showError, clearError } = useErrorDisplay();
   const { chatContainerRef, isAtBottom, scrollToBottom } = useScrollControl({
     messages: activeConversation?.messages || []
   });
@@ -160,9 +162,13 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   }
 
   const handleSubmit = async () => {
-    await handleSendMessage(inputMessage, currentFileContent);
-    setInputMessage('');
-    setCurrentFileContent([]);
+    try {
+      await handleSendMessage(inputMessage, currentFileContent);
+      setInputMessage('');
+      setCurrentFileContent([]);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'An error occurred');
+    }
   };
 
   return (
@@ -194,9 +200,28 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
         }}
       />
 
-      {error && (
-        <div className="px-4 py-2 text-sm text-red-500">
-          {error}
+      {(error || sendError) && (
+        <div
+          onClick={() => {
+            clearError();
+            clearSendError();
+          }}
+          className="fixed cursor-pointer top-4 left-1/2 transform -translate-x-1/2 z-50 w-auto min-w-[200px] max-w-[90vw]"
+        >
+          <div className="bg-destructive/10 dark:bg-destructive/20 text-destructive dark:text-destructive-foreground border-l-4 border-destructive p-4 rounded shadow-lg backdrop-blur-sm">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="break-words">
+                <p className="text-sm font-mono">
+                  {error || sendError}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
