@@ -1,6 +1,8 @@
 # kibitz
 
-A chat client for the Anthropic LLM API that can use MCP tools over WebSockets.
+The coding agent for professionals
+
+https://github.com/user-attachments/assets/3f8df448-1c81-4ff2-8598-c48283a4dc00
 
 ## Prerequisites
 
