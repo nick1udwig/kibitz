@@ -661,10 +661,15 @@ Format: Only output the title, no quotes or explanation`
     }
   };
 
+  const clearError = () => {
+    setError(null);
+  };
+
   return {
     isLoading,
     error,
     handleSendMessage,
-    cancelCurrentCall
+    cancelCurrentCall,
+    clearError
   };
 };

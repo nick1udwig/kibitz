@@ -81,7 +81,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   // Use custom hooks
   useFocusControl();
-  const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall } = useMessageSender();
+  const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall, clearError: clearSendError } = useMessageSender();
   const { error, showError, clearError } = useErrorDisplay();
   const { chatContainerRef, isAtBottom, scrollToBottom } = useScrollControl({
     messages: activeConversation?.messages || []
@@ -202,7 +202,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
       {(error || sendError) && (
         <div
-          onClick={clearError}
+          onClick={() => {
+            clearError();
+            clearSendError();
+          }}
           className="fixed cursor-pointer top-4 left-1/2 transform -translate-x-1/2 z-50 w-auto min-w-[200px] max-w-[90vw]"
         >
           <div className="bg-destructive/10 dark:bg-destructive/20 text-destructive dark:text-destructive-foreground border-l-4 border-destructive p-4 rounded shadow-lg backdrop-blur-sm">
