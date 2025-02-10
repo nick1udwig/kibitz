@@ -206,19 +206,21 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             clearError();
             clearSendError();
           }}
-          className="fixed cursor-pointer top-4 inset-x-4 md:left-1/2 md:-translate-x-1/2 md:w-auto md:max-w-md md:min-w-[200px] z-50"
+          className="fixed top-0 left-0 right-0 z-50 cursor-pointer md:top-4"
         >
-          <div className="bg-destructive/10 dark:bg-destructive/20 text-destructive dark:text-destructive-foreground border-l-4 border-destructive p-3 md:p-4 rounded shadow-lg backdrop-blur-sm">
-            <div className="flex items-start gap-2 md:gap-3">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="flex-1 break-words">
-                <p className="text-sm font-mono leading-snug">
-                  {error || sendError}
-                </p>
+          <div className="mx-auto md:max-w-md md:mx-4">
+            <div className="bg-destructive/15 dark:bg-destructive/25 border-b border-destructive/20 text-destructive dark:text-destructive-foreground px-4 py-3 md:rounded-lg shadow-lg backdrop-blur-sm">
+              <div className="flex items-center gap-3 max-w-full">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium leading-normal break-words">
+                    {error || sendError}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
