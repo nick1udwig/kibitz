@@ -97,7 +97,7 @@ const initDb = async (): Promise<KibitzDb> => {
             if (!project.settings) {
               project.settings = {
                 mcpServers: [],
-                model: 'claude-3-5-sonnet-20241022',
+                model: 'claude-3-7-sonnet-20250219',
                 systemPrompt: '',
                 elideToolResults: false,
               };
@@ -107,7 +107,7 @@ const initDb = async (): Promise<KibitzDb> => {
             if (project.settings) {
               const oldModels = ['claude-2.0', 'claude-2.1', 'claude-2', 'claude-instant'];
               if (oldModels.includes(project.settings.model) || !project.settings.model) {
-                project.settings.model = 'claude-3-5-sonnet-20241022';
+                project.settings.model = 'claude-3-7-sonnet-20250219';
               }
 
               // Always set provider if upgrading from v3
@@ -295,7 +295,7 @@ export const loadState = async (): Promise<DbState> => {
         ...DEFAULT_PROJECT_SETTINGS,
         ...project.settings,
         provider: project.settings.provider || DEFAULT_PROJECT_SETTINGS.provider,
-        providerConfig: project.settings.providerConfig || 
+        providerConfig: project.settings.providerConfig ||
           convertLegacyToProviderConfig(project.settings.provider || DEFAULT_PROJECT_SETTINGS.provider, project.settings)
       };
     }
