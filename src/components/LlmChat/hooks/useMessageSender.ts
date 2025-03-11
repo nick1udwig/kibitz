@@ -7,7 +7,7 @@ import { useStore } from '@/stores/rootStore';
 import { wakeLock } from '@/lib/wakeLock';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '../types/genericMessage';
 
-const DEFAULT_MODEL = 'claude-3-5-sonnet-20241022';
+const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
 
 export const useMessageSender = () => {
   const [isLoading, setIsLoading] = useState(false);

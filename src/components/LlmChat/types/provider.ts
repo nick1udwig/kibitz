@@ -77,6 +77,7 @@ export function getProviderModels(type: string): string[] {
   switch (type) {
     case 'anthropic':
       return [
+        'claude-3-7-sonnet-20250219',
         'claude-3-5-sonnet-20241022',
         'claude-3-5-haiku-20241022',
         'claude-3-opus-20240229',
