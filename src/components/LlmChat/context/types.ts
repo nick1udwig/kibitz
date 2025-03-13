@@ -24,6 +24,8 @@ export interface ProjectSettings extends LegacyProviderSettings {
   elideToolResults: boolean;
   showAllMessages: boolean;  // Toggle for showing all messages vs truncated view
   messageWindowSize: number;  // Number of messages to show in truncated view
+  enableThinking?: boolean;
+  thinkingBudgetTokens?: number;
 }
 
 export interface ConversationBrief {
