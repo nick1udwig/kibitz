@@ -12,6 +12,7 @@ import { HistoryToggle } from './components/HistoryToggle';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
 import { useErrorDisplay } from './hooks/useErrorDisplay';
+import { ThinkingToggle } from './components/ThinkingToggle';
 
 // Default message window size if not configured
 const DEFAULT_MESSAGE_WINDOW = 30;
@@ -194,6 +195,21 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
               settings: {
                 ...activeProject.settings,
                 showAllMessages: checked
+              }
+            });
+          }
+        }}
+      />
+
+      <ThinkingToggle
+        checked={activeProject?.settings.enableThinking ?? false}
+        onChange={(checked) => {
+          if (activeProject) {
+            updateProjectSettings(activeProject.id, {
+              settings: {
+                ...activeProject.settings,
+                enableThinking: checked,
+                thinkingBudgetTokens: activeProject.settings.thinkingBudgetTokens || 2000
               }
             });
           }

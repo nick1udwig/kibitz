@@ -468,20 +468,40 @@ Format: Only output the title, no quotes or explanation`
             genericMessagesToSend,
             systemPrompt,
           );
-
+          
+          const cleanMessages = anthropicApiMessages.messages.map(msg => {
+            if (!Array.isArray(msg.content)) {
+              return msg;
+            }
+            
+            // Filter out any content items with type "thinking"
+            return {
+              ...msg,
+              content: msg.content.filter(contentItem => contentItem.type !== 'thinking')
+            };
+          });
+          
           const stream = await streamWithRetry({
             model: activeProject.settings.model || DEFAULT_MODEL,
             max_tokens: 8192,
-            messages: anthropicApiMessages.messages,
+            messages: cleanMessages,
             ...(anthropicApiMessages.system && { system: anthropicApiMessages.system }),
             ...(systemPromptContent && systemPromptContent.length > 0 && {
               system: systemPromptContent
             }),
             ...(tools.length > 0 && {
               tools: toolsCached
+            }),
+            ...(activeProject.settings.enableThinking && {
+              thinking: { 
+                type: 'enabled', 
+                budget_tokens: activeProject.settings.thinkingBudgetTokens || 2000 
+              }
             })
           });
-
+          
+          // We can ignore the thinking events since we don't want to display them
+          // Just handle the text events as before
           stream.on('text', (text) => {
             textContent.text += text;
             const updatedMessages = [...currentMessages, currentStreamMessage];
@@ -494,7 +514,10 @@ Format: Only output the title, no quotes or explanation`
 
           const finalResponse = await stream.finalMessage();
 
+          // Important: Clean the finalResponse before saving to conversation history
+          // This prevents thinking data from being saved and reused in subsequent requests
           const processedContent = finalResponse.content.map((content: MessageContent) => {
+            // First perform your existing processing
             if (!content['type']) return content;
             if (content.type !== 'text') return content;
 
@@ -506,28 +529,37 @@ Format: Only output the title, no quotes or explanation`
                 text: 'empty',
               } as MessageContent;
             }
-            return content;
-          })
-            .filter((content: MessageContent) => {
-              if (!content['type']) return true;
-              if (content.type !== 'text') return true;
+            
+            // Now ensure we remove any thinking properties
+            const { thinking, ...cleanContent } = content as any;
+            return cleanContent;
+          }).filter((content: MessageContent) => {
+            // Your existing filter logic
+            if (!content['type']) return true;
+            if (content.type !== 'text') return true;
 
-              const isWhitespace = content.text.trim().length === 0;
+            const isWhitespace = content.text.trim().length === 0;
 
-              if (isWhitespace && finalResponse.content.length === 1) {
-                console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
-                content.text = 'empty';
-                return true;
-              }
+            if (isWhitespace && finalResponse.content.length === 1) {
+              console.log(`got unexpected whitespace case from assistant: ${JSON.stringify(finalResponse)}`);
+              content.text = 'empty';
+              return true;
+            }
 
-              return !isWhitespace;
-            });
+            return !isWhitespace;
+          });
 
+          // Create a clean version of the response without any thinking data
           const processedResponse = {
             ...finalResponse,
-            content: processedContent
+            content: processedContent.map((item: any) => {
+              // Ensure we remove thinking property from all content items
+              const { thinking, ...cleanItem } = item;
+              return cleanItem;
+            })
           };
 
+          // Save the clean version to conversation history
           currentMessages.push(processedResponse);
           updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
