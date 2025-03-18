@@ -481,7 +481,7 @@ Format: Only output the title, no quotes or explanation`
               tools: toolsCached
             }),
             // Add extended thinking support for Claude 3.7 Sonnet
-            ...(activeProject.settings.model?.includes('claude-3-7-sonnet') && {
+            ...(activeProject.settings.model?.includes('claude-3-7-sonnet') && activeProject.settings.enableThinking && {
               thinking: {
                 type: 'enabled',
                 budget_tokens: 2000 // We allocate a large budget for complex reasoning
