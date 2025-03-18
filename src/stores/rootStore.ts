@@ -27,13 +27,14 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
       apiKey: '',
     }
   },
-  provider: 'anthropic' as const,  // ensure TypeScript treats this as a literal type
+  provider: 'anthropic' as const,
   model: DEFAULT_MODEL,
   systemPrompt: '',
   elideToolResults: false,
   mcpServerIds: [],
-  showAllMessages: true,  // ensure all required fields are set
-  messageWindowSize: 30,  // default number of messages in truncated view
+  showAllMessages: true,
+  messageWindowSize: 30,
+  enableThinking: false,
 };
 
 interface RootState extends ProjectState, McpState {

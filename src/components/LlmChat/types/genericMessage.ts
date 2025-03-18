@@ -67,6 +67,20 @@ interface AnthropicPayload {
 
 export function toAnthropicFormat(messages: GenericMessage[], systemPrompt?: string): AnthropicPayload {
   const anthropicMessages = [];
+  
+  // Get the last message with thinking content to maintain the signature
+  let lastMessageWithThinking: MessageContent[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (Array.isArray(msg.content)) {
+      const hasThinking = msg.content.some(c => c.type === 'thinking' || c.type === 'redacted_thinking');
+      if (hasThinking && msg.role === 'assistant') {
+        lastMessageWithThinking = msg.content as MessageContent[];
+        break;
+      }
+    }
+  }
+
   for (const msg of messages) {
     if (msg.role === 'system') {
       if (typeof msg.content === 'string') {
@@ -78,10 +92,27 @@ export function toAnthropicFormat(messages: GenericMessage[], systemPrompt?: str
         }
       }
     } else {
-      anthropicMessages.push({
-        role: msg.role === 'tool' ? 'user' : msg.role, // Convert 'tool' to 'user' for Anthropic
-        content: msg.content, // Type assertion since we know these types are compatible
-      });
+      // Handle thinking content blocks properly
+      if (Array.isArray(msg.content) && lastMessageWithThinking.length > 0 && 
+          msg.role === 'assistant' && msg.content === lastMessageWithThinking) {
+        // This is the last message with thinking content, make sure to include thinking blocks
+        anthropicMessages.push({
+          role: msg.role === 'tool' ? 'user' : msg.role,
+          content: msg.content, // Keep thinking blocks intact with signatures
+        });
+      } else if (Array.isArray(msg.content)) {
+        // For other messages, filter out any thinking blocks except in the last assistant message
+        const filteredContent = msg.content.filter(c => c.type !== 'thinking' && c.type !== 'redacted_thinking');
+        anthropicMessages.push({
+          role: msg.role === 'tool' ? 'user' : msg.role,
+          content: filteredContent.length > 0 ? filteredContent : msg.content,
+        });
+      } else {
+        anthropicMessages.push({
+          role: msg.role === 'tool' ? 'user' : msg.role,
+          content: msg.content,
+        });
+      }
     }
   }
 
