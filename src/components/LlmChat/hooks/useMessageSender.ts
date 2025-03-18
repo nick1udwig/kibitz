@@ -479,6 +479,13 @@ Format: Only output the title, no quotes or explanation`
             }),
             ...(tools.length > 0 && {
               tools: toolsCached
+            }),
+            // Add extended thinking support for Claude 3.7 Sonnet
+            ...(activeProject.settings.model?.includes('claude-3-7-sonnet') && {
+              thinking: {
+                type: 'enabled',
+                budget_tokens: 2000 // We allocate a large budget for complex reasoning
+              }
             })
           });
 
@@ -486,6 +493,52 @@ Format: Only output the title, no quotes or explanation`
             textContent.text += text;
             const updatedMessages = [...currentMessages, currentStreamMessage];
             updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+          });
+          
+          // Handle thinking content blocks from Claude 3.7
+          stream.on('content_block', (contentBlock) => {
+            if (contentBlock.type === 'thinking') {
+              // Create a thinking content block with signature
+              const thinkingContent: MessageContent = {
+                type: 'thinking',
+                thinking: contentBlock.thinking,
+                signature: contentBlock.signature
+              };
+              
+              // Add it to the message content if it doesn't already exist
+              if (!currentStreamMessage.content.some(c => c.type === 'thinking')) {
+                currentStreamMessage.content.unshift(thinkingContent);
+                const updatedMessages = [...currentMessages, currentStreamMessage];
+                updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+              }
+            } else if (contentBlock.type === 'redacted_thinking') {
+              // Handle redacted thinking blocks
+              const redactedThinkingContent: MessageContent = {
+                type: 'redacted_thinking',
+                data: contentBlock.data
+              };
+              
+              // Add it to the message content if it doesn't already exist
+              if (!currentStreamMessage.content.some(c => c.type === 'redacted_thinking')) {
+                currentStreamMessage.content.unshift(redactedThinkingContent);
+                const updatedMessages = [...currentMessages, currentStreamMessage];
+                updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+              }
+            }
+          });
+          
+          // Handle signature_delta events for thinking blocks
+          stream.on('content_block_delta', (delta) => {
+            if (delta.type === 'thinking' && delta.signature_delta) {
+              // Find the thinking content block in the current message
+              const thinkingBlock = currentStreamMessage.content.find(c => c.type === 'thinking');
+              if (thinkingBlock && thinkingBlock.type === 'thinking') {
+                // Update the signature with the delta
+                thinkingBlock.signature = (thinkingBlock.signature || '') + delta.signature_delta;
+                const updatedMessages = [...currentMessages, currentStreamMessage];
+                updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+              }
+            }
           });
 
           streamRef.current = stream;
@@ -597,6 +650,8 @@ Format: Only output the title, no quotes or explanation`
               currentMessages.push(toolResultMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
+              // For tool use with extended thinking, we need to preserve the thinking content blocks
+              // This is important for maintaining conversation context with thinking blocks
               if (!shouldCancelRef.current) continue;
               break;
             } catch (error) {

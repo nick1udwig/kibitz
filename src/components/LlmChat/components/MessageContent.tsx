@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -22,6 +22,8 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
   contentIndex,
   messageIndex
 }) => {
+  // Define state variables at the component level to avoid React Hook rules violations
+  const [isThinkingExpanded, setIsThinkingExpanded] = useState(false);
   if (content.type === 'text') {
     return (
       <div
@@ -195,6 +197,67 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
             >
               🛠️: {content.name}
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  if (content.type === 'thinking') {
+    return (
+      <div
+        key={`thinking-${messageIndex}-${contentIndex}`}
+        className="flex w-full"
+      >
+        <div
+          className={`w-full rounded-lg px-4 py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-900 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-800`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-semibold flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+              </svg>
+              Claude&apos;s Extended Thinking
+            </div>
+            <button 
+              onClick={() => setIsThinkingExpanded(!isThinkingExpanded)}
+              className="text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100"
+            >
+              {isThinkingExpanded ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          
+          {isThinkingExpanded && (
+            <div className="mt-2 border-t border-yellow-200 dark:border-yellow-800 pt-2">
+              <ReactMarkdown
+                className="prose dark:prose-invert break-words max-w-full prose-sm"
+                remarkPlugins={[remarkGfm]}
+              >
+                {content.thinking}
+              </ReactMarkdown>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  if (content.type === 'redacted_thinking') {
+    return (
+      <div
+        key={`redacted-thinking-${messageIndex}-${contentIndex}`}
+        className="flex w-full"
+      >
+        <div
+          className={`w-full rounded-lg px-4 py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-900 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-800`}
+        >
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span>Redacted extended thinking (encrypted for privacy/safety)</span>
           </div>
         </div>
       </div>
