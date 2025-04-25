@@ -27,6 +27,14 @@ export const useMessageSender = () => {
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
+  // Add a state variable to track if thinking has started
+  const thinkingStartedRef = useRef<boolean>(false);
+  const pendingResponseRef = useRef<{
+    role: 'assistant';
+    content: MessageContent[];
+    timestamp: Date;
+  } | null>(null);
+
   const getUniqueTools = useCallback((should_cache: boolean) => {
     if (!activeProject?.settings.mcpServerIds?.length) {
       return [];
@@ -256,7 +264,7 @@ export const useMessageSender = () => {
           name: msg.toolInput as string | undefined
         }));
 
-        const currentStreamMessage = {
+        let currentStreamMessage = {
           role: 'assistant' as const,
           content: [] as MessageContent[],
           timestamp: new Date(),
@@ -489,54 +497,180 @@ Format: Only output the title, no quotes or explanation`
             })
           });
 
-          stream.on('text', (text) => {
-            textContent.text += text;
-            const updatedMessages = [...currentMessages, currentStreamMessage];
-            updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+          // Reset the thinking flag for this new message
+          thinkingStartedRef.current = false;
+          pendingResponseRef.current = null;
+
+          // Initialize the message on stream start
+          stream.on('message_start', (message: any) => {
+            // Always create the message container immediately for better UX
+            currentStreamMessage = {
+              role: 'assistant',
+              content: [],
+              timestamp: new Date()
+            };
+            
+            // Add initial text block
+            const textContent: MessageContent = {
+              type: 'text',
+              text: '' // Start with empty text
+            };
+            currentStreamMessage.content.push(textContent);
+            
+            // Add to conversation immediately to show "waiting" state
+            updateConversationMessages(activeProject.id, activeConversationId, [...currentMessages, currentStreamMessage]);
           });
-          
-          // Handle thinking content blocks from Claude 3.7
-          stream.on('content_block', (contentBlock) => {
-            if (contentBlock.type === 'thinking') {
-              // Create a thinking content block with signature
-              const thinkingContent: MessageContent = {
-                type: 'thinking',
-                thinking: contentBlock.thinking,
-                signature: contentBlock.signature
-              };
+
+          // Handle text updates with direct DOM updates for better performance
+          stream.on('text', (text: string) => {
+            // Find existing text block
+            const textBlock = currentStreamMessage.content.find(c => c.type === 'text');
+            if (textBlock && textBlock.type === 'text') {
+              textBlock.text += text;
               
-              // Add it to the message content if it doesn't already exist
-              if (!currentStreamMessage.content.some(c => c.type === 'thinking')) {
-                currentStreamMessage.content.unshift(thinkingContent);
-                const updatedMessages = [...currentMessages, currentStreamMessage];
-                updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
-              }
-            } else if (contentBlock.type === 'redacted_thinking') {
-              // Handle redacted thinking blocks
-              const redactedThinkingContent: MessageContent = {
-                type: 'redacted_thinking',
-                data: contentBlock.data
-              };
-              
-              // Add it to the message content if it doesn't already exist
-              if (!currentStreamMessage.content.some(c => c.type === 'redacted_thinking')) {
-                currentStreamMessage.content.unshift(redactedThinkingContent);
-                const updatedMessages = [...currentMessages, currentStreamMessage];
-                updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+              // Try direct DOM update for better performance
+              const textElement = document.querySelector('[data-text-content="true"]');
+              if (textElement) {
+                // Update text directly in DOM
+                textElement.textContent = textBlock.text;
+                
+                // Scroll container if needed
+                const container = textElement.closest('.overflow-auto');
+                if (container) {
+                  container.scrollTop = container.scrollHeight;
+                }
+              } else {
+                // Fall back to React state update if DOM element not found
+                updateConversationMessages(activeProject.id, activeConversationId, [...currentMessages, currentStreamMessage]);
               }
             }
           });
-          
-          // Handle signature_delta events for thinking blocks
-          stream.on('content_block_delta', (delta) => {
-            if (delta.type === 'thinking' && delta.signature_delta) {
-              // Find the thinking content block in the current message
-              const thinkingBlock = currentStreamMessage.content.find(c => c.type === 'thinking');
+
+          // Direct DOM update function for thinking content
+          const updateThinkingContent = (thinkingText: string) => {
+            // Find the thinking element in the DOM
+            const thinkingElement = document.querySelector('[data-thinking-content="true"]');
+            if (thinkingElement) {
+              // Update the text directly for better performance
+              thinkingElement.textContent = thinkingText;
+              
+              // Force scroll to bottom if container exists
+              const container = thinkingElement.closest('.overflow-y-auto');
+              if (container) {
+                container.scrollTop = container.scrollHeight;
+              }
+            }
+          };
+
+          // Create a debounced function for state updates to prevent UI flicker
+          let updateTimeoutId: ReturnType<typeof setTimeout> | null = null;
+          const debouncedUpdateMessages = (messages: Message[]) => {
+            if (updateTimeoutId) {
+              clearTimeout(updateTimeoutId);
+            }
+            
+            updateTimeoutId = setTimeout(() => {
+              updateConversationMessages(activeProject.id, activeConversationId, messages);
+              updateTimeoutId = null;
+            }, 50); // Short debounce to batch updates
+          };
+
+          // Handle content_block_start to prepare UI
+          stream.on('content_block_start', (blockStart: any) => {
+            // If this is a thinking block, prepare the UI for it
+            if (blockStart.type === 'thinking') {
+              thinkingStartedRef.current = true;
+              
+              // Initialize message if not already done
+              if (pendingResponseRef.current) {
+                currentStreamMessage = pendingResponseRef.current;
+                pendingResponseRef.current = null;
+              }
+              
+              // Add an empty thinking block for streaming
+              const thinkingContent: MessageContent = {
+                type: 'thinking',
+                thinking: '',
+                signature: ''
+              };
+              
+              // Add thinking block at beginning
+              if (!currentStreamMessage.content.some(c => c.type === 'thinking')) {
+                currentStreamMessage.content.unshift(thinkingContent);
+                
+                // Force immediate update to show thinking UI
+                updateConversationMessages(activeProject.id, activeConversationId, 
+                  [...currentMessages, currentStreamMessage]);
+              }
+            }
+          });
+
+          // Handle content_block_delta with highest priority for thinking_delta events
+          stream.on('content_block_delta', (delta: any) => {
+            if (delta.type === 'thinking_delta' && delta.thinking_delta) {
+              thinkingStartedRef.current = true;
+              
+              // Find or create thinking block
+              let thinkingBlock = currentStreamMessage?.content.find(c => c.type === 'thinking');
+              
+              if (!thinkingBlock && currentStreamMessage) {
+                // Create a new thinking block
+                thinkingBlock = {
+                  type: 'thinking',
+                  thinking: '',
+                  signature: ''
+                };
+                
+                // Add to beginning of message
+                currentStreamMessage.content.unshift(thinkingBlock);
+                
+                // Force immediate update
+                updateConversationMessages(activeProject.id, activeConversationId, 
+                  [...currentMessages, currentStreamMessage]);
+              }
+              
               if (thinkingBlock && thinkingBlock.type === 'thinking') {
-                // Update the signature with the delta
+                // Update the thinking content
+                thinkingBlock.thinking = (thinkingBlock.thinking || '') + delta.thinking_delta;
+                
+                // Try direct DOM update first for better performance
+                updateThinkingContent(thinkingBlock.thinking);
+                
+                // Also update in state but with lower frequency
+                debouncedUpdateMessages([...currentMessages, {
+                  ...currentStreamMessage,
+                  content: [...currentStreamMessage.content]
+                }]);
+              }
+            } else if (delta.type === 'text_delta' && delta.text_delta) {
+              // Only process text deltas after thinking has started or if thinking is disabled
+              if (!activeProject.settings.enableThinking || 
+                  thinkingStartedRef.current || 
+                  !activeProject.settings.model?.includes('claude-3-7')) {
+                
+                // Find the text block
+                const textBlock = currentStreamMessage?.content.find(c => c.type === 'text');
+                
+                if (textBlock && textBlock.type === 'text') {
+                  // Update the text block
+                  textBlock.text = (textBlock.text || '') + delta.text_delta;
+                  
+                  // Use debounced update for text to prevent UI flickering
+                  debouncedUpdateMessages([...currentMessages, {
+                    ...currentStreamMessage,
+                    content: [...currentStreamMessage.content]
+                  }]);
+                }
+              }
+            }
+          });
+
+          // Handle signature_delta
+          stream.on('content_block_delta', (delta: any) => {
+            if (delta.type === 'signature_delta' && delta.signature_delta) {
+              const thinkingBlock = currentStreamMessage?.content.find(c => c.type === 'thinking');
+              if (thinkingBlock && thinkingBlock.type === 'thinking') {
                 thinkingBlock.signature = (thinkingBlock.signature || '') + delta.signature_delta;
-                const updatedMessages = [...currentMessages, currentStreamMessage];
-                updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
               }
             }
           });
