@@ -172,7 +172,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   };
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div id="chat-view" className="flex flex-col h-full relative">
       <div ref={chatContainerRef} className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
         <div className="space-y-4 mb-4">
           {visibleMessages?.map((message, index) => (

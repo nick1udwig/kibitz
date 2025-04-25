@@ -123,17 +123,17 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onUploadCo
 
   // Setup and cleanup global drag-drop handlers
   React.useEffect(() => {
-    const textarea = document.querySelector('textarea');
-    if (textarea) {
-      textarea.addEventListener('dragover', handleGlobalDragOver);
-      textarea.addEventListener('drop', handleGlobalDrop);
-    }
+    // Target the entire chat interface instead of just the textarea
+    const chatInterface = document.getElementById('chat-view');
+    const fallbackInterface = document.querySelector('.flex.flex-col.h-full.relative') || document.body;
+    const dropTarget = chatInterface || fallbackInterface;
+    
+    dropTarget.addEventListener('dragover', handleGlobalDragOver as EventListener);
+    dropTarget.addEventListener('drop', handleGlobalDrop as EventListener);
 
     return () => {
-      if (textarea) {
-        textarea.removeEventListener('dragover', handleGlobalDragOver);
-        textarea.removeEventListener('drop', handleGlobalDrop);
-      }
+      dropTarget.removeEventListener('dragover', handleGlobalDragOver as EventListener);
+      dropTarget.removeEventListener('drop', handleGlobalDrop as EventListener);
     };
   }, [handleGlobalDragOver, handleGlobalDrop]);
 
@@ -143,7 +143,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onUploadCo
         type="file"
         ref={fileInputRef}
         onChange={handleFileSelect}
-        accept={[...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_DOCUMENT_TYPES].join(',')}
+        accept={[...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_DOCUMENT_TYPES, ...ADDITIONAL_ACCEPTED_TEXT_TYPES, 'text/*'].join(',')}
         className="hidden"
         multiple
       />
