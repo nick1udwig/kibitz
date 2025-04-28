@@ -41,6 +41,16 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     c => c.id === activeConversationId
   );
 
+  // Determine the API key based on the provider
+  const apiKey = activeProject?.settings.provider === 'openrouter'
+    ? activeProject?.settings.openRouterApiKey
+    : activeProject?.settings.provider === 'openai'
+      ? activeProject?.settings.openaiApiKey
+      : activeProject?.settings.anthropicApiKey || activeProject?.settings.apiKey;
+
+  const provider = activeProject?.settings.provider;
+  const model = activeProject?.settings.model;
+
   const numMessages = activeConversation?.messages.length;
   const visibleMessages = useMemo(() => {
     if (!activeConversation?.messages) return [];
@@ -246,12 +256,18 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             setCurrentFileContent(prev => [...prev, { ...content }]);
           }}
           placeholder={
-            !activeProject?.settings.apiKey?.trim()
+            !activeProject?.settings.apiKey?.trim() && !activeProject?.settings.anthropicApiKey?.trim() && 
+            !activeProject?.settings.openaiApiKey?.trim() && !activeProject?.settings.openRouterApiKey?.trim()
               ? "⚠️ Set your API key in Settings to start chatting"
               : isLoading
                 ? "Processing response..."
                 : "Type your message"
           }
+          // Pass necessary props for prompt enhancement
+          provider={provider}
+          apiKey={apiKey}
+          model={model}
+          showError={showError}
         />
       </div>
 
