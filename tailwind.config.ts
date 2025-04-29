@@ -26,8 +26,9 @@ module.exports = {
               overflow: 'auto',
             },
             code: {
-              wordBreak: 'break-word',
-              whiteSpace: 'pre-wrap',
+              wordBreak: 'normal',
+              whiteSpace: 'normal',
+              display: 'inline',
             },
             'code::before': {
               content: '""',
