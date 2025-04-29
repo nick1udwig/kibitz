@@ -132,4 +132,12 @@
     -webkit-hyphens: auto;
     hyphens: auto;
   }
+  
+  .inline-code-fix code:not(pre code) {
+    display: inline !important;
+    white-space: normal !important;
+    word-break: normal !important;
+    line-height: inherit !important;
+    vertical-align: baseline !important;
+  }
 }

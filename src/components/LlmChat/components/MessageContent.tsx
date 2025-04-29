@@ -46,7 +46,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
             }`}
           >
             <ReactMarkdown
-              className={`prose dark:prose-invert break-words max-w-full ${
+              className={`prose dark:prose-invert break-words max-w-full inline-code-fix ${
                 isUserMessage ? '[&_p]:!text-accent-foreground [&_code]:!text-accent-foreground' : ''
               }`}
               components={{
@@ -95,7 +95,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
                   const { className, children } = props;
                   const isInline = className?.includes('language-') === false;
                   return isInline ? (
-                    <code className="text-inherit whitespace-nowrap inline">
+                    <code className="text-inherit inline-block align-baseline">
                       {children}
                     </code>
                   ) : (
