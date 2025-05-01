@@ -23,6 +23,19 @@ export type DocumentMessageContent = {
   cache_control?: CacheControlEphemeral | null;
 };
 
+export type ThinkingMessageContent = {
+  type: 'thinking';
+  thinking: string;
+  signature: string;
+  cache_control?: CacheControlEphemeral | null;
+};
+
+export type RedactedThinkingMessageContent = {
+  type: 'redacted_thinking';
+  data: string;
+  cache_control?: CacheControlEphemeral | null;
+};
+
 export type MessageContent = {
   type: 'text';
   text: string;
@@ -39,7 +52,7 @@ export type MessageContent = {
   content: string;
   is_error?: boolean,
   cache_control?: CacheControlEphemeral | null;
-} | ImageMessageContent | DocumentMessageContent;
+} | ThinkingMessageContent | RedactedThinkingMessageContent | ImageMessageContent | DocumentMessageContent;
 
 export type Message = {
   role: 'user' | 'assistant';

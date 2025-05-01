@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -22,6 +22,41 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
   contentIndex,
   messageIndex
 }) => {
+  // Define state variables at the component level to avoid React Hook rules violations
+  const [isThinkingExpanded, setIsThinkingExpanded] = useState(true);
+  const [prevThinkingLength, setPrevThinkingLength] = useState(0);
+  const [highlightPosition, setHighlightPosition] = useState({ start: 0, end: 0 });
+  const thinkingRef = useRef<HTMLDivElement>(null);
+  
+  // Effect to highlight and auto-scroll when thinking content changes
+  useEffect(() => {
+    if (content.type === 'thinking' && content.thinking) {
+      const currentLength = content.thinking.length;
+      
+      if (currentLength > prevThinkingLength) {
+        // New content was added
+        setHighlightPosition({ 
+          start: prevThinkingLength, 
+          end: currentLength 
+        });
+        
+        // Auto-scroll to show new content
+        if (thinkingRef.current) {
+          thinkingRef.current.scrollTop = thinkingRef.current.scrollHeight;
+        }
+        
+        // Reset highlight after animation
+        const timer = setTimeout(() => {
+          setHighlightPosition({ start: 0, end: 0 });
+        }, 1000);
+        
+        return () => clearTimeout(timer);
+      }
+      
+      setPrevThinkingLength(currentLength);
+    }
+  }, [content.type === 'thinking' ? content.thinking : null, prevThinkingLength]);
+
   if (content.type === 'text') {
     return (
       <div
@@ -51,7 +86,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
               }`}
               components={{
                 p: ({ children }) => (
-                  <p className="break-words whitespace-pre-wrap overflow-hidden">
+                  <p className="break-words whitespace-pre-wrap overflow-hidden" data-text-content="true">
                     {children}
                   </p>
                 ),
@@ -195,6 +230,104 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
             >
               🛠️: {content.name}
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  if (content.type === 'thinking') {
+    // Split thinking content into parts to apply highlighting
+    const thinkingText = content.thinking || '';
+    const beforeHighlight = thinkingText.substring(0, highlightPosition.start);
+    const highlighted = thinkingText.substring(highlightPosition.start, highlightPosition.end);
+    const afterHighlight = thinkingText.substring(highlightPosition.end);
+    
+    return (
+      <div
+        key={`thinking-${messageIndex}-${contentIndex}`}
+        className="flex w-full"
+      >
+        <div
+          className={`w-full rounded-lg px-4 py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-900 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-800 transition-all duration-200`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-semibold flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 animate-spin-slow">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+              </svg>
+              Claude&apos;s Extended Thinking
+              {!thinkingText && <span className="ml-2 inline-block animate-pulse">...</span>}
+            </div>
+            <button 
+              onClick={() => setIsThinkingExpanded(!isThinkingExpanded)}
+              className="text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100 transition-colors"
+            >
+              {isThinkingExpanded ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          
+          {isThinkingExpanded && (
+            <div 
+              ref={thinkingRef}
+              className="mt-2 border-t border-yellow-200 dark:border-yellow-800 pt-2 max-h-[60vh] overflow-y-auto transition-all duration-200"
+            >
+              {!thinkingText ? (
+                <div className="text-yellow-700 dark:text-yellow-300 italic flex items-center">
+                  <span>Collecting thoughts</span>
+                  <span className="ml-1 inline-block animate-ellipsis">...</span>
+                </div>
+              ) : (
+                <div className="prose dark:prose-invert break-words max-w-full prose-sm">
+                  {highlightPosition.start !== highlightPosition.end ? (
+                    <>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {beforeHighlight}
+                      </ReactMarkdown>
+                      {highlighted && (
+                        <span className="bg-yellow-200 dark:bg-yellow-800 transition-colors animate-pulse">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {highlighted}
+                          </ReactMarkdown>
+                        </span>
+                      )}
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {afterHighlight}
+                      </ReactMarkdown>
+                    </>
+                  ) : (
+                    <div data-thinking-content="true">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {thinkingText}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+                  <div className="inline-block animate-cursor mt-1">▋</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  if (content.type === 'redacted_thinking') {
+    return (
+      <div
+        key={`redacted-thinking-${messageIndex}-${contentIndex}`}
+        className="flex w-full"
+      >
+        <div
+          className={`w-full rounded-lg px-4 py-2 bg-yellow-50 dark:bg-yellow-900/30 text-yellow-900 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-800`}
+        >
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span>Redacted extended thinking (encrypted for privacy/safety)</span>
           </div>
         </div>
       </div>

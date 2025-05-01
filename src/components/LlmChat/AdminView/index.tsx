@@ -430,6 +430,27 @@ export const AdminView = () => {
                 Use Claude to elide tool results from previous messages
               </label>
             </div>
+
+            {/* Add the thinking toggle after the elideToolResults toggle */}
+            {activeProject.settings.model?.includes('claude-3-7-sonnet') && (
+              <div className="flex items-center space-x-2 mt-2">
+                <input
+                  type="checkbox"
+                  id="enableThinking"
+                  checked={activeProject.settings.enableThinking ?? false}
+                  onChange={(e) => handleSettingsChange({
+                    enableThinking: e.target.checked
+                  })}
+                  className="rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <label htmlFor="enableThinking" className="text-sm font-medium">
+                  Enable Claude's thinking mode
+                </label>
+                <div className="ml-1 text-xs text-muted-foreground">
+                  Shows step-by-step reasoning before answers
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
