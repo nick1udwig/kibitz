@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, RefObject } from 'react';
 import { throttle } from 'lodash';
 
 interface UseScrollControlProps {
@@ -9,19 +9,22 @@ interface UseScrollControlProps {
       [key: string]: unknown;
     }>;
   }[];
+  scrollContainerRef?: RefObject<HTMLDivElement | null> | RefObject<HTMLDivElement>;
 }
 
-export const useScrollControl = ({ messages }: UseScrollControlProps) => {
-  const chatContainerRef = useRef<HTMLDivElement>(null);
+export const useScrollControl = ({ messages, scrollContainerRef }: UseScrollControlProps) => {
+  // Only create our own ref if one wasn't provided
+  const internalRef = useRef<HTMLDivElement>(null);
+  const containerRef = scrollContainerRef || internalRef;
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   useEffect(() => {
     const makeHandleScroll = async () => {
-      while (!chatContainerRef.current) {
+      while (!containerRef.current) {
         await new Promise(resolve => setTimeout(resolve, 250));
       }
 
-      const container = chatContainerRef.current;
+      const container = containerRef.current;
 
       // Initial scroll to bottom
       if (container.scrollTop === 0) {
@@ -44,11 +47,11 @@ export const useScrollControl = ({ messages }: UseScrollControlProps) => {
     };
 
     makeHandleScroll();
-  }, []);
+  }, [containerRef]);
 
   // Auto-scroll when messages update
   useEffect(() => {
-    if (!chatContainerRef.current || !messages.length) {
+    if (!containerRef.current || !messages.length) {
       return;
     }
 
@@ -58,23 +61,23 @@ export const useScrollControl = ({ messages }: UseScrollControlProps) => {
     if ((lastMessage.role === 'assistant' || lastMessage.role === 'user') && 
         (isAtBottom || isInitialMessage)) {
       requestAnimationFrame(() => {
-        const container = chatContainerRef.current;
+        const container = containerRef.current;
         if (container) {
           container.scrollTop = container.scrollHeight;
         }
       });
     }
-  }, [messages, isAtBottom]);
+  }, [messages, isAtBottom, containerRef]);
 
   const scrollToBottom = () => {
-    const container = chatContainerRef.current;
+    const container = containerRef.current;
     if (container) {
       container.scrollTop = container.scrollHeight;
     }
   };
 
   return {
-    chatContainerRef,
+    chatContainerRef: containerRef,
     isAtBottom,
     scrollToBottom
   };

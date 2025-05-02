@@ -1,4 +1,4 @@
-import React, { useState, useRef, useImperativeHandle, useMemo } from 'react';
+import React, { useState, useRef, useImperativeHandle, useMemo, useEffect, useCallback } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 import { useFocusControl } from './context/useFocusControl';
 import { useStore } from '@/stores/rootStore';
@@ -12,6 +12,8 @@ import { HistoryToggle } from './components/HistoryToggle';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
 import { useErrorDisplay } from './hooks/useErrorDisplay';
+import { usePagination } from './hooks/usePagination';
+import { MessagesLoadingIndicator } from './components/MessagesLoadingIndicator';
 
 // Default message window size if not configured
 const DEFAULT_MESSAGE_WINDOW = 30;
@@ -51,50 +53,40 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const provider = activeProject?.settings.provider;
   const model = activeProject?.settings.model;
 
-  const numMessages = activeConversation?.messages.length;
-  const visibleMessages = useMemo(() => {
+  // Get all messages 
+  const allMessages = useMemo(() => {
     if (!activeConversation?.messages) return [];
-
-    if (activeProject?.settings.showAllMessages) {
-      return activeConversation.messages;
-    }
-
-    const messageWindow = activeProject?.settings.messageWindowSize ?? DEFAULT_MESSAGE_WINDOW;
-    const messages = activeConversation.messages.slice(numMessages ? numMessages - messageWindow : 0, numMessages);
-
-    // Only add the hint if there are more messages than what we're showing
-    if (numMessages && numMessages > messageWindow) {
-      return [
-        {
-          role: 'assistant',
-          content: [{
-            type: 'text',
-            text: `_Showing last ${messageWindow} messages. Enable "History" to see all ${numMessages} messages._`
-          }],
-          timestamp: new Date()
-        } as Message,
-        ...messages
-      ];
-    }
-
-    return messages;
-  }, [activeConversation?.messages, activeProject?.settings.showAllMessages, activeProject?.settings.messageWindowSize, numMessages]);
-
-  //const [inputMessage, setInputMessage] = useState('');
-  //const [isLoading, setIsLoading] = useState(false);
-  //const [error, setError] = useState<string | null>(null);
-  //const shouldCancelRef = useRef<boolean>(false);
-  //const streamRef = useRef<{ abort: () => void } | null>(null);
-  //const chatContainerRef = useRef<HTMLDivElement>(null);
+    return activeConversation.messages;
+  }, [activeConversation?.messages]);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Create a shared ref for the scroll container
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Use custom hooks
   useFocusControl();
   const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall, clearError: clearSendError } = useMessageSender();
   const { error, showError, clearError } = useErrorDisplay();
-  const { chatContainerRef, isAtBottom, scrollToBottom } = useScrollControl({
-    messages: activeConversation?.messages || []
+  
+  // Pagination hook with direct container ref
+  const {
+    visibleMessages,
+    hasMoreMessages,
+    isLoadingMore,
+    loadMoreMessages,
+    anchorRef,
+    displayCount
+  } = usePagination({
+    allMessages: allMessages,
+    initialPageSize: 15, // Initially show 15 messages
+    containerRef: scrollContainerRef // Pass the ref directly
+  });
+
+  // Legacy scroll control for auto-scrolling on new messages
+  const { isAtBottom, scrollToBottom } = useScrollControl({
+    messages: activeConversation?.messages || [],
+    scrollContainerRef: scrollContainerRef
   });
 
   // Expose focus method to parent components
@@ -109,6 +101,18 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     }),
     []
   );
+
+  // After a new conversation is loaded, scroll to the bottom to see latest messages
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      // Wait for the DOM to update with new messages
+      setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
+      }, 100);
+    }
+  }, [activeConversationId]);
 
   const getToolResult = (toolUseIndex: number, toolId: string) => {
     const nextMessage = activeConversation?.messages[toolUseIndex + 1];
@@ -181,13 +185,58 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     }
   };
 
+  // Add a manual load more button for cases where auto-load fails
+  const handleManualLoadMore = () => {
+    console.log("Manual load triggered");
+    if (hasMoreMessages && !isLoadingMore) {
+      loadMoreMessages();
+    }
+  };
+
   return (
     <div id="chat-view" className="flex flex-col h-full relative">
-      <div ref={chatContainerRef} className="h-[calc(100vh-4rem)] overflow-y-auto p-4">
+      <div 
+        ref={scrollContainerRef} 
+        className="h-[calc(100vh-4rem)] overflow-y-auto p-4"
+        onScroll={(e) => {
+          // Additional debugging for scroll position
+          const el = e.currentTarget;
+          console.log(`Scroll: top=${el.scrollTop}, height=${el.scrollHeight}, client=${el.clientHeight}`);
+        }}
+      >
+        {/* Loading indicator for older messages at the top */}
+        <MessagesLoadingIndicator visible={isLoadingMore} />
+        
+        {/* Message count info with manual load button */}
+        {hasMoreMessages && !isLoadingMore && (
+          <div className="text-center my-2">
+            <div className="text-xs text-muted-foreground">
+              Showing {displayCount} of {allMessages.length} messages
+            </div>
+            <div className="flex justify-center mt-1">
+              <button 
+                onClick={handleManualLoadMore}
+                className="text-xs text-blue-500 hover:text-blue-700 underline"
+              >
+                Load older messages
+              </button>
+            </div>
+          </div>
+        )}
+        
         <div className="space-y-4 mb-4">
-          {visibleMessages?.map((message, index) => (
-            renderMessageContent(message, index)
-          ))}
+          {visibleMessages.map((message, index) => {
+            // Set a ref for the first visible message (which is now one of the newest)
+            const isFirstMessage = index === 0;
+            return (
+              <div 
+                key={`message-wrapper-${index}`} 
+                ref={isFirstMessage ? anchorRef : null}
+              >
+                {renderMessageContent(message, index)}
+              </div>
+            );
+          })}
         </div>
       </div>
 
