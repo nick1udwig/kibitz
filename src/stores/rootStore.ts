@@ -32,7 +32,6 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   systemPrompt: '',
   elideToolResults: false,
   mcpServerIds: [],
-  showAllMessages: true,  // ensure all required fields are set
   messageWindowSize: 30,  // default number of messages in truncated view
 };
 

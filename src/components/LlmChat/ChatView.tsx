@@ -8,7 +8,6 @@ import { MessageContentRenderer } from './components/MessageContent';
 import { FileContentList } from './components/FileContentList';
 import { ChatInput } from './components/ChatInput';
 import { ScrollToBottomButton } from './components/ScrollToBottomButton';
-import { HistoryToggle } from './components/HistoryToggle';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
 import { useErrorDisplay } from './hooks/useErrorDisplay';
@@ -243,20 +242,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
       <ScrollToBottomButton
         onClick={scrollToBottom}
         visible={!isAtBottom}
-      />
-
-      <HistoryToggle
-        checked={activeProject?.settings.showAllMessages ?? false}
-        onChange={(checked) => {
-          if (activeProject) {
-            updateProjectSettings(activeProject.id, {
-              settings: {
-                ...activeProject.settings,
-                showAllMessages: checked
-              }
-            });
-          }
-        }}
       />
 
       {(error || sendError) && (
