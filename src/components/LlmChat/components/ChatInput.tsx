@@ -42,26 +42,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [isImproving, setIsImproving] = useState(false);
   const [hasUsedImprovePrompt, setHasUsedImprovePrompt] = useState(false);
 
-  // Reset height when loading starts
+  // Reset height when loading starts or completes
   React.useEffect(() => {
-    if (isLoading && inputRef.current) {
-      inputRef.current.style.height = 'auto';
+    // The textarea component will now handle height adjustments internally
+    // We just need to ensure it recalculates after loading state changes
+    if (inputRef.current) {
+      // Trigger a resize event to make sure the textarea adjusts properly
+      const event = new Event('input', { bubbles: true });
+      inputRef.current.dispatchEvent(event);
     }
   }, [isLoading]);
-
-  // Function to manually adjust the height of the textarea
-  const adjustTextareaHeight = React.useCallback(() => {
-    if (!inputRef.current) return;
-    
-    // Reset height first to get accurate scrollHeight
-    inputRef.current.style.height = 'auto';
-    
-    // Set height based on content - limit to maxRows (defined below as 12)
-    const lineHeight = parseInt(getComputedStyle(inputRef.current).lineHeight);
-    const maxHeight = 12 * (isNaN(lineHeight) ? 20 : lineHeight); // Default to 20px if lineHeight can't be parsed
-    
-    inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, maxHeight)}px`;
-  }, []);
 
   // Function to handle prompt improvement
   const handleImprovePrompt = async () => {
@@ -92,10 +82,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       const improvedPrompt = await enhancePrompt(value, provider, apiKey, model);
       onChange(improvedPrompt);
       
-      // Give the DOM a moment to update with the new text, then adjust height
-      setTimeout(() => {
-        adjustTextareaHeight();
-      }, 50);
+      // No need for manual height adjustment anymore
       
       // Mark that improve prompt has been used once
       setHasUsedImprovePrompt(true);
@@ -114,8 +101,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           value={isLoading ? "Processing..." : value}
           onChange={(e) => {
             onChange(e.target.value);
-            // Auto-adjust height on manual typing too
-            setTimeout(adjustTextareaHeight, 0);
+            // No need for manual height adjustment, handled by Textarea component
           }}
           placeholder={placeholder}
           readOnly={isLoading}
