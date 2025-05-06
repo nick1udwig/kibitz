@@ -31,7 +31,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       }
       
       return () => {
-        if (hiddenTextareaRef.current) {
+        if (hiddenTextareaRef.current && document.body.contains(hiddenTextareaRef.current)) {
           document.body.removeChild(hiddenTextareaRef.current);
         }
       };
