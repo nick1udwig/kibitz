@@ -149,6 +149,13 @@ export const useMessageSender = () => {
         apiKey: activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '',
         dangerouslyAllowBrowser: true,
         maxRetries: 12,
+        defaultHeaders: {
+          "X-Stainless-Lang": "typescript"
+        },
+        defaultQuery: {
+          anthropic_version: "2023-06-01"
+        },
+        timeout: 120000, // 120 seconds timeout for long responses
       });
 
       const toolsCached = getUniqueTools(true);
@@ -175,26 +182,82 @@ export const useMessageSender = () => {
         let lastError: unknown;
         const maxAttempts = 12;
 
+        // TEMPORARY TESTING FUNCTION - Remove after testing
+        const simulateOverloadedError = () => {
+          // Simulate a 429 error response for testing the retry mechanism
+          const testError = {
+            error: { 
+              type: "overloaded_error", 
+              message: "Anthropic API is currently overloaded" 
+            },
+            status: 429,
+            statusText: "Too Many Requests"
+          };
+          return testError;
+        };
+
+        // Add this URL parameter for testing: ?test_retry=true
+        const urlParams = new URLSearchParams(window.location.search);
+        const shouldTestRetry = urlParams.get('test_retry') === 'true';
+
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
+            // If testing retry and not on the last attempt, throw a simulated error
+            if (shouldTestRetry && attempt < 3) {
+              console.log(`[TEST MODE] Simulating overloaded error (attempt ${attempt + 1})`);
+              throw simulateOverloadedError();
+            }
+            
             const stream = await anthropic.messages.stream(params);
+            // Clear any retry error message when successful
+            if (attempt > 0) {
+              setError(null);
+            }
             return stream;
           } catch (error) {
             lastError = error;
-            console.log(`got error ${JSON.stringify(error)}`);
+            console.log(`Anthropic API error: ${JSON.stringify(error)}`);
+            
+            // Check for various overloaded error conditions
             if (typeof error === 'object' && error !== null) {
-              const errorObj = error as { error?: { type?: string }; status?: number };
-              const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-
+              const errorObj = error as { 
+                error?: { type?: string; message?: string; }; 
+                status?: number;
+                statusText?: string;
+              };
+              
+              // Check multiple overloaded error indicators
+              const isOverloaded = 
+                errorObj.error?.type === 'overloaded_error' || 
+                errorObj.status === 429 ||
+                (errorObj.error?.message && 
+                  (errorObj.error.message.includes('overloaded') || 
+                   errorObj.error.message.includes('rate limit') || 
+                   errorObj.error.message.includes('too many requests')));
+              
               if (isOverloaded && attempt < maxAttempts - 1) {
                 const delay = calculateBackoffDelay(attempt);
-                console.log(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
-                setError(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+                const secondsToWait = Math.round(delay/1000);
+                console.log(`Anthropic API overloaded. Retrying in ${secondsToWait}s (attempt ${attempt + 1}/${maxAttempts})`);
+                
+                // Show clear message to the user about the retry
+                setError(`Anthropic servers are currently overloaded. Automatically retrying in ${secondsToWait}s (attempt ${attempt + 1}/${maxAttempts})...`);
+                
                 await new Promise(resolve => setTimeout(resolve, delay));
                 continue;
               }
             }
+            
+            // If we reach here, it's not an overloaded error or we've exhausted retries
             throw error;
+          }
+        }
+        
+        // If we've exhausted all attempts, provide a more helpful error message
+        if (typeof lastError === 'object' && lastError !== null) {
+          const errorObj = lastError as { error?: { type?: string; message?: string }; status?: number };
+          if (errorObj.error?.type === 'overloaded_error' || errorObj.status === 429) {
+            throw new Error(`Anthropic API is currently overloaded. We tried ${maxAttempts} times but couldn't get a response. Please try again later.`);
           }
         }
         throw lastError;
