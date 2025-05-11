@@ -42,26 +42,66 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [isImproving, setIsImproving] = useState(false);
   const [hasUsedImprovePrompt, setHasUsedImprovePrompt] = useState(false);
 
-  // Reset height when loading starts
+  // Set up a MutationObserver to monitor content changes
   React.useEffect(() => {
-    if (isLoading && inputRef.current) {
-      inputRef.current.style.height = 'auto';
-    }
-  }, [isLoading]);
-
-  // Function to manually adjust the height of the textarea
-  const adjustTextareaHeight = React.useCallback(() => {
     if (!inputRef.current) return;
-    
-    // Reset height first to get accurate scrollHeight
-    inputRef.current.style.height = 'auto';
-    
-    // Set height based on content - limit to maxRows (defined below as 12)
-    const lineHeight = parseInt(getComputedStyle(inputRef.current).lineHeight);
-    const maxHeight = 12 * (isNaN(lineHeight) ? 20 : lineHeight); // Default to 20px if lineHeight can't be parsed
-    
-    inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, maxHeight)}px`;
+
+    // Helper function to adjust height directly
+    const adjustHeight = (element: HTMLTextAreaElement) => {
+      // Reset height first for accurate measurement
+      element.style.height = 'auto';
+      // Set height based on scroll height but respect max-height
+      const maxHeight = parseInt(window.getComputedStyle(element).maxHeight || '150px', 10);
+      element.style.height = `${Math.min(element.scrollHeight + 5, maxHeight)}px`;
+      // Enable scrolling if content exceeds max height
+      element.style.overflowY = element.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    };
+
+    // Handle value changes
+    const handleValueChange = () => {
+      if (inputRef.current) {
+        requestAnimationFrame(() => {
+          adjustHeight(inputRef.current!);
+        });
+      }
+    };
+
+    // Set up mutation observer to detect content changes
+    const observer = new MutationObserver((mutations) => {
+      handleValueChange();
+    });
+
+    // Observe the textarea for attribute changes
+    observer.observe(inputRef.current, { 
+      attributes: true, 
+      childList: false, 
+      subtree: false,
+      characterData: true,
+      attributeFilter: ['value'] 
+    });
+
+    // Initial adjustment
+    handleValueChange();
+
+    // Clean up
+    return () => {
+      observer.disconnect();
+    };
   }, []);
+
+  // Also update on value changes from props
+  React.useEffect(() => {
+    if (inputRef.current) {
+      // Reset height first
+      inputRef.current.style.height = 'auto';
+      // Get max height from CSS
+      const maxHeight = parseInt(window.getComputedStyle(inputRef.current).maxHeight || '150px', 10);
+      // Set height based on scroll height but respect max height
+      inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight + 5, maxHeight)}px`;
+      // Enable scrolling if needed
+      inputRef.current.style.overflowY = inputRef.current.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    }
+  }, [value]);
 
   // Function to handle prompt improvement
   const handleImprovePrompt = async () => {
@@ -92,10 +132,33 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       const improvedPrompt = await enhancePrompt(value, provider, apiKey, model);
       onChange(improvedPrompt);
       
-      // Give the DOM a moment to update with the new text, then adjust height
+      // DIRECT APPROACH: Force the textarea to expand after improve prompt
       setTimeout(() => {
-        adjustTextareaHeight();
-      }, 50);
+        if (inputRef.current) {
+          // First reset height to ensure proper calculation
+          inputRef.current.style.height = 'auto';
+          
+          // Get the maximum height from CSS
+          const maxHeight = parseInt(window.getComputedStyle(inputRef.current).maxHeight || '150px', 10);
+          
+          // Then set height based on scrollHeight but respect max height
+          inputRef.current.style.height = Math.min(inputRef.current.scrollHeight + 5, maxHeight) + 'px';
+          
+          // Enable scrolling if needed
+          inputRef.current.style.overflowY = inputRef.current.scrollHeight > maxHeight ? 'auto' : 'hidden';
+          
+          console.log('Applied direct height:', inputRef.current.style.height);
+          
+          // Trigger additional adjustments after react updates
+          setTimeout(() => {
+            if (inputRef.current) {
+              inputRef.current.style.height = Math.min(inputRef.current.scrollHeight + 5, maxHeight) + 'px';
+              inputRef.current.style.overflowY = inputRef.current.scrollHeight > maxHeight ? 'auto' : 'hidden';
+              console.log('Applied secondary height:', inputRef.current.style.height);
+            }
+          }, 100);
+        }
+      }, 10);
       
       // Mark that improve prompt has been used once
       setHasUsedImprovePrompt(true);
@@ -114,8 +177,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           value={isLoading ? "Processing..." : value}
           onChange={(e) => {
             onChange(e.target.value);
-            // Auto-adjust height on manual typing too
-            setTimeout(adjustTextareaHeight, 0);
+            // No need for manual height adjustment, handled by Textarea component
           }}
           placeholder={placeholder}
           readOnly={isLoading}
@@ -128,8 +190,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             }
           }}
           ref={inputRef}
-          className={`pr-20 transition-colors ${isLoading ? 'bg-muted text-muted-foreground resize-none' : ''}`}
-          maxRows={12} // Increased from 8 to 12 to show more content
+          className={`pr-20 transition-colors max-h-[150px] overflow-y-auto ${isLoading ? 'bg-muted text-muted-foreground resize-none' : ''}`}
+          maxRows={8} // Reduced to limit vertical expansion
           disabled={isDisabled || isLoading}
         />
         <div className="absolute right-2 bottom-2 flex gap-1 items-center">
