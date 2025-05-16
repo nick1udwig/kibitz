@@ -1,4 +1,4 @@
-export type LegacyProviderType = 'anthropic' | 'openrouter' | 'openai';
+export type LegacyProviderType = 'anthropic' | 'openrouter' | 'openai' | 'gemini'; // Added 'gemini'
 
 export interface ProviderConfig {
   type: string;
@@ -13,6 +13,7 @@ export interface LegacyProviderSettings {
   openaiApiKey?: string;
   openaiBaseUrl?: string;
   openaiOrgId?: string;
+  geminiApiKey?: string; // Added for Gemini
 }
 
 // Helper function to convert legacy settings to new format
@@ -44,6 +45,15 @@ export function convertLegacyToProviderConfig(
         organizationId: settings.openaiOrgId || '',
       }
     };
+  } else if (provider === 'gemini') { // Added Gemini case
+    return {
+      type: 'gemini',
+      settings: {
+        apiKey: settings.geminiApiKey || '',
+        // Gemini uses a specific base URL for OpenAI compatibility
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      }
+    };
   }
   throw new Error(`Unknown provider type: ${provider}`);
 }
@@ -66,6 +76,10 @@ export function extractLegacySettings(config: ProviderConfig): LegacyProviderSet
         openaiApiKey: config.settings.apiKey,
         openaiBaseUrl: config.settings.baseUrl,
         openaiOrgId: config.settings.organizationId,
+      };
+    case 'gemini': // Added Gemini case
+      return {
+        geminiApiKey: config.settings.apiKey,
       };
     default:
       return {};
@@ -93,11 +107,18 @@ export function getProviderModels(type: string): string[] {
       return [
         'deepseek/deepseek-r1',
         'anthropic/claude-3.5-sonnet',
-        'google/gemini-2.0-flash-thinking-exp:free',
-        'google/gemini-2.0-flash-exp:free',
+        'google/gemini-pro', // Example, OpenRouter lists compatible Gemini models
+        'google/gemini-flash',
         'openai/o1',
         'openai/o1-preview',
         'openai/gpt-4-turbo',
+      ];
+    case 'gemini': // Added Gemini models
+      return [
+        'gemini-1.5-pro-latest', // Using generic "latest" for simplicity, actual versioned models preferred
+        'gemini-1.5-flash-latest',
+        'gemini-pro', // Often used as a general-purpose model
+        // Add more specific Gemini model IDs as needed, e.g., 'gemini-2.0-flash'
       ];
     default:
       return [];

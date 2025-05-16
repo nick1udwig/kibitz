@@ -11,13 +11,15 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ProjectSettings, ProviderType } from '../context/types';
+import { ProjectSettings, ProviderType, LegacyProviderType } from '../context/types';
 import { getProviderModels } from '../types/provider';
 import { McpConfiguration } from './McpConfiguration';
 import ToolsView from './ToolsView';
 import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
 import { getDefaultModelForProvider } from '@/stores/rootStore';
+import { convertLegacyToProviderConfig } from '../../../components/LlmChat/types/provider';
+
 
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings, servers } = useStore();
@@ -119,15 +121,20 @@ export const AdminView = () => {
                 Provider
               </label>
               <select
-                value={activeProject.settings.provider ?? 'anthropic'}
-                onChange={(e) => handleSettingsChange({
-                  provider: e.target.value as ProviderType
-                })}
+                value={activeProject.settings.providerConfig?.type ?? activeProject.settings.provider ?? 'anthropic'}
+                onChange={(e) => {
+                  const newProvider = e.target.value as LegacyProviderType;
+                  handleSettingsChange({
+                    provider: newProvider, // This will trigger model update in handleSettingsChange
+                    providerConfig: convertLegacyToProviderConfig(newProvider, activeProject.settings)
+                  });
+                }}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openrouter">OpenRouter</option>
                 <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="gemini">Google Gemini</option> {/* Added Gemini */}
               </select>
             </div>
 
@@ -138,7 +145,8 @@ export const AdminView = () => {
               <p className="text-sm text-muted-foreground mb-2">
                 Required to chat. Get yours at{' '}
                 {(() => {
-                  switch (activeProject.settings.provider) {
+                  const currentProvider = activeProject.settings.providerConfig?.type ?? activeProject.settings.provider;
+                  switch (currentProvider) {
                     case 'openrouter':
                       return (
                         <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
@@ -151,7 +159,13 @@ export const AdminView = () => {
                           platform.openai.com
                         </a>
                       );
-                    default:
+                    case 'gemini': // Added Gemini link
+                      return (
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                          aistudio.google.com
+                        </a>
+                      );
+                    default: // Anthropic
                       return (
                         <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
                           console.anthropic.com
@@ -163,49 +177,94 @@ export const AdminView = () => {
               <Input
                 type="password"
                 value={
-                  activeProject.settings.provider === 'openrouter'
-                    ? activeProject.settings.openRouterApiKey || ''
-                    : activeProject.settings.provider === 'openai'
-                      ? activeProject.settings.openaiApiKey || ''
-                      : activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || ''  // Fallback for backward compatibility
+                  (() => {
+                    const providerType = activeProject.settings.providerConfig?.type ?? activeProject.settings.provider;
+                    const configSettings = activeProject.settings.providerConfig?.settings;
+                    switch (providerType) {
+                      case 'openrouter': return configSettings?.apiKey || activeProject.settings.openRouterApiKey || '';
+                      case 'openai': return configSettings?.apiKey || activeProject.settings.openaiApiKey || '';
+                      case 'gemini': return configSettings?.apiKey || activeProject.settings.geminiApiKey || ''; // Added Gemini
+                      case 'anthropic':
+                      default:
+                        return configSettings?.apiKey || activeProject.settings.anthropicApiKey || activeProject.settings.apiKey || '';
+                    }
+                  })()
                 }
                 onChange={(e) => {
-                  const value = e.target.value.trim();
-                  switch (activeProject.settings.provider) {
-                    case 'openrouter':
-                      handleSettingsChange({
-                        openRouterApiKey: value
-                      });
-                      break;
-                    case 'openai':
-                      handleSettingsChange({
-                        openaiApiKey: value
-                      });
-                      break;
-                    default:
-                      handleSettingsChange({
-                        anthropicApiKey: value,
-                        apiKey: value  // Keep apiKey in sync for backward compatibility
-                      });
+                  const value = e.target.value; // No trim here, allow spaces if user wants
+                  const providerType = activeProject.settings.providerConfig?.type ?? activeProject.settings.provider;
+                  let keyUpdate: Partial<ProjectSettings> = {};
+                  switch (providerType) {
+                    case 'openrouter': keyUpdate = { openRouterApiKey: value }; break;
+                    case 'openai': keyUpdate = { openaiApiKey: value }; break;
+                    case 'gemini': keyUpdate = { geminiApiKey: value }; break; // Added Gemini
+                    default: // Anthropic
+                      keyUpdate = { anthropicApiKey: value, apiKey: value };
                   }
+                   // Also update the providerConfig
+                  if (activeProject.settings.providerConfig) {
+                    keyUpdate.providerConfig = {
+                      ...activeProject.settings.providerConfig,
+                      settings: {
+                        ...activeProject.settings.providerConfig.settings,
+                        apiKey: value
+                      }
+                    };
+                  }
+                  handleSettingsChange(keyUpdate);
                 }}
                 placeholder={
-                  activeProject.settings.provider === 'openai'
-                    ? "⚠️ Enter your OpenAI API key to use the chat"
-                    : activeProject.settings.provider === 'openrouter'
-                      ? "⚠️ Enter your OpenRouter API key to use the chat"
-                      : "⚠️ Enter your Anthropic API key to use the chat"
+                  (() => {
+                    const providerType = activeProject.settings.providerConfig?.type ?? activeProject.settings.provider;
+                     switch (providerType) {
+                        case 'openai': return "⚠️ Enter your OpenAI API key";
+                        case 'openrouter': return "⚠️ Enter your OpenRouter API key";
+                        case 'gemini': return "⚠️ Enter your Google Gemini API key"; // Added Gemini
+                        default: return "⚠️ Enter your Anthropic API key";
+                      }
+                  })()
                 }
                 className={
-                  activeProject.settings.provider === 'openrouter'
-                    ? ""
-                    : (!activeProject.settings.anthropicApiKey?.trim() && !activeProject.settings.apiKey?.trim())
+                  (() => {
+                     const providerType = activeProject.settings.providerConfig?.type ?? activeProject.settings.provider;
+                     const currentApiKey = activeProject.settings.providerConfig?.settings.apiKey;
+                     return !currentApiKey?.trim()
                       ? "border-red-500 dark:border-red-400 placeholder:text-red-500/90 dark:placeholder:text-red-400/90 placeholder:font-medium"
-                      : ""
+                      : "";
+                  })()
                 }
               />
             </div>
 
+            {/* Conditional Base URL for OpenRouter and OpenAI */}
+            {(activeProject.settings.providerConfig?.type === 'openrouter' || activeProject.settings.providerConfig?.type === 'openai') && (
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Base URL (Optional)
+                </label>
+                <Input
+                  type="text"
+                  value={activeProject.settings.providerConfig?.settings.baseUrl || ''}
+                  onChange={(e) => {
+                    const value = e.target.value.trim();
+                    handleSettingsChange({
+                       providerConfig: {
+                        ...activeProject.settings.providerConfig!,
+                        settings: {
+                            ...activeProject.settings.providerConfig!.settings,
+                            baseUrl: value
+                        }
+                       }
+                    });
+                  }}
+                  placeholder={
+                    activeProject.settings.providerConfig?.type === 'openrouter'
+                      ? 'https://openrouter.ai/api/v1'
+                      : 'https://api.openai.com/v1'
+                  }
+                />
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium mb-1">
                 GROQ API Key
@@ -321,8 +380,8 @@ export const AdminView = () => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : null}
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={() => {
                       setNewPromptName('');

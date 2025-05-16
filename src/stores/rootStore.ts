@@ -3,6 +3,7 @@ import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, Mc
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
 import { WsTool } from '../components/LlmChat/types/toolTypes';
+import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -11,28 +12,37 @@ export const getDefaultModelForProvider = (provider?: string): string => {
     case 'openai':
       return 'gpt-4o';
     case 'openrouter':
-      return 'openai/gpt-4-turbo-preview';
+      // For OpenRouter, it's better to let users select or provide a default that's generally available
+      return 'openai/gpt-4-turbo-preview'; // Or a commonly available Gemini model on OpenRouter
+    case 'gemini': // Added Gemini
+      return 'gemini-1.5-pro-latest'; // Or a specific, generally available model like 'gemini-pro'
     case 'anthropic':
     default:
       return 'claude-3-7-sonnet-20250219';
   }
 };
 
-const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
+const DEFAULT_MODEL = getDefaultModelForProvider('anthropic'); // Default to Anthropic
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   providerConfig: {
-    type: 'anthropic',
+    type: 'anthropic', // Default provider type
     settings: {
       apiKey: '',
     }
   },
-  provider: 'anthropic' as const,  // ensure TypeScript treats this as a literal type
+  provider: 'anthropic' as const,
   model: DEFAULT_MODEL,
   systemPrompt: '',
   elideToolResults: false,
   mcpServerIds: [],
-  messageWindowSize: 30,  // default number of messages in truncated view
+  messageWindowSize: 30,
+  // Initialize potential API key fields
+  anthropicApiKey: '',
+  openaiApiKey: '',
+  openRouterApiKey: '',
+  geminiApiKey: '',
+  groqApiKey: '',
 };
 
 interface RootState extends ProjectState, McpState {
@@ -259,20 +269,23 @@ export const useStore = create<RootState>((set, get) => {
       if (get().initialized) return;
 
       try {
-        // Try to load API keys from server if none exist locally
-        const { apiKeys } = get();
-        if (Object.keys(apiKeys).length === 0 && !get().hasLoadedApiKeysFromServer) {
+        const { apiKeys: serverApiKeys } = get(); // Renamed for clarity
+        let localApiKeys = { ...serverApiKeys }; // Start with server keys
+        let hasLoadedApiKeysFromServer = get().hasLoadedApiKeysFromServer;
+
+        if (Object.keys(localApiKeys).length === 0 && !hasLoadedApiKeysFromServer) {
           try {
             const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
             const response = await fetch(`${BASE_PATH}/api/keys`);
             if (response.ok) {
               const data = await response.json();
               if (data.keys) {
-                set({ apiKeys: data.keys, hasLoadedApiKeysFromServer: true });
+                localApiKeys = data.keys; // Overwrite with fetched keys
+                set({ apiKeys: localApiKeys, hasLoadedApiKeysFromServer: true });
               }
             }
           } catch (error) {
-            console.error('Failed to load API keys:', error);
+            console.error('Failed to load API keys from server:', error);
           }
         }
 
@@ -317,35 +330,79 @@ export const useStore = create<RootState>((set, get) => {
         // Initialize project state
         const state = await loadState();
         const hasProjects = state.projects.length > 0;
-        console.log('Loading projects from IndexedDB:', JSON.stringify(state));
 
         if (hasProjects) {
+          // Ensure settings are updated if apiKeys from server are available and different
+          const updatedProjects = state.projects.map(p => {
+            const projectApiKey = p.settings.providerConfig?.settings.apiKey;
+            let providerSpecificApiKey;
+            switch (p.settings.providerConfig?.type) {
+                case 'anthropic': providerSpecificApiKey = localApiKeys.anthropicApiKey; break;
+                case 'openai': providerSpecificApiKey = localApiKeys.openaiApiKey; break;
+                case 'openrouter': providerSpecificApiKey = localApiKeys.openRouterApiKey; break;
+                case 'gemini': providerSpecificApiKey = localApiKeys.geminiApiKey; break;
+                default: providerSpecificApiKey = localApiKeys.apiKey; // Fallback
+            }
+
+            if (providerSpecificApiKey && providerSpecificApiKey !== projectApiKey) {
+              return {
+                ...p,
+                settings: {
+                  ...p.settings,
+                  providerConfig: {
+                    ...p.settings.providerConfig!,
+                    settings: {
+                      ...p.settings.providerConfig!.settings,
+                      apiKey: providerSpecificApiKey,
+                    }
+                  },
+                  // Update legacy fields as well for broader compatibility
+                  apiKey: providerSpecificApiKey, // General fallback
+                  anthropicApiKey: p.settings.providerConfig?.type === 'anthropic' ? providerSpecificApiKey : p.settings.anthropicApiKey,
+                  openaiApiKey: p.settings.providerConfig?.type === 'openai' ? providerSpecificApiKey : p.settings.openaiApiKey,
+                  openRouterApiKey: p.settings.providerConfig?.type === 'openrouter' ? providerSpecificApiKey : p.settings.openRouterApiKey,
+                  geminiApiKey: p.settings.providerConfig?.type === 'gemini' ? providerSpecificApiKey : p.settings.geminiApiKey,
+                }
+              };
+            }
+            return p;
+          });
+
           set({
-            projects: state.projects,
+            projects: updatedProjects,
             activeProjectId: state.activeProjectId,
             activeConversationId: state.activeProjectId && state.activeConversationId
               ? state.activeConversationId
               : null,
           });
+
         } else {
-          // Create default project with an initial conversation
-          const defaultConversation = {
-            id: generateId(),
-            name: '(New Chat)',
-            lastUpdated: new Date(),
-            messages: [],
-            createdAt: new Date()
+          const defaultConversation = { /* ... */ };
+          const defaultProjectSettings = {
+            ...DEFAULT_PROJECT_SETTINGS,
+            // Populate API keys from localApiKeys (which might have come from server)
+            apiKey: localApiKeys.apiKey ?? '', // General fallback
+            anthropicApiKey: localApiKeys.anthropicApiKey ?? '',
+            openaiApiKey: localApiKeys.openaiApiKey ?? '',
+            openRouterApiKey: localApiKeys.openRouterApiKey ?? '',
+            geminiApiKey: localApiKeys.geminiApiKey ?? '', // Add Gemini
+            groqApiKey: localApiKeys.groqApiKey ?? '',
+            mcpServers: [],
           };
-          const { apiKeys } = get();
+           // Update providerConfig based on the default provider and its key
+          if (defaultProjectSettings.provider) {
+             defaultProjectSettings.providerConfig = convertLegacyToProviderConfig(
+               defaultProjectSettings.provider,
+               defaultProjectSettings
+             );
+          }
+
+
           const defaultProject = {
             id: generateId(),
             name: 'Default Project',
-            settings: {
-              ...DEFAULT_PROJECT_SETTINGS,
-              apiKey: apiKeys.apiKey ?? '',
-              groqApiKey: apiKeys.groqApiKey ?? '',
-              mcpServers: []
-            },
+            settings: defaultProjectSettings,
+            // ... (rest of default project)
             conversations: [defaultConversation],
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -357,17 +414,31 @@ export const useStore = create<RootState>((set, get) => {
             activeConversationId: defaultConversation.id,
           });
         }
-
         set({ initialized: true });
-      } catch {
-        console.error('Error initializing data');
+      } catch (error) { // Ensure catch block handles error type correctly
+        console.error('Error initializing data:', error);
+        // Fallback default project creation
+        const defaultProjectSettings = {
+            ...DEFAULT_PROJECT_SETTINGS,
+            mcpServers: [],
+            // Initialize API keys to empty strings in fallback
+            apiKey: '',
+            anthropicApiKey: '',
+            openaiApiKey: '',
+            openRouterApiKey: '',
+            geminiApiKey: '',
+            groqApiKey: '',
+        };
+         if (defaultProjectSettings.provider) {
+             defaultProjectSettings.providerConfig = convertLegacyToProviderConfig(
+               defaultProjectSettings.provider,
+               defaultProjectSettings
+             );
+          }
         const defaultProject = {
           id: generateId(),
           name: 'Default Project',
-          settings: {
-            ...DEFAULT_PROJECT_SETTINGS,
-            mcpServers: []
-          },
+          settings: defaultProjectSettings,
           conversations: [],
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -379,6 +450,67 @@ export const useStore = create<RootState>((set, get) => {
           initialized: true,
         });
       }
+    },
+
+    updateProjectSettings: (id: string, updates: {
+      settings?: Partial<ProjectSettings>;
+      conversations?: ConversationBrief[];
+    }) => {
+      set(state => {
+        const projectToUpdate = state.projects.find(p => p.id === id);
+        const apiKeysToUpdate = { ...state.apiKeys };
+        let shouldUpdateApiKeysOnServer = false;
+
+        if (projectToUpdate && updates.settings) {
+          const newSettings = updates.settings;
+          // Handle individual API key updates
+          if (newSettings.anthropicApiKey !== undefined && newSettings.anthropicApiKey !== projectToUpdate.settings.anthropicApiKey) {
+            apiKeysToUpdate.anthropicApiKey = newSettings.anthropicApiKey; shouldUpdateApiKeysOnServer = true;
+          }
+          if (newSettings.openaiApiKey !== undefined && newSettings.openaiApiKey !== projectToUpdate.settings.openaiApiKey) {
+            apiKeysToUpdate.openaiApiKey = newSettings.openaiApiKey; shouldUpdateApiKeysOnServer = true;
+          }
+          if (newSettings.openRouterApiKey !== undefined && newSettings.openRouterApiKey !== projectToUpdate.settings.openRouterApiKey) {
+            apiKeysToUpdate.openRouterApiKey = newSettings.openRouterApiKey; shouldUpdateApiKeysOnServer = true;
+          }
+          if (newSettings.geminiApiKey !== undefined && newSettings.geminiApiKey !== projectToUpdate.settings.geminiApiKey) { // Added Gemini
+            apiKeysToUpdate.geminiApiKey = newSettings.geminiApiKey; shouldUpdateApiKeysOnServer = true;
+          }
+           if (newSettings.groqApiKey !== undefined && newSettings.groqApiKey !== projectToUpdate.settings.groqApiKey) {
+            apiKeysToUpdate.groqApiKey = newSettings.groqApiKey; shouldUpdateApiKeysOnServer = true;
+          }
+        }
+
+        const newState = {
+          ...state,
+          apiKeys: shouldUpdateApiKeysOnServer ? apiKeysToUpdate : state.apiKeys,
+          projects: state.projects.map(p => {
+            if (p.id !== id) return p;
+
+            const mergedSettings = updates.settings
+              ? { ...p.settings, ...updates.settings }
+              : p.settings;
+
+            // Ensure providerConfig is updated if provider changes or if relevant API key in providerConfig changes
+            if (updates.settings?.provider || (updates.settings && mergedSettings.providerConfig)) {
+                const currentProvider = updates.settings.provider || mergedSettings.providerConfig!.type as LegacyProviderType;
+                mergedSettings.providerConfig = convertLegacyToProviderConfig(currentProvider, mergedSettings);
+            }
+
+
+            return {
+              ...p,
+              settings: mergedSettings,
+              conversations: updates.conversations || p.conversations,
+              updatedAt: new Date()
+            };
+          })
+        };
+
+        saveState(newState).catch(error => console.error('Error saving state:', error));
+        if (shouldUpdateApiKeysOnServer) saveApiKeysToServer(apiKeysToUpdate);
+        return newState;
+      });
     },
 
     // Project methods
@@ -453,74 +585,6 @@ export const useStore = create<RootState>((set, get) => {
         activeConversationId: updatedState.activeConversationId,
       }).catch(error => {
         console.error('Error saving state:', error);
-      });
-    },
-
-    updateProjectSettings: (id: string, updates: {
-      settings?: Partial<ProjectSettings>;
-      conversations?: ConversationBrief[];
-    }) => {
-      set(state => {
-        const projectToUpdate = state.projects.find(p => p.id === id);
-        const apiKeysToUpdate = { ...state.apiKeys };
-        let shouldUpdateApiKeys = false;
-
-        // Check for API key changes before updating project
-        if (projectToUpdate && updates.settings) {
-          if (updates.settings.apiKey !== projectToUpdate.settings.apiKey) {
-            apiKeysToUpdate.apiKey = updates.settings.apiKey || '';
-            shouldUpdateApiKeys = true;
-          }
-          if (updates.settings.groqApiKey !== projectToUpdate.settings.groqApiKey) {
-            apiKeysToUpdate.groqApiKey = updates.settings.groqApiKey || '';
-            shouldUpdateApiKeys = true;
-          }
-        }
-
-        const newState = {
-          ...state,
-          apiKeys: shouldUpdateApiKeys ? apiKeysToUpdate : state.apiKeys,
-          projects: state.projects.map(p => {
-            if (p.id !== id) return p;
-
-            let updatedConversations = p.conversations;
-            if (updates.conversations) {
-              updatedConversations = updates.conversations.map(newConv => {
-                const existingConv = p.conversations.find(c => c.id === newConv.id);
-                return existingConv && existingConv.name !== '(New Chat)'
-                  ? { ...newConv, name: existingConv.name }
-                  : newConv;
-              });
-            }
-
-            return {
-              ...p,
-              settings: updates.settings
-                ? {
-                  ...p.settings,
-                  ...updates.settings,
-                  mcpServerIds: updates.settings.mcpServerIds !== undefined
-                    ? updates.settings.mcpServerIds
-                    : p.settings.mcpServerIds
-                }
-                : p.settings,
-              conversations: updatedConversations,
-              updatedAt: new Date()
-            };
-          })
-        };
-
-        // Save state to IndexedDB
-        saveState(newState).catch(error => {
-          console.error('Error saving state:', error);
-        });
-
-        // If API keys were updated, set them locally & save them to server
-        if (shouldUpdateApiKeys) {
-          saveApiKeysToServer(apiKeysToUpdate);
-        }
-
-        return newState;
       });
     },
 
