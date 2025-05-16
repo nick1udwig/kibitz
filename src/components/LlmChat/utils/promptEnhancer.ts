@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { Anthropic } from '@anthropic-ai/sdk';
+import type { LegacyProviderType } from '../types/provider'; // Assuming LegacyProviderType is defined in provider.ts
 
 // Define the meta-prompt instructing the LLM how to improve the user's prompt
 const META_PROMPT = `SYSTEM INSTRUCTIONS TO MODEL
@@ -9,14 +10,14 @@ Your task is to refine a user's prompt to make it clearer, more detailed, and be
 
 Follow these rules carefully:
 
-*   Structure the prompt with clear sections like "Core Features", "Visual References", and "Style Guide" when appropriate.
-*   Include specific design guidelines, colors, typography, and layout information when enhancing UI/design related prompts.
-*   When listing features, use bullet points for clear organization.
-*   Add visual references to well-known examples when it helps clarify the request.
-*   Never specify a programming language unless the user explicitly mentioned one.
-*   Keep the improved prompt professional and implementation-agnostic unless specific technologies were requested.
-*   Use numbered lists for sequential steps and bullet points for non-sequential items.
-*   Output ONLY the improved version of the prompt. Do not explain your edits.
+* Structure the prompt with clear sections like "Core Features", "Visual References", and "Style Guide" when appropriate.
+* Include specific design guidelines, colors, typography, and layout information when enhancing UI/design related prompts.
+* When listing features, use bullet points for clear organization.
+* Add visual references to well-known examples when it helps clarify the request.
+* Never specify a programming language unless the user explicitly mentioned one.
+* Keep the improved prompt professional and implementation-agnostic unless specific technologies were requested.
+* Use numbered lists for sequential steps and bullet points for non-sequential items.
+* Output ONLY the improved version of the prompt. Do not explain your edits.
 
 Examples:
 
@@ -61,9 +62,9 @@ Improved prompt:`;
 
 /**
  * Enhances a given user prompt using the configured LLM provider and model.
- * 
+ *
  * @param originalPrompt The user's original prompt text.
- * @param provider The configured LLM provider ('openai', 'anthropic', 'openrouter').
+ * @param provider The configured LLM provider ('openai', 'anthropic', 'openrouter', 'gemini').
  * @param apiKey The API key for the configured provider.
  * @param model The specific model name configured by the user for the provider.
  * @returns A promise that resolves to the enhanced prompt string.
@@ -71,7 +72,7 @@ Improved prompt:`;
  */
 export async function enhancePrompt(
   originalPrompt: string,
-  provider: 'openai' | 'anthropic' | 'openrouter',
+  provider: LegacyProviderType, // Updated to use LegacyProviderType
   apiKey: string,
   model: string
 ): Promise<string> {
@@ -90,26 +91,32 @@ export async function enhancePrompt(
   try {
     let improvedPrompt: string | null | undefined;
 
-    if (provider === 'openai' || provider === 'openrouter') {
+    if (provider === 'openai' || provider === 'openrouter' || provider === 'gemini') {
       const openai = new OpenAI({
         apiKey: apiKey,
-        baseURL: provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : undefined,
+        baseURL: provider === 'openrouter'
+          ? 'https://openrouter.ai/api/v1'
+          : provider === 'gemini'
+            ? 'https://generativelanguage.googleapis.com/v1beta/openai/' // Gemini specific URL for OpenAI compatibility
+            : undefined, // Default OpenAI URL for 'openai' provider
         dangerouslyAllowBrowser: true,
       });
 
-      // Add headers for OpenRouter
-      const options = provider === 'openrouter' ? {
-        headers: {
-          'HTTP-Referer': window.location.origin || 'https://kibitz.app',
-          'X-Title': 'Kibitz Prompt Enhancer',
-          // Add Authorization header explicitly for OpenRouter
-          'Authorization': `Bearer ${apiKey}`
-        }
-      } : undefined;
+      const commonHeaders: Record<string, string> = {
+        'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'https://kibitz.app', // Check for window
+        'X-Title': 'Kibitz Prompt Enhancer',
+      };
+      if (provider === 'openrouter' || provider === 'gemini') {
+        commonHeaders['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+
+      const options = (provider === 'openrouter' || provider === 'gemini') ? { headers: commonHeaders } : undefined;
+
 
       try {
         const response = await openai.chat.completions.create({
-          model: model, // OpenRouter handles model names in their API
+          model: model,
           messages: [
             {
               role: 'user',
@@ -117,15 +124,14 @@ export async function enhancePrompt(
             },
           ],
           temperature: 0.5,
-          max_tokens: 500,
+          max_tokens: 1024, // Increased max_tokens for potentially longer improved prompts
           top_p: 1,
           frequency_penalty: 0,
           presence_penalty: 0,
         }, options);
         improvedPrompt = response.choices[0]?.message?.content;
       } catch (error) {
-        console.error(`OpenRouter/OpenAI API error:`, error);
-        // Re-throw to be handled by the outer catch block
+        console.error(`${provider} API error for prompt enhancement:`, error);
         throw error;
       }
 
@@ -137,7 +143,7 @@ export async function enhancePrompt(
 
       const response = await anthropic.messages.create({
         model: model,
-        max_tokens: 500,
+        max_tokens: 1024, // Increased max_tokens
         messages: [
           {
             role: 'user',
@@ -147,21 +153,22 @@ export async function enhancePrompt(
         temperature: 0.5,
       });
       improvedPrompt = response.content[0]?.type === 'text' ? response.content[0].text : null;
+    } else {
+        throw new Error(`Unsupported provider for prompt enhancement: ${provider}`);
     }
+
 
     if (!improvedPrompt) {
-      throw new Error('API returned an empty or invalid response.');
+      throw new Error('API returned an empty or invalid response for prompt enhancement.');
     }
 
-    // Clean up potential leading/trailing quotes or whitespace
     return improvedPrompt.trim().replace(/^"|"$/g, '');
 
   } catch (error) {
     console.error(`Error enhancing prompt with ${provider}:`, error);
     if (error instanceof Error) {
-      // Try to provide a more specific error message (basic handling)
       throw new Error(`Failed to enhance prompt using ${provider}: ${error.message}`);
     }
     throw new Error(`An unknown error occurred while enhancing the prompt using ${provider}.`);
   }
-} 
+}
