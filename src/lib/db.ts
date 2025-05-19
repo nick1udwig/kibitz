@@ -6,7 +6,7 @@ import { McpServer } from '../components/LlmChat/types/mcp';
 import { messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
 
 const DB_NAME = 'kibitz_db';
-export const DB_VERSION = 7;
+export const DB_VERSION = 8;
 
 interface DbState {
   projects: Project[];

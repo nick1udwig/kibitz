@@ -1,0 +1,54 @@
+name: Auto Checkpoint
+
+on:
+  # Run after successful builds/tests
+  workflow_run:
+    workflows: ["Build and Test"] # Replace with your actual build workflow name
+    types:
+      - completed
+  
+  # Also allow manual triggering
+  workflow_dispatch:
+    inputs:
+      checkpoint_message:
+        description: 'Checkpoint message'
+        required: false
+        default: 'Auto Checkpoint'
+
+jobs:
+  create-checkpoint:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for proper checkpoint creation
+      
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+      
+      - name: Create checkpoint
+        run: |
+          MESSAGE="${{ github.event.inputs.checkpoint_message || 'Auto Checkpoint after successful build' }}"
+          
+          # Stage all changes
+          git add -A
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit, skipping checkpoint"
+            exit 0
+          fi
+          
+          # Create commit
+          git commit -m "temp"
+          HASH=$(git rev-parse --short HEAD)
+          git commit --amend -m "${MESSAGE}: ${HASH}"
+          
+          # Push to the same branch
+          git push --force-with-lease origin ${GITHUB_REF#refs/heads/}
+          
+          echo "✅ Checkpoint ${HASH} created and pushed to GitHub" 

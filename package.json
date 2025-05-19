@@ -6,7 +6,10 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "checkpoint": "bash scripts/checkpoint.sh",
+    "rollback": "bash scripts/rollback.sh",
+    "list-checkpoints": "bash scripts/list-checkpoints.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",

@@ -50,3 +50,33 @@ NEXT_PUBLIC_BASE_PATH=/kibitz:kibitz:nick.kino NEXT_PUBLIC_DEFAULT_WS_URI=/fwd-w
 ```
 
 and then copy the contents of `out/` into the package's `pkg/ui/` dir.
+
+## Checkpoint & Rollback System
+
+This project includes a checkpoint and rollback system that helps you save your work at critical points and restore to previous states when needed.
+
+### Creating a Checkpoint
+
+Save the current state of your codebase:
+
+```bash
+npm run checkpoint "Your message here"
+```
+
+### Rolling Back to a Previous Checkpoint
+
+Restore your codebase to a previous checkpoint:
+
+```bash
+npm run rollback <checkpoint-hash>
+```
+
+### Listing Available Checkpoints
+
+View a list of available checkpoints to roll back to:
+
+```bash
+npm run list-checkpoints
+```
+
+For more detailed information, see the [Checkpoint & Rollback documentation](scripts/README.md).
