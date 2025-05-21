@@ -8,6 +8,7 @@ import { MessageContentRenderer } from './components/MessageContent';
 import { FileContentList } from './components/FileContentList';
 import { ChatInput } from './components/ChatInput';
 import { ScrollToBottomButton } from './components/ScrollToBottomButton';
+import { ChatHeader } from './components/ChatHeader';
 import { useMessageSender } from './hooks/useMessageSender';
 import { useScrollControl } from './hooks/useScrollControl';
 import { useErrorDisplay } from './hooks/useErrorDisplay';
@@ -194,6 +195,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   return (
     <div id="chat-view" className="flex flex-col h-full relative">
+      {activeProjectId && <ChatHeader projectId={activeProjectId} />}
       <div 
         ref={scrollContainerRef} 
         className="h-[calc(100vh-4rem)] overflow-y-auto p-4"

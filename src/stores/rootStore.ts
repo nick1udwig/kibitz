@@ -3,6 +3,7 @@ import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, Mc
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
 import { WsTool } from '../components/LlmChat/types/toolTypes';
+import { autoInitializeGitForProject } from '../lib/gitCheckpointService';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -603,13 +604,27 @@ export const useStore = create<RootState>((set, get) => {
 
       // Save state after creating initial chat
       const updatedState = get();
-      saveState({
-        projects: updatedState.projects,
-        activeProjectId: updatedState.activeProjectId,
-        activeConversationId: updatedState.activeConversationId,
-      }).catch(error => {
+      saveState(updatedState).catch(error => {
         console.error('Error saving state:', error);
       });
+
+      // Try to auto-initialize Git if there are connected MCP servers
+      if (connectedServerIds.length > 0) {
+        // We need to delay this a bit to make sure the state is updated
+        setTimeout(() => {
+          autoInitializeGitForProject(projectId)
+            .then(success => {
+              if (success) {
+                console.log('Git repository initialized for project:', name);
+              }
+            })
+            .catch(error => {
+              console.error('Error initializing Git repository:', error);
+            });
+        }, 1000); // 1 second delay
+      }
+
+      return projectId;
     },
 
     updateProjectSettings: (id: string, updates: {
