@@ -81,7 +81,7 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
       }
       
       // Use a known valid path instead of trying to detect it
-      const projectPath = "/Users/test/workx/kibitz";
+      const projectPath = "/Users/test/hello_world";
       console.log(`Using hardcoded project path: ${projectPath}`);
       
       const success = await initializeGitRepository(
