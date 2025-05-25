@@ -126,7 +126,19 @@ export const executeGitCommand = async (
             actualOutput = contentMatch[1].replace(/\\n/g, '\n');
           }
         }
+      } else {
+        // Handle plain text format with status information
+        // The actual command output comes before the "---" separator
+        const statusSeparator = '\n---\n';
+        if (result.includes(statusSeparator)) {
+          actualOutput = result.split(statusSeparator)[0];
+        }
       }
+      
+      // Clean up the output - remove any trailing whitespace and newlines
+      actualOutput = actualOutput.trim();
+      
+      console.log("Parsed git command output:", JSON.stringify(actualOutput));
       
       // Check for error indicators in the output
       const isError = 
@@ -194,7 +206,7 @@ export const initGitRepository = async (
     // Create .gitignore if it doesn't exist
     const createGitignoreResult = await executeGitCommand(
       serverId,
-      `[ -f .gitignore ] || echo "node_modules/\\n.next/\\n.DS_Store\\nout/\\n.env*\\n*.log" > .gitignore`,
+      `[ -f .gitignore ] || echo -e "node_modules/\n.next/\n.DS_Store\nout/\n.env*\n*.log" > .gitignore`,
       options.projectPath,
       executeTool
     );
@@ -391,11 +403,37 @@ export const createCommit = async (
   try {
     console.log(`Attempting to create commit in ${projectPath} with message: "${message}"`);
     
-    // Stage all changes
+    // First, let's verify what files exist in the project directory
+    console.log("Checking files in project directory...");
+    const listFilesResult = await executeGitCommand(
+      serverId,
+      'ls -la',
+      projectPath,
+      executeTool
+    );
+    
+    if (listFilesResult.success) {
+      console.log("Files in project directory:", listFilesResult.output);
+    }
+    
+    // Check git status before adding files
+    console.log("Checking git status before staging...");
+    const preStatusResult = await executeGitCommand(
+      serverId,
+      'git status --porcelain',
+      projectPath,
+      executeTool
+    );
+    
+    if (preStatusResult.success) {
+      console.log("Git status before staging:", preStatusResult.output || "(empty)");
+    }
+    
+    // Stage all changes with explicit patterns to catch more files
     console.log("Staging changes...");
     const stageResult = await executeGitCommand(
       serverId,
-      'git add .',
+      'git add . && git add -A && git add --all',
       projectPath,
       executeTool
     );
@@ -405,22 +443,93 @@ export const createCommit = async (
       return { success: false, commitHash: null };
     }
     
-    // Check if there are changes to commit
-    console.log("Checking for changes to commit...");
-    const statusResult = await executeGitCommand(
+    // Also try to add any files that might be in subdirectories
+    console.log("Staging files with force...");
+    const forceStageResult = await executeGitCommand(
       serverId,
-      'git status --porcelain',
+      'find . -type f -not -path "./.git/*" -not -name ".gitignore" -exec git add {} \\;',
       projectPath,
       executeTool
     );
     
-    if (!statusResult.success) {
-      console.error("Failed to check git status:", statusResult.error || statusResult.output);
+    // This command might fail if there are no files, that's okay
+    if (forceStageResult.success) {
+      console.log("Force staging successful");
+    }
+    
+    // Wait a moment for file system operations to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Check if there are changes to commit (retry up to 3 times)
+    console.log("Checking for changes to commit...");
+    let statusResult;
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    do {
+      attempts++;
+      console.log(`Checking git status (attempt ${attempts}/${maxAttempts})...`);
+      
+      statusResult = await executeGitCommand(
+        serverId,
+        'git status --porcelain',
+        projectPath,
+        executeTool
+      );
+      
+      if (statusResult.success && statusResult.output.trim()) {
+        console.log("Found changes to commit:", statusResult.output);
+        break;
+      }
+      
+      if (attempts < maxAttempts) {
+        console.log("No changes detected, waiting and retrying...");
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Re-stage files before retry with more aggressive approach
+        await executeGitCommand(
+          serverId,
+          'git add . && git add -A && git add --all',
+          projectPath,
+          executeTool
+        );
+        
+        // Also try force staging again
+        await executeGitCommand(
+          serverId,
+          'find . -type f -not -path "./.git/*" -not -name ".gitignore" -exec git add {} \\;',
+          projectPath,
+          executeTool
+        );
+      }
+    } while (attempts < maxAttempts);
+    
+    if (!statusResult || !statusResult.success) {
+      console.error("Failed to check git status:", statusResult?.error || statusResult?.output);
       return { success: false, commitHash: null };
     }
     
-    // If no changes, return error
+    // If still no changes after retries, check what files git can see
     if (!statusResult.output.trim()) {
+      console.log("No changes detected after retries. Checking git ls-files...");
+      const gitLsResult = await executeGitCommand(
+        serverId,
+        'git ls-files',
+        projectPath,
+        executeTool
+      );
+      
+      console.log("Git tracked files:", gitLsResult.output || "(none)");
+      
+      const gitLsOthersResult = await executeGitCommand(
+        serverId,
+        'git ls-files --others --exclude-standard',
+        projectPath,
+        executeTool
+      );
+      
+      console.log("Git untracked files:", gitLsOthersResult.output || "(none)");
+      
       console.log("No changes to commit");
       return { success: true, commitHash: "no_changes" };
     }
@@ -433,6 +542,12 @@ export const createCommit = async (
       projectPath,
       executeTool
     );
+    
+    // Check if the commit result indicates "nothing to commit"
+    if (commitResult.success && commitResult.output.includes('nothing to commit')) {
+      console.log("Git reports: nothing to commit, working tree clean");
+      return { success: true, commitHash: "no_changes" };
+    }
     
     if (!commitResult.success) {
       console.error("Failed to commit changes:", commitResult.error || commitResult.output);
@@ -456,6 +571,43 @@ export const createCommit = async (
     const commitHash = hashResult.output.trim();
     console.log(`Successfully retrieved commit hash: ${commitHash}`);
     
+    // Try to push to GitHub if remote origin exists
+    console.log("Checking for remote origin and pushing to GitHub...");
+    try {
+      const remoteCheckResult = await executeGitCommand(
+        serverId,
+        'git remote get-url origin',
+        projectPath,
+        executeTool
+      );
+      
+      // Check if remote actually exists (not just command success)
+      const hasRemote = remoteCheckResult.success && 
+                       remoteCheckResult.output.trim() && 
+                       !remoteCheckResult.output.includes('error:') &&
+                       !remoteCheckResult.output.includes('No such remote');
+      
+      if (hasRemote) {
+        console.log("Remote origin found, pushing to GitHub...");
+        const pushResult = await executeGitCommand(
+          serverId,
+          'git push origin main',
+          projectPath,
+          executeTool
+        );
+        
+        if (pushResult.success) {
+          console.log("Successfully pushed to GitHub");
+        } else {
+          console.log("Failed to push to GitHub, but commit was successful locally:", pushResult.output);
+        }
+      } else {
+        console.log("No remote origin configured, skipping push to GitHub");
+      }
+    } catch (pushError) {
+      console.log("Error checking/pushing to GitHub (commit was still successful):", pushError);
+    }
+    
     return {
       success: true,
       commitHash
@@ -465,6 +617,110 @@ export const createCommit = async (
     return { 
       success: false, 
       commitHash: null 
+    };
+  }
+};
+
+/**
+ * Connects a local git repository to a GitHub remote
+ * @param projectPath Project path
+ * @param repoName GitHub repository name
+ * @param username GitHub username
+ * @param serverId MCP server ID
+ * @param executeTool Function to execute tool on MCP server
+ */
+export const connectToGitHubRemote = async (
+  projectPath: string,
+  repoName: string,
+  username: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<GitCommandResponse> => {
+  try {
+    console.log(`Connecting local repository to GitHub remote: ${username}/${repoName}`);
+    
+    // Check if remote origin already exists
+    const checkRemoteResult = await executeGitCommand(
+      serverId,
+      'git remote get-url origin',
+      projectPath,
+      executeTool
+    );
+    
+    // Check if remote actually exists (not just command success)
+    const hasRemote = checkRemoteResult.success && 
+                     checkRemoteResult.output.trim() && 
+                     !checkRemoteResult.output.includes('error:') &&
+                     !checkRemoteResult.output.includes('No such remote');
+    
+    if (hasRemote) {
+      console.log("Remote origin already exists:", checkRemoteResult.output);
+      
+      // Try to push existing commits to GitHub
+      console.log("Remote exists, pushing any existing commits to GitHub...");
+      const pushResult = await executeGitCommand(
+        serverId,
+        'git push origin main',
+        projectPath,
+        executeTool
+      );
+      
+      if (pushResult.success) {
+        console.log("Successfully pushed to existing remote");
+        return { success: true, output: "Remote already configured and commits pushed" };
+      } else {
+        console.log("Remote exists but push failed:", pushResult.output);
+        return { success: true, output: "Remote already configured (push failed)" };
+      }
+    }
+    
+    console.log("No remote origin found, adding new remote...");
+    
+    // Add the remote origin
+    const remoteUrl = `https://github.com/${username}/${repoName}.git`;
+    console.log(`Adding remote origin: ${remoteUrl}`);
+    
+    const addRemoteResult = await executeGitCommand(
+      serverId,
+      `git remote add origin ${remoteUrl}`,
+      projectPath,
+      executeTool
+    );
+    
+    if (!addRemoteResult.success) {
+      console.error("Failed to add remote origin:", addRemoteResult.error || addRemoteResult.output);
+      return addRemoteResult;
+    }
+    
+    console.log("Remote origin added successfully");
+    
+    // Try to push existing commits to GitHub
+    console.log("Pushing existing commits to GitHub...");
+    const pushResult = await executeGitCommand(
+      serverId,
+      'git push -u origin main',
+      projectPath,
+      executeTool
+    );
+    
+    if (pushResult.success) {
+      console.log("Successfully connected and pushed to GitHub");
+      return { success: true, output: "Connected to GitHub and pushed commits" };
+    } else {
+      console.log("Connected to GitHub but failed to push:", pushResult.output);
+      // Even if push fails, the remote is set up, so this is still a partial success
+      return { 
+        success: true, 
+        output: `Connected to GitHub (push failed: ${pushResult.output})`,
+        error: pushResult.error
+      };
+    }
+  } catch (error) {
+    console.error('Failed to connect to GitHub remote:', error);
+    return {
+      success: false,
+      output: '',
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }; 

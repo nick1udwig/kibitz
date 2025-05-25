@@ -1,6 +1,7 @@
 import { useCheckpointStore } from '../stores/checkpointStore';
 import { useStore } from '../stores/rootStore';
 import { Project } from '../components/LlmChat/context/types';
+import { ensureProjectDirectory } from './projectPathService';
 
 /**
  * Creates a Git checkpoint with both Git commit and Kibitz checkpoint
@@ -66,7 +67,6 @@ export const createGitCheckpoint = async (
 /**
  * Auto-initializes Git for a new project
  * @param projectId Project ID
- * @param projectName Project name
  */
 export const autoInitializeGitForProject = async (
   projectId: string
@@ -87,13 +87,9 @@ export const autoInitializeGitForProject = async (
   try {
     const mcpServerId = activeMcpServers[0].id;
     
-    // Get the project path
-    const outputPath = await rootStore.executeTool(mcpServerId, 'terminal', {
-      command: 'pwd',
-      cwd: '.'
-    });
-    
-    const projectPath = outputPath.trim();
+    // Ensure project directory exists and get its path
+    const projectPath = await ensureProjectDirectory(project, mcpServerId, rootStore.executeTool);
+    console.log(`Auto-initializing Git for project at: ${projectPath}`);
     
     // Initialize Git repository
     const success = await checkpointStore.initializeGitRepository(

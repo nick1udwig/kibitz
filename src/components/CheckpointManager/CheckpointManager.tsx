@@ -6,6 +6,8 @@ import { useCheckpointStore } from '../../stores/checkpointStore';
 import { Button } from '../ui/button';
 import { CheckCircle, GitBranch, GitCommit, RotateCcw } from 'lucide-react';
 import { Project } from '../../components/LlmChat/context/types';
+import { ensureProjectDirectory, getGitHubRepoName } from '../../lib/projectPathService';
+import { connectToGitHubRemote } from '../../lib/gitService';
 
 interface CheckpointManagerProps {
   projectId: string;
@@ -54,35 +56,11 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
     setGitCommandOutput("Initializing Git repository...");
     
     try {
-      // First, get the project path from the MCP server
       const mcpServerId = activeMcpServers[0].id;
       
-      // First try to initialize the MCP environment
-      let threadId = "git-operations";
-      try {
-        const initResult = await executeTool(mcpServerId, 'Initialize', {
-          type: "first_call",
-          any_workspace_path: ".",
-          initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
-          thread_id: threadId
-        });
-        console.log("MCP environment initialized successfully");
-        
-        // Extract thread ID if possible
-        const match = initResult.match(/thread_id=([a-z0-9]+)/i);
-        if (match && match[1]) {
-          threadId = match[1];
-          console.log(`Using thread ID: ${threadId}`);
-        }
-      } catch (initError) {
-        console.warn("Failed to initialize MCP environment:", initError);
-      }
-      
-      // Use a known valid path instead of trying to detect it
-      const projectPath = "/Users/test/hello_world";
-      console.log(`Using hardcoded project path: ${projectPath}`);
+      // Ensure project directory exists and get its path
+      const projectPath = await ensureProjectDirectory(project, mcpServerId, executeTool);
+      console.log(`Using project directory: ${projectPath}`);
       
       const success = await initializeGitRepository(
         projectPath,
@@ -92,7 +70,7 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
       );
       
       if (success) {
-        setGitCommandOutput("Git repository initialized successfully!");
+        setGitCommandOutput(`Git repository initialized successfully at ${projectPath}!`);
       } else {
         setGitCommandOutput("Failed to initialize Git repository. Check console for details.");
       }
@@ -114,35 +92,15 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
     try {
       const mcpServerId = activeMcpServers[0].id;
       
-      // Initialize MCP environment
-      let threadId = "git-operations";
-      try {
-        console.log("Initializing MCP environment...");
-        const initResult = await executeTool(mcpServerId, 'Initialize', {
-          type: "first_call",
-          any_workspace_path: ".",
-          initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
-          thread_id: threadId
-        });
-        console.log("Initialization result:", initResult);
-        
-        // Extract thread ID if possible
-        const match = initResult.match(/thread_id=([a-z0-9]+)/i);
-        if (match && match[1]) {
-          threadId = match[1];
-          console.log(`Using thread ID: ${threadId}`);
-        }
-      } catch (initError) {
-        console.warn("Failed to initialize MCP environment:", initError);
-      }
+      // Ensure project directory exists and get its path
+      const projectPath = await ensureProjectDirectory(project, mcpServerId, executeTool);
       
-      // Use hardcoded path for GitHub repo creation
-      const projectPath = "/Users/test/workx/kibitz";
+      // Generate unique repository name
+      const repoName = getGitHubRepoName(project.id, project.name);
+      console.log(`Creating GitHub repository: ${repoName}`);
       
       const success = await createGitHubRepo(
-        project.name.toLowerCase().replace(/\s+/g, '-'),
+        repoName,
         `Project created with Kibitz - ${project.name}`,
         false, // public repository
         mcpServerId,
@@ -150,7 +108,36 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
       );
       
       if (success) {
-        setGitCommandOutput("GitHub repository created successfully!");
+        setGitCommandOutput(`GitHub repository '${repoName}' created successfully! Connecting to local repository...`);
+        
+        // Automatically connect the local repository to GitHub
+        try {
+          console.log(`About to connect to GitHub remote with:`, {
+            projectPath,
+            repoName,
+            username: "malikrohail",
+            mcpServerId
+          });
+          
+          const connectResult = await connectToGitHubRemote(
+            projectPath,
+            repoName,
+            "malikrohail", // You can make this dynamic by getting from git config
+            mcpServerId,
+            executeTool
+          );
+          
+          console.log("connectToGitHubRemote result:", connectResult);
+          
+          if (connectResult.success) {
+            setGitCommandOutput(`GitHub repository '${repoName}' created and connected successfully! All local commits have been pushed.`);
+          } else {
+            setGitCommandOutput(`GitHub repository '${repoName}' created but failed to connect: ${connectResult.error || connectResult.output}`);
+          }
+        } catch (connectError) {
+          console.error("Error connecting to GitHub:", connectError);
+          setGitCommandOutput(`GitHub repository '${repoName}' created but failed to connect automatically. You may need to connect manually.`);
+        }
       } else {
         setGitCommandOutput("Failed to create GitHub repository. Check console for details.");
       }
@@ -172,35 +159,10 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
     try {
       const mcpServerId = activeMcpServers[0].id;
       
-      // Initialize MCP environment
-      let threadId = "git-operations";
-      try {
-        console.log("Initializing MCP environment...");
-        const initResult = await executeTool(mcpServerId, 'Initialize', {
-          type: "first_call",
-          any_workspace_path: ".",
-          initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
-          thread_id: threadId
-        });
-        console.log("Initialization result:", initResult);
-        
-        // Extract thread ID if possible
-        const match = initResult.match(/thread_id=([a-z0-9]+)/i);
-        if (match && match[1]) {
-          threadId = match[1];
-          console.log(`Using thread ID: ${threadId}`);
-        }
-      } catch (initError) {
-        console.warn("Failed to initialize MCP environment:", initError);
-      }
+      // Ensure project directory exists and get its path
+      const projectPath = await ensureProjectDirectory(project, mcpServerId, executeTool);
+      console.log(`Creating Git commit in project directory: ${projectPath}`);
       
-      // Use a known valid path instead of trying to detect it
-      const projectPath = "/Users/test/workx/kibitz";
-      console.log(`Using hardcoded project path: ${projectPath}`);
-      
-      console.log(`Creating Git commit in path: ${projectPath}`);
       const commitResult = await createGitCommit(
         projectPath,
         "Checkpoint: Update via Kibitz",

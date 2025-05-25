@@ -22,7 +22,8 @@ export const useMessageSender = () => {
     updateProjectSettings,
     renameConversation,
     servers,
-    executeTool
+    executeTool,
+    ensureActiveProjectDirectory
   } = useStore();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -382,6 +383,9 @@ Format: Only output the title, no quotes or explanation`
               }
 
               try {
+                // Ensure project directory is set up before tool execution
+                await ensureActiveProjectDirectory();
+                
                 const result = await executeTool(
                   serverWithTool.id,
                   unsanitizedTool.name as string,
@@ -567,6 +571,9 @@ Format: Only output the title, no quotes or explanation`
           if (toolUseContent && toolUseContent.type === 'tool_use') {
             try {
               if (shouldCancelRef.current) break;
+
+              // Ensure project directory is set up before tool execution
+              await ensureActiveProjectDirectory();
 
               const serverWithTool = servers.find(s =>
                 s.tools?.some(t => t.name === toolUseContent.name)

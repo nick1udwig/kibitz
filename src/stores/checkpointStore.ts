@@ -14,6 +14,7 @@ import {
   createCommit 
 } from '../lib/gitService';
 import { Project } from '../components/LlmChat/context/types';
+import { ensureProjectDirectory, getGitHubRepoName } from '../lib/projectPathService';
 
 // Default checkpoint configuration
 const DEFAULT_CHECKPOINT_CONFIG: CheckpointConfig = {
@@ -248,27 +249,12 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
     set({ isLoading: true });
     
     try {
-      // First, try to initialize the MCP environment
-      try {
-        await executeTool(mcpServerId, 'Initialize', {
-          type: "first_call",
-          any_workspace_path: projectPath,
-          initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
-          thread_id: "git-operations"
-        });
-        console.log("MCP environment initialized successfully");
-      } catch (initError) {
-        console.log("Failed to initialize MCP environment, continuing anyway:", initError);
-      }
-      
       const result = await initGitRepository(
         {
           projectPath,
           projectName,
-          addFiles: true,
-          initialCommit: true,
+          addFiles: false,  // Don't automatically add files
+          initialCommit: false,  // Don't automatically commit
           commitMessage: 'Initial commit'
         },
         mcpServerId,
@@ -295,20 +281,6 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
     set({ isLoading: true });
     
     try {
-      // Ensure we have initialized the environment
-      try {
-        await executeTool(mcpServerId, 'Initialize', {
-          type: "first_call",
-          any_workspace_path: "/",
-          initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
-          thread_id: "git-operations"
-        });
-      } catch (initError) {
-        console.log("Failed to initialize MCP environment, continuing anyway:", initError);
-      }
-      
       const result = await createGitHubRepository(
         {
           repoName,
@@ -340,10 +312,8 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
     try {
       console.log(`Creating Git commit at ${projectPath} with message: "${message}"`);
       
-      // First check if this is a Git repository
+      // Check if this is a Git repository and initialize if needed
       try {
-        // First try to initialize the environment to get a valid thread ID
-        console.log("Initializing MCP environment...");
         const initResult = await executeTool(mcpServerId, 'Initialize', {
           type: "first_call",
           any_workspace_path: projectPath,

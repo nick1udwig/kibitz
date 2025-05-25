@@ -4,6 +4,7 @@ import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
 import { WsTool } from '../components/LlmChat/types/toolTypes';
 import { autoInitializeGitForProject } from '../lib/gitCheckpointService';
+import { ensureProjectDirectory, getProjectPath } from '../lib/projectPathService';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -217,12 +218,15 @@ interface RootState extends ProjectState, McpState {
   reconnectServer: (serverId: string) => Promise<McpServerConnection>;
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>;
   attemptLocalMcpConnection: () => Promise<McpServerConnection | null>;
+  // New methods
+  ensureActiveProjectDirectory: () => Promise<void>;
 }
 
 export const useStore = create<RootState>((set, get) => {
   // Using refs outside the store to maintain WebSocket connections
   const connectionsRef = new Map<string, WebSocket>();
   const reconnectTimeoutsRef = new Map<string, NodeJS.Timeout>();
+  const pendingRequestsRef = new Map<string, { resolve: (result: string) => void; reject: (error: Error) => void }>();
 
   // Helper function to save API keys to server
   const saveApiKeysToServer = (keys: Record<string, string>) => {
@@ -379,6 +383,34 @@ export const useStore = create<RootState>((set, get) => {
               });
 
               resolve(connectedServer);
+            } else {
+              // Handle tool execution responses
+              const pendingRequest = pendingRequestsRef.get(response.id);
+              if (pendingRequest) {
+                pendingRequestsRef.delete(response.id);
+                
+                if (response.error) {
+                  pendingRequest.reject(new Error(response.error.message || 'Tool execution failed'));
+                } else {
+                  // Extract the result content - handle different response formats
+                  let result = '';
+                  if (response.result) {
+                    if (typeof response.result === 'string') {
+                      result = response.result;
+                    } else if (response.result.content && Array.isArray(response.result.content)) {
+                      result = response.result.content
+                        .filter((item: any) => item.type === 'text')
+                        .map((item: any) => item.text)
+                        .join('\n');
+                    } else if (response.result.content && typeof response.result.content === 'string') {
+                      result = response.result.content;
+                    } else {
+                      result = JSON.stringify(response.result);
+                    }
+                  }
+                  pendingRequest.resolve(result);
+                }
+              }
             }
           } catch {
             console.error('Error parsing WebSocket message');
@@ -608,19 +640,35 @@ export const useStore = create<RootState>((set, get) => {
         console.error('Error saving state:', error);
       });
 
-      // Try to auto-initialize Git if there are connected MCP servers
+      // Set up project directory and Git when MCP servers are available
       if (connectedServerIds.length > 0) {
-        // We need to delay this a bit to make sure the state is updated
+        // Delay to ensure state is updated
         setTimeout(() => {
-          autoInitializeGitForProject(projectId)
-            .then(success => {
-              if (success) {
-                console.log('Git repository initialized for project:', name);
-              }
-            })
-            .catch(error => {
-              console.error('Error initializing Git repository:', error);
-            });
+          const setupProject = async () => {
+            try {
+              const { executeTool } = get();
+              const mcpServerId = connectedServerIds[0];
+              
+              // Ensure project directory exists
+              const projectPath = await ensureProjectDirectory(newProject, mcpServerId, executeTool);
+              console.log(`Project directory set up at: ${projectPath}`);
+              
+              // Initialize Git repository
+              autoInitializeGitForProject(projectId)
+                .then(success => {
+                  if (success) {
+                    console.log('Git repository initialized for project:', name);
+                  }
+                })
+                .catch(error => {
+                  console.error('Error initializing Git repository:', error);
+                });
+            } catch (error) {
+              console.error('Error setting up project directory:', error);
+            }
+          };
+          
+          setupProject();
         }, 1000); // 1 second delay
       }
 
@@ -944,41 +992,191 @@ export const useStore = create<RootState>((set, get) => {
       }
     },
 
-    executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>): Promise<string> => {
-      const ws = connectionsRef.get(serverId);
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        throw new Error('Server not connected');
+    executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>) => {
+      const connection = connectionsRef.get(serverId);
+      if (!connection) {
+        throw new Error(`No connection found for server ${serverId}`);
+      }
+
+      if (connection.readyState !== WebSocket.OPEN) {
+        throw new Error(`WebSocket is not open for server ${serverId}`);
+      }
+
+      // Get current project context
+      const { activeProjectId, projects } = get();
+      const project = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
+
+      // Before executing ANY tool, ensure we're in the correct project workspace
+      if (activeProjectId && toolName !== 'Initialize') {
+        if (project) {
+          try {
+            const projectPath = getProjectPath(project.id, project.name);
+            
+            // Force initialize with project-specific directory before tool execution
+            const initRequestId = `init_${Date.now()}_${Math.random()}`;
+            const initPromise = new Promise((resolve, reject) => {
+              const timeoutId = setTimeout(() => {
+                pendingRequestsRef.delete(initRequestId);
+                reject(new Error('Initialize timeout'));
+              }, 10000);
+              
+              pendingRequestsRef.set(initRequestId, { 
+                resolve: (result: string) => {
+                  clearTimeout(timeoutId);
+                  resolve(result);
+                }, 
+                reject: (error: Error) => {
+                  clearTimeout(timeoutId);
+                  reject(error);
+                }
+              });
+
+              const initCall = {
+                jsonrpc: '2.0',
+                id: initRequestId,
+                method: 'tools/call',
+                params: {
+                  name: 'Initialize',
+                  arguments: {
+                    type: "first_call",
+                    any_workspace_path: projectPath, // Always use project-specific path
+                    initial_files_to_read: [],
+                    task_id_to_resume: "",
+                    mode_name: "wcgw",
+                    thread_id: args.thread_id || "project-tool"
+                  }
+                }
+              };
+
+              connection.send(JSON.stringify(initCall));
+            });
+
+            await initPromise;
+            console.log(`Forced workspace initialization to: ${projectPath}`);
+          } catch (error) {
+            console.warn(`Failed to force workspace initialization:`, error);
+            // Continue with original tool call even if init fails
+          }
+        }
+      }
+
+      // Intercept and modify tool arguments to prevent directory creation
+      let modifiedArgs = { ...args };
+      
+      if (project && (toolName === 'BashCommand' || toolName === 'FileWriteOrEdit')) {
+        const projectPath = getProjectPath(project.id, project.name);
+        
+        // For BashCommand: prevent mkdir commands and ensure we're in project directory
+        if (toolName === 'BashCommand' && modifiedArgs.action_json) {
+          const actionJson = modifiedArgs.action_json as { command?: string };
+          if (actionJson.command) {
+            // Remove any mkdir commands that try to create project subdirectories
+            let command = actionJson.command;
+            
+            // If it's trying to create a directory, redirect to project directory
+            if (command.includes('mkdir -p') && !command.includes(projectPath)) {
+              console.warn(`Intercepted mkdir command: ${command}`);
+              // Replace with a cd to project directory instead
+              command = `cd "${projectPath}"`;
+            }
+            
+            // Ensure all commands run in project directory
+            if (!command.startsWith('cd "') && !command.includes(' && ')) {
+              command = `cd "${projectPath}" && ${command}`;
+            }
+            
+            modifiedArgs = {
+              ...modifiedArgs,
+              action_json: { ...actionJson, command }
+            };
+          }
+        }
+        
+        // For FileWriteOrEdit: ensure file paths are relative to project directory
+        if (toolName === 'FileWriteOrEdit' && modifiedArgs.file_path) {
+          let filePath = modifiedArgs.file_path as string;
+          
+          // If it's an absolute path outside our project, make it relative
+          if (filePath.startsWith('/') && !filePath.startsWith(projectPath)) {
+            const fileName = filePath.split('/').pop() || 'file.txt';
+            filePath = fileName;
+            console.log(`Intercepted file path, redirected to: ${fileName}`);
+          }
+          
+          // If it includes subdirectory creation, extract just the filename
+          if (filePath.includes('/') && !filePath.startsWith(projectPath)) {
+            const fileName = filePath.split('/').pop() || 'file.txt';
+            filePath = fileName;
+            console.log(`Intercepted subdirectory creation, using filename: ${fileName}`);
+          }
+          
+          modifiedArgs = {
+            ...modifiedArgs,
+            file_path: filePath
+          };
+        }
       }
 
       return new Promise((resolve, reject) => {
-        const requestId = Math.random().toString(36).substring(7);
+        const requestId = `req_${Date.now()}_${Math.random()}`;
+        
+        // Store resolver with timeout
+        const timeoutId = setTimeout(() => {
+          pendingRequestsRef.delete(requestId);
+          reject(new Error('Tool execution timeout'));
+        }, 30000);
+        
+        pendingRequestsRef.set(requestId, { 
+          resolve: (result: string) => {
+            clearTimeout(timeoutId);
+            resolve(result);
+          }, 
+          reject: (error: Error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          }
+        });
 
-        const messageHandler = (event: MessageEvent) => {
-          try {
-            const response = JSON.parse(event.data);
-            if (response.id === requestId) {
-              ws.removeEventListener('message', messageHandler);
-              if (response.error) {
-                reject(new Error(response.error.message));
-              } else {
-                resolve(response.result.content[0].text as string);
-              }
-            }
-          } catch {
-            console.error('Error parsing tool response');
-            reject(new Error('Failed to parse tool response'));
+        const toolCall = {
+          jsonrpc: '2.0',
+          id: requestId,
+          method: 'tools/call',
+          params: {
+            name: toolName,
+            arguments: modifiedArgs // Use modified arguments
           }
         };
 
-        ws.addEventListener('message', messageHandler);
-
-        ws.send(JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'tools/call',
-          params: { name: toolName, arguments: args },
-          id: requestId
-        }));
+        connection.send(JSON.stringify(toolCall));
       });
+    },
+
+    // Helper method to ensure project directory before using LLM tools
+    ensureActiveProjectDirectory: async () => {
+      const { activeProjectId, projects, servers } = get();
+      
+      if (!activeProjectId) return;
+      
+      const project = projects.find(p => p.id === activeProjectId);
+      if (!project) return;
+      
+      const activeMcpServers = servers.filter(server => 
+        server.status === 'connected' && project.settings.mcpServerIds?.includes(server.id)
+      );
+      
+      if (!activeMcpServers.length) return;
+      
+      try {
+        const mcpServerId = activeMcpServers[0].id;
+        const projectPath = await ensureProjectDirectory(project, mcpServerId, get().executeTool);
+        
+        // The ensureProjectDirectory function now properly initializes ws-mcp
+        // with the project-specific directory, so all subsequent tool calls
+        // will work in the correct project workspace
+        console.log(`Ensured project directory for ${project.name}: ${projectPath}`);
+      } catch (error) {
+        console.warn('Failed to ensure project directory:', error);
+      }
     },
 
     attemptLocalMcpConnection: async () => {
