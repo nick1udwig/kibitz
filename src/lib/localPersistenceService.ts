@@ -1,0 +1,709 @@
+/**
+ * Local Persistence Service
+ * 
+ * SuperClaude-inspired persistence using Git + local files
+ * - Git stores all commits/branches (the source of truth)
+ * - .kibitz/ metadata files provide fast access for UI
+ * - Project-based isolation with no external database
+ * - Survives app restarts by scanning project directories
+ */
+
+import { executeGitCommand } from './gitService';
+import { ensureProjectDirectory } from './projectPathService';
+import { Checkpoint } from '../types/Checkpoint';
+import { BranchInfo } from './branchService';
+
+// Base directory for all projects
+const BASE_PROJECTS_DIR = '/Users/test/gitrepo/projects';
+
+/**
+ * Checkpoint metadata stored in .kibitz/checkpoints.json
+ */
+export interface CheckpointMetadata {
+  id: string;
+  projectId: string;
+  description: string;
+  timestamp: Date;
+  commitHash: string;
+  branchName?: string;
+  filesChanged: string[];
+  linesChanged: number;
+  type: 'manual' | 'auto' | 'tool-execution';
+  tags: string[];
+}
+
+/**
+ * Branch metadata stored in .kibitz/branches.json
+ */
+export interface BranchMetadata {
+  name: string;
+  type: 'feature' | 'bugfix' | 'iteration' | 'experiment' | 'checkpoint';
+  createdAt: Date;
+  parentBranch: string;
+  commitHash: string;
+  description: string;
+  filesChanged: string[];
+  isActive: boolean;
+  checkpointCount: number;
+}
+
+/**
+ * Project metadata stored in .kibitz/config.json
+ */
+export interface ProjectMetadata {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+  lastUpdated: Date;
+  gitInitialized: boolean;
+  totalCheckpoints: number;
+  totalBranches: number;
+  settings: {
+    autoCommitEnabled: boolean;
+    branchingEnabled: boolean;
+    maxCheckpoints: number;
+    maxBranches: number;
+  };
+}
+
+/**
+ * Recovery data for app startup
+ */
+export interface ProjectRecoveryData {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+  hasGit: boolean;
+  checkpoints: CheckpointMetadata[];
+  branches: BranchMetadata[];
+  metadata: ProjectMetadata;
+}
+
+/**
+ * Local Persistence Service
+ */
+export class LocalPersistenceService {
+  
+  /**
+   * Initialize .kibitz directory for a project
+   */
+  static async initializeProjectPersistence(
+    projectPath: string,
+    projectId: string,
+    projectName: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log(`🔧 Initializing persistence for project: ${projectPath}`);
+      
+      // Create .kibitz directory
+      const createDirResult = await executeGitCommand(
+        serverId,
+        'mkdir -p .kibitz',
+        projectPath,
+        executeTool
+      );
+      
+      if (!createDirResult.success) {
+        return { success: false, error: 'Failed to create .kibitz directory' };
+      }
+      
+      // Initialize metadata files
+      const initialMetadata: ProjectMetadata = {
+        projectId,
+        projectName,
+        projectPath,
+        lastUpdated: new Date(),
+        gitInitialized: false,
+        totalCheckpoints: 0,
+        totalBranches: 0,
+        settings: {
+          autoCommitEnabled: true,
+          branchingEnabled: true,
+          maxCheckpoints: 100,
+          maxBranches: 50
+        }
+      };
+      
+      const initialCheckpoints: CheckpointMetadata[] = [];
+      const initialBranches: BranchMetadata[] = [];
+      
+      // Write initial files
+      await this.writeMetadataFile(projectPath, 'config.json', initialMetadata, serverId, executeTool);
+      await this.writeMetadataFile(projectPath, 'checkpoints.json', initialCheckpoints, serverId, executeTool);
+      await this.writeMetadataFile(projectPath, 'branches.json', initialBranches, serverId, executeTool);
+      
+      console.log(`✅ Initialized persistence for project: ${projectName}`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Failed to initialize project persistence:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+  
+  /**
+   * Save checkpoint metadata to local cache
+   */
+  static async saveCheckpoint(
+    projectPath: string,
+    checkpoint: CheckpointMetadata,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Read existing checkpoints
+      const existingCheckpoints = await this.readMetadataFile<CheckpointMetadata[]>(
+        projectPath, 'checkpoints.json', serverId, executeTool
+      ) || [];
+      
+      // Add new checkpoint (keep them sorted by timestamp)
+      const updatedCheckpoints = [...existingCheckpoints, checkpoint]
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+      // Limit to max checkpoints
+      const metadata = await this.getProjectMetadata(projectPath, serverId, executeTool);
+      const maxCheckpoints = metadata?.settings.maxCheckpoints || 100;
+      const trimmedCheckpoints = updatedCheckpoints.slice(0, maxCheckpoints);
+      
+      // Write back to file
+      await this.writeMetadataFile(projectPath, 'checkpoints.json', trimmedCheckpoints, serverId, executeTool);
+      
+      // Update project metadata
+      if (metadata) {
+        metadata.totalCheckpoints = trimmedCheckpoints.length;
+        metadata.lastUpdated = new Date();
+        await this.writeMetadataFile(projectPath, 'config.json', metadata, serverId, executeTool);
+      }
+      
+      console.log(`✅ Saved checkpoint: ${checkpoint.description}`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Failed to save checkpoint:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+  
+  /**
+   * Save branch metadata to local cache
+   */
+  static async saveBranch(
+    projectPath: string,
+    branch: BranchMetadata,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Read existing branches
+      const existingBranches = await this.readMetadataFile<BranchMetadata[]>(
+        projectPath, 'branches.json', serverId, executeTool
+      ) || [];
+      
+      // Update or add branch
+      const existingIndex = existingBranches.findIndex(b => b.name === branch.name);
+      if (existingIndex >= 0) {
+        existingBranches[existingIndex] = branch;
+      } else {
+        existingBranches.push(branch);
+      }
+      
+      // Mark all other branches as inactive if this one is active
+      if (branch.isActive) {
+        existingBranches.forEach(b => {
+          if (b.name !== branch.name) {
+            b.isActive = false;
+          }
+        });
+      }
+      
+      // Write back to file
+      await this.writeMetadataFile(projectPath, 'branches.json', existingBranches, serverId, executeTool);
+      
+      // Update project metadata
+      const metadata = await this.getProjectMetadata(projectPath, serverId, executeTool);
+      if (metadata) {
+        metadata.totalBranches = existingBranches.length;
+        metadata.lastUpdated = new Date();
+        await this.writeMetadataFile(projectPath, 'config.json', metadata, serverId, executeTool);
+      }
+      
+      console.log(`✅ Saved branch: ${branch.name}`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error('Failed to save branch:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+  
+  /**
+   * Get all checkpoints for a project
+   */
+  static async getCheckpoints(
+    projectPath: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<CheckpointMetadata[]> {
+    const checkpoints = await this.readMetadataFile<CheckpointMetadata[]>(
+      projectPath, 'checkpoints.json', serverId, executeTool
+    );
+    
+    // Convert date strings back to Date objects
+    return (checkpoints || []).map(checkpoint => ({
+      ...checkpoint,
+      timestamp: new Date(checkpoint.timestamp)
+    }));
+  }
+  
+  /**
+   * Get all branches for a project
+   */
+  static async getBranches(
+    projectPath: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<BranchMetadata[]> {
+    const branches = await this.readMetadataFile<BranchMetadata[]>(
+      projectPath, 'branches.json', serverId, executeTool
+    );
+    
+    // Convert date strings back to Date objects
+    return (branches || []).map(branch => ({
+      ...branch,
+      createdAt: new Date(branch.createdAt)
+    }));
+  }
+  
+  /**
+   * Get project metadata
+   */
+  static async getProjectMetadata(
+    projectPath: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<ProjectMetadata | null> {
+    const metadata = await this.readMetadataFile<ProjectMetadata>(
+      projectPath, 'config.json', serverId, executeTool
+    );
+    
+    if (metadata) {
+      // Convert date strings back to Date objects
+      metadata.lastUpdated = new Date(metadata.lastUpdated);
+    }
+    
+    return metadata;
+  }
+  
+  /**
+   * Scan Git history and rebuild checkpoint cache
+   */
+  static async rebuildCheckpointsFromGit(
+    projectPath: string,
+    projectId: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<{ success: boolean; checkpoints: CheckpointMetadata[]; error?: string }> {
+    try {
+      console.log(`🔍 Rebuilding checkpoints from Git history: ${projectPath}`);
+      
+      // Get all commits with detailed info
+      const gitLogResult = await executeGitCommand(
+        serverId,
+        'git log --pretty=format:"%H|%h|%an|%ae|%ai|%s" --date=iso',
+        projectPath,
+        executeTool
+      );
+      
+      if (!gitLogResult.success) {
+        return { 
+          success: false, 
+          checkpoints: [], 
+          error: 'Failed to read Git history' 
+        };
+      }
+      
+      const checkpoints: CheckpointMetadata[] = [];
+      const lines = gitLogResult.output.split('\n').filter(line => line.trim());
+      
+      for (const line of lines) {
+        const parts = line.split('|');
+        if (parts.length >= 6) {
+          const [commitHash, shortHash, author, email, dateStr, message] = parts;
+          
+          // Get files changed in this commit
+          const filesResult = await executeGitCommand(
+            serverId,
+            `git diff-tree --no-commit-id --name-only -r ${commitHash}`,
+            projectPath,
+            executeTool
+          );
+          
+          const filesChanged = filesResult.success 
+            ? filesResult.output.split('\n').filter(f => f.trim())
+            : [];
+          
+          // Get line changes
+          const statsResult = await executeGitCommand(
+            serverId,
+            `git show --stat ${commitHash} | grep "changed" || echo "0 insertions"`,
+            projectPath,
+            executeTool
+          );
+          
+          const linesChanged = parseInt(
+            (statsResult.output.match(/(\d+) insertion/) || ['', '0'])[1]
+          ) || 0;
+          
+          // Determine checkpoint type
+          let type: 'manual' | 'auto' | 'tool-execution' = 'manual';
+          if (message.includes('Auto-commit') || message.includes('Automatic')) {
+            type = 'auto';
+          } else if (message.includes('Tool execution') || message.includes('After tool')) {
+            type = 'tool-execution';
+          }
+          
+          const checkpoint: CheckpointMetadata = {
+            id: shortHash,
+            projectId,
+            description: message,
+            timestamp: new Date(dateStr),
+            commitHash,
+            filesChanged,
+            linesChanged,
+            type,
+            tags: [type, 'git-history']
+          };
+          
+          checkpoints.push(checkpoint);
+        }
+      }
+      
+      // Save rebuilt checkpoints
+      await this.writeMetadataFile(projectPath, 'checkpoints.json', checkpoints, serverId, executeTool);
+      
+      console.log(`✅ Rebuilt ${checkpoints.length} checkpoints from Git history`);
+      return { success: true, checkpoints };
+      
+    } catch (error) {
+      console.error('Failed to rebuild checkpoints from Git:', error);
+      return { 
+        success: false, 
+        checkpoints: [], 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+  
+  /**
+   * Scan Git branches and rebuild branch cache
+   */
+  static async rebuildBranchesFromGit(
+    projectPath: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<{ success: boolean; branches: BranchMetadata[]; error?: string }> {
+    try {
+      console.log(`🔍 Rebuilding branches from Git: ${projectPath}`);
+      
+      // Get all branches with commit info
+      const branchResult = await executeGitCommand(
+        serverId,
+        'git for-each-ref --format="%(refname:short)|%(objectname)|%(committerdate:iso)|%(subject)" refs/heads/',
+        projectPath,
+        executeTool
+      );
+      
+      if (!branchResult.success) {
+        return { 
+          success: false, 
+          branches: [], 
+          error: 'Failed to read Git branches' 
+        };
+      }
+      
+      // Get current branch
+      const currentBranchResult = await executeGitCommand(
+        serverId,
+        'git branch --show-current',
+        projectPath,
+        executeTool
+      );
+      
+      const currentBranch = currentBranchResult.success ? currentBranchResult.output.trim() : '';
+      
+      const branches: BranchMetadata[] = [];
+      const lines = branchResult.output.split('\n').filter(line => line.trim());
+      
+      for (const line of lines) {
+        const parts = line.split('|');
+        if (parts.length >= 4) {
+          const [name, commitHash, dateStr, description] = parts;
+          
+          // Determine branch type from name
+          let type: 'feature' | 'bugfix' | 'iteration' | 'experiment' | 'checkpoint' = 'iteration';
+          if (name.startsWith('feature/')) type = 'feature';
+          else if (name.startsWith('bugfix/')) type = 'bugfix';
+          else if (name.startsWith('experiment/')) type = 'experiment';
+          else if (name.includes('checkpoint') || name.includes('kibitz')) type = 'checkpoint';
+          
+          // Get parent branch (simplified - assume main for now)
+          const parentBranch = name === 'main' ? '' : 'main';
+          
+          // Get files changed (compare with parent)
+          let filesChanged: string[] = [];
+          if (parentBranch) {
+            const diffResult = await executeGitCommand(
+              serverId,
+              `git diff --name-only ${parentBranch}...${name}`,
+              projectPath,
+              executeTool
+            );
+            
+            if (diffResult.success) {
+              filesChanged = diffResult.output.split('\n').filter(f => f.trim());
+            }
+          }
+          
+          // Count checkpoints in this branch
+          const logResult = await executeGitCommand(
+            serverId,
+            `git rev-list --count ${name}`,
+            projectPath,
+            executeTool
+          );
+          
+          const checkpointCount = logResult.success ? parseInt(logResult.output.trim()) || 0 : 0;
+          
+          const branch: BranchMetadata = {
+            name,
+            type,
+            createdAt: new Date(dateStr),
+            parentBranch,
+            commitHash,
+            description,
+            filesChanged,
+            isActive: name === currentBranch,
+            checkpointCount
+          };
+          
+          branches.push(branch);
+        }
+      }
+      
+      // Save rebuilt branches
+      await this.writeMetadataFile(projectPath, 'branches.json', branches, serverId, executeTool);
+      
+      console.log(`✅ Rebuilt ${branches.length} branches from Git`);
+      return { success: true, branches };
+      
+    } catch (error) {
+      console.error('Failed to rebuild branches from Git:', error);
+      return { 
+        success: false, 
+        branches: [], 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+  
+  /**
+   * Scan all project directories for app restart recovery
+   */
+  static async scanProjectsForRecovery(
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<ProjectRecoveryData[]> {
+    try {
+      console.log('🔍 Scanning projects for recovery...');
+      
+      // List all project directories
+      const listResult = await executeGitCommand(
+        serverId,
+        `find "${BASE_PROJECTS_DIR}" -maxdepth 1 -type d -name "*_*" 2>/dev/null || echo ""`,
+        '/', // Execute from root since we're scanning the base directory
+        executeTool
+      );
+      
+      if (!listResult.success) {
+        console.warn('No projects found or failed to scan');
+        return [];
+      }
+      
+      const projectDirs = listResult.output
+        .split('\n')
+        .filter(line => line.trim())
+        .filter(path => path.includes('_')); // Only directories with projectId_name format
+      
+      const recoveryData: ProjectRecoveryData[] = [];
+      
+      for (const projectPath of projectDirs) {
+        try {
+          // Extract projectId and name from directory name
+          const dirName = projectPath.split('/').pop() || '';
+          const underscoreIndex = dirName.indexOf('_');
+          if (underscoreIndex === -1) continue;
+          
+          const projectId = dirName.substring(0, underscoreIndex);
+          const projectName = dirName.substring(underscoreIndex + 1).replace(/-/g, ' ');
+          
+          // Check if it's a Git repository
+          const gitCheckResult = await executeGitCommand(
+            serverId,
+            'git rev-parse --is-inside-work-tree',
+            projectPath,
+            executeTool
+          );
+          
+          const hasGit = gitCheckResult.success && gitCheckResult.output.includes('true');
+          
+          // Try to read metadata files
+          let metadata: ProjectMetadata | null = null;
+          let checkpoints: CheckpointMetadata[] = [];
+          let branches: BranchMetadata[] = [];
+          
+          if (hasGit) {
+            // Check if .kibitz directory exists
+            const kibitzCheckResult = await executeGitCommand(
+              serverId,
+              'test -d .kibitz && echo "exists" || echo "missing"',
+              projectPath,
+              executeTool
+            );
+            
+            if (kibitzCheckResult.output.includes('exists')) {
+              // Read existing metadata
+              metadata = await this.getProjectMetadata(projectPath, serverId, executeTool);
+              checkpoints = await this.getCheckpoints(projectPath, serverId, executeTool);
+              branches = await this.getBranches(projectPath, serverId, executeTool);
+            } else {
+              // Initialize persistence for existing Git repo
+              await this.initializeProjectPersistence(
+                projectPath, projectId, projectName, serverId, executeTool
+              );
+              
+              // Rebuild from Git history
+              const checkpointRebuild = await this.rebuildCheckpointsFromGit(
+                projectPath, projectId, serverId, executeTool
+              );
+              const branchRebuild = await this.rebuildBranchesFromGit(
+                projectPath, serverId, executeTool
+              );
+              
+              if (checkpointRebuild.success) checkpoints = checkpointRebuild.checkpoints;
+              if (branchRebuild.success) branches = branchRebuild.branches;
+              
+              metadata = await this.getProjectMetadata(projectPath, serverId, executeTool);
+            }
+          }
+          
+          // Create recovery data
+          const projectRecovery: ProjectRecoveryData = {
+            projectId,
+            projectName,
+            projectPath,
+            hasGit,
+            checkpoints,
+            branches,
+            metadata: metadata || {
+              projectId,
+              projectName,
+              projectPath,
+              lastUpdated: new Date(),
+              gitInitialized: hasGit,
+              totalCheckpoints: checkpoints.length,
+              totalBranches: branches.length,
+              settings: {
+                autoCommitEnabled: true,
+                branchingEnabled: true,
+                maxCheckpoints: 100,
+                maxBranches: 50
+              }
+            }
+          };
+          
+          recoveryData.push(projectRecovery);
+          console.log(`✅ Recovered project: ${projectName} (${checkpoints.length} checkpoints, ${branches.length} branches)`);
+          
+        } catch (error) {
+          console.error(`Failed to recover project from ${projectPath}:`, error);
+          // Continue with other projects
+        }
+      }
+      
+      console.log(`🎯 Recovery complete: Found ${recoveryData.length} projects`);
+      return recoveryData;
+      
+    } catch (error) {
+      console.error('Failed to scan projects for recovery:', error);
+      return [];
+    }
+  }
+  
+  /**
+   * Helper: Write metadata file
+   */
+  private static async writeMetadataFile(
+    projectPath: string,
+    filename: string,
+    data: any,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<void> {
+    const content = JSON.stringify(data, null, 2);
+    const filePath = `.kibitz/${filename}`;
+    
+    // Write using echo command (handles JSON escaping)
+    const writeResult = await executeGitCommand(
+      serverId,
+      `echo '${content.replace(/'/g, "'\\''")}' > ${filePath}`,
+      projectPath,
+      executeTool
+    );
+    
+    if (!writeResult.success) {
+      throw new Error(`Failed to write ${filename}: ${writeResult.error}`);
+    }
+  }
+  
+  /**
+   * Helper: Read metadata file
+   */
+  private static async readMetadataFile<T>(
+    projectPath: string,
+    filename: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<T | null> {
+    try {
+      const filePath = `.kibitz/${filename}`;
+      
+      const readResult = await executeGitCommand(
+        serverId,
+        `cat ${filePath}`,
+        projectPath,
+        executeTool
+      );
+      
+      if (!readResult.success || !readResult.output.trim()) {
+        return null;
+      }
+      
+      return JSON.parse(readResult.output);
+      
+    } catch (error) {
+      console.warn(`Failed to read ${filename}:`, error);
+      return null;
+    }
+  }
+} 

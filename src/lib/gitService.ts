@@ -5,6 +5,9 @@
  * by executing shell commands on the user's system.
  */
 
+import { createHash } from 'crypto';
+import { getGitHubRepoName } from './projectPathService';
+
 /**
  * Response from Git command execution
  */
@@ -153,20 +156,22 @@ export const executeGitCommand = async (
     } catch (bashError) {
       console.log('BashCommand failed, trying terminal tool as fallback:', bashError);
       
-      // Fallback to terminal tool (older MCP servers)
+      // Fallback to terminal tool (older MCP servers) - FIXED: Include thread_id
       try {
-        const result = await executeTool(serverId, 'terminal', {
-          command: `cd "${cwd}" && ${command}`,
-          cwd,
+        const result = await executeTool(serverId, 'BashCommand', {
+          action_json: { 
+            command: `cd "${cwd}" && ${command}` 
+          },
+          thread_id: threadId
         });
         
         return {
           success: !result.includes('Error:') && !result.includes('fatal:') && !result.includes('No such file'),
           output: result
         };
-      } catch (terminalError) {
-        console.error('Terminal command execution failed:', terminalError);
-        throw new Error(`Failed to execute command: ${command} - ${terminalError}`);
+      } catch (bashError) {
+        console.error('Bash command execution failed:', bashError);
+        throw new Error(`Failed to execute command: ${command} - ${bashError}`);
       }
     }
   } catch (error) {
@@ -206,7 +211,7 @@ export const initGitRepository = async (
     // Create .gitignore if it doesn't exist
     const createGitignoreResult = await executeGitCommand(
       serverId,
-      `[ -f .gitignore ] || echo -e "node_modules/\n.next/\n.DS_Store\nout/\n.env*\n*.log" > .gitignore`,
+      `[ -f .gitignore ] || printf 'node_modules/\\n.next/\\n.DS_Store\\nout/\\n.env*\\n*.log\\n' > .gitignore`,
       options.projectPath,
       executeTool
     );
@@ -253,6 +258,62 @@ export const initGitRepository = async (
     return {
       success: false,
       output: '',
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+};
+
+/**
+ * Automatically initializes Git for a project directory if not already a Git repo
+ * @param projectPath Project directory path
+ * @param projectName Project name
+ * @param serverId MCP server ID
+ * @param executeTool Function to execute tool on MCP server
+ * @returns Whether Git initialization was successful or already existed
+ */
+export const autoInitGitIfNeeded = async (
+  projectPath: string,
+  projectName: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<{ success: boolean; wasAlreadyGitRepo: boolean; error?: string }> => {
+  try {
+    // First check if it's already a Git repository
+    const gitCheckResult = await executeGitCommand(
+      serverId,
+      'git rev-parse --is-inside-work-tree',
+      projectPath,
+      executeTool
+    );
+    
+    if (gitCheckResult.success && gitCheckResult.output.includes('true')) {
+      console.log(`Directory ${projectPath} is already a Git repository`);
+      return { success: true, wasAlreadyGitRepo: true };
+    }
+    
+    // Not a Git repo, so initialize it
+    console.log(`Initializing Git repository in ${projectPath}`);
+    const initResult = await initGitRepository(
+      {
+        projectPath,
+        projectName,
+        addFiles: false,  // Don't automatically add files
+        initialCommit: false,  // Don't automatically commit
+      },
+      serverId,
+      executeTool
+    );
+    
+    return { 
+      success: initResult.success, 
+      wasAlreadyGitRepo: false, 
+      error: initResult.error 
+    };
+  } catch (error) {
+    console.error('Failed to auto-initialize Git repository:', error);
+    return {
+      success: false,
+      wasAlreadyGitRepo: false,
       error: error instanceof Error ? error.message : String(error)
     };
   }
@@ -723,4 +784,213 @@ export const connectToGitHubRemote = async (
       error: error instanceof Error ? error.message : String(error)
     };
   }
-}; 
+};
+
+/**
+ * Pushes commits to the remote repository
+ * @param projectPath Project path
+ * @param serverId MCP server ID  
+ * @param executeTool Function to execute tool on MCP server
+ * @param branch Branch to push (defaults to 'main')
+ */
+export const pushToRemote = async (
+  projectPath: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
+  branch: string = 'main'
+): Promise<GitCommandResponse> => {
+  try {
+    console.log(`Pushing to remote branch '${branch}' from ${projectPath}`);
+    
+    // Check if remote origin exists
+    const remoteCheckResult = await executeGitCommand(
+      serverId,
+      'git remote get-url origin',
+      projectPath,
+      executeTool
+    );
+    
+    const hasRemote = remoteCheckResult.success && 
+                     remoteCheckResult.output.trim() && 
+                     !remoteCheckResult.output.includes('error:') &&
+                     !remoteCheckResult.output.includes('No such remote');
+    
+    if (!hasRemote) {
+      return {
+        success: false,
+        output: '',
+        error: 'No remote origin configured. Please connect to a GitHub repository first.'
+      };
+    }
+    
+    console.log("Remote origin found:", remoteCheckResult.output);
+    
+    // Check if there are commits to push
+    const statusResult = await executeGitCommand(
+      serverId,
+      `git status --porcelain -b`,
+      projectPath,
+      executeTool
+    );
+    
+    if (statusResult.success) {
+      console.log("Git status before push:", statusResult.output);
+    }
+    
+    // Push to remote
+    const pushResult = await executeGitCommand(
+      serverId,
+      `git push origin ${branch}`,
+      projectPath,
+      executeTool
+    );
+    
+    if (pushResult.success) {
+      console.log("Successfully pushed to remote");
+      return {
+        success: true,
+        output: `Successfully pushed to origin/${branch}`
+      };
+    } else {
+      console.error("Failed to push to remote:", pushResult.output);
+      return {
+        success: false,
+        output: pushResult.output,
+        error: pushResult.error || 'Push failed'
+      };
+    }
+  } catch (error) {
+    console.error('Failed to push to remote:', error);
+    return {
+      success: false,
+      output: '',
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+};
+
+/**
+ * Gets the current GitHub username from gh CLI
+ * @param serverId MCP server ID
+ * @param executeTool Function to execute tool on MCP server
+ */
+export const getGitHubUsername = async (
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<string | null> => {
+  try {
+    // Check if GitHub CLI is authenticated and get the username
+    const userInfoResult = await executeGitCommand(
+      serverId,
+      'gh api user --jq .login',
+      '/',
+      executeTool
+    );
+    
+    if (userInfoResult.success && userInfoResult.output.trim()) {
+      return userInfoResult.output.trim();
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Failed to get GitHub username:', error);
+    return null;
+  }
+};
+
+/**
+ * Automatically sets up GitHub integration for auto-commit
+ * @param projectPath Project path
+ * @param projectId Project ID
+ * @param projectName Project name
+ * @param serverId MCP server ID
+ * @param executeTool Function to execute tool on MCP server
+ * @param gitHubEnabled Whether GitHub integration is enabled for this project
+ */
+export const autoSetupGitHub = async (
+  projectPath: string,
+  projectId: string,
+  projectName: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
+  gitHubEnabled: boolean = false
+): Promise<{ success: boolean; repoUrl?: string; error?: string }> => {
+  try {
+    console.log('🔧 autoSetupGitHub: Starting automatic GitHub setup...');
+    
+    // Check if GitHub integration is enabled
+    if (!gitHubEnabled) {
+      console.log('🔧 autoSetupGitHub: GitHub integration disabled for this project');
+      return {
+        success: false,
+        error: 'GitHub integration is disabled for this project. Enable it in project settings to use GitHub features.'
+      };
+    }
+    
+    // Get GitHub username
+    const username = await getGitHubUsername(serverId, executeTool);
+    if (!username) {
+      return {
+        success: false,
+        error: 'Cannot get GitHub username. Please run `gh auth login` first.'
+      };
+    }
+    
+    console.log(`✅ autoSetupGitHub: Using GitHub username: ${username}`);
+    
+    // Generate repository name
+    const repoName = getGitHubRepoName(projectId, projectName);
+    console.log(`✅ autoSetupGitHub: Creating repository: ${repoName}`);
+    
+    // Create GitHub repository
+    const createResult = await createGitHubRepository(
+      {
+        repoName,
+        description: `Auto-created for Kibitz project: ${projectName}`,
+        isPrivate: false
+      },
+      serverId,
+      executeTool
+    );
+    
+    if (!createResult.success) {
+      return {
+        success: false,
+        error: `Failed to create GitHub repository: ${createResult.error}`
+      };
+    }
+    
+    console.log('✅ autoSetupGitHub: GitHub repository created successfully');
+    
+    // Connect local repository to GitHub
+    const connectResult = await connectToGitHubRemote(
+      projectPath,
+      repoName,
+      username,
+      serverId,
+      executeTool
+    );
+    
+    if (!connectResult.success) {
+      return {
+        success: false,
+        error: `Failed to connect to GitHub remote: ${connectResult.error}`
+      };
+    }
+    
+    console.log('✅ autoSetupGitHub: Successfully connected to GitHub remote');
+    
+    const repoUrl = `https://github.com/${username}/${repoName}`;
+    return {
+      success: true,
+      repoUrl
+    };
+    
+  } catch (error) {
+    console.error('❌ autoSetupGitHub: Auto-setup failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error during GitHub setup'
+    };
+  }
+};

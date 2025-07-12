@@ -5,6 +5,7 @@ import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db'
 import { WsTool } from '../components/LlmChat/types/toolTypes';
 import { autoInitializeGitForProject } from '../lib/gitCheckpointService';
 import { ensureProjectDirectory, getProjectPath } from '../lib/projectPathService';
+import { recordSystemError, shouldThrottleOperation } from '../lib/systemDiagnostics';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -35,6 +36,7 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   elideToolResults: false,
   mcpServerIds: [],
   messageWindowSize: 30,  // default number of messages in truncated view
+  enableGitHub: false,  // GitHub integration disabled by default
   savedPrompts: [
     {
       id: 'kibitz',
@@ -227,6 +229,10 @@ export const useStore = create<RootState>((set, get) => {
   const connectionsRef = new Map<string, WebSocket>();
   const reconnectTimeoutsRef = new Map<string, NodeJS.Timeout>();
   const pendingRequestsRef = new Map<string, { resolve: (result: string) => void; reject: (error: Error) => void }>();
+  
+  // Throttling mechanism for workspace initialization
+  const initializationThrottleRef = new Map<string, number>();
+  const INITIALIZATION_THROTTLE_MS = 5000; // 5 seconds between initializations per project
 
   // Helper function to save API keys to server
   const saveApiKeysToServer = (keys: Record<string, string>) => {
@@ -389,8 +395,28 @@ export const useStore = create<RootState>((set, get) => {
               if (pendingRequest) {
                 pendingRequestsRef.delete(response.id);
                 
+                // 🔍 ENHANCED DEBUGGING: Log detailed MCP response
+                console.log('🔧 MCP Response Details:', {
+                  requestId: response.id,
+                  hasError: !!response.error,
+                  errorDetails: response.error,
+                  resultType: typeof response.result,
+                  fullResponse: JSON.stringify(response, null, 2),
+                  timestamp: new Date().toISOString()
+                });
+                
                 if (response.error) {
-                  pendingRequest.reject(new Error(response.error.message || 'Tool execution failed'));
+                  // 🔍 SPECIAL HANDLING: Check for validation errors and provide detailed info
+                  const errorMessage = response.error.message || 'Tool execution failed';
+                  if (errorMessage.includes('type') && errorMessage.includes('required property')) {
+                    console.error('🚨 CRITICAL: MCP Server BashCommand Validation Error:', {
+                      error: errorMessage,
+                      fullError: response.error,
+                      suggestion: 'The MCP server schema expects a different BashCommand format',
+                      recommendation: 'Try using a different tool or format'
+                    });
+                  }
+                  pendingRequest.reject(new Error(errorMessage));
                 } else {
                   // Extract the result content - handle different response formats
                   let result = '';
@@ -408,6 +434,13 @@ export const useStore = create<RootState>((set, get) => {
                       result = JSON.stringify(response.result);
                     }
                   }
+                  
+                  console.log('🔧 MCP Success Result:', {
+                    resultLength: result.length,
+                    resultPreview: result.substring(0, 200) + (result.length > 200 ? '...' : ''),
+                    resultType: typeof result
+                  });
+                  
                   pendingRequest.resolve(result);
                 }
               }
@@ -572,70 +605,55 @@ export const useStore = create<RootState>((set, get) => {
 
     // Project methods
     createProject: (name: string, settings?: Partial<ProjectSettings>) => {
-      const { projects, activeProjectId } = get();
-      const currentProject = projects.find(p => p.id === activeProjectId);
+      const state = get();
       const projectId = generateId();
+      
+      const defaultSettings: ProjectSettings = {
+        provider: 'anthropic' as const,
+        model: 'claude-3-5-sonnet-20241022',
+        systemPrompt: '',
+        mcpServerIds: [],
+        elideToolResults: false,
+        messageWindowSize: 20,
+        enableGitHub: false  // Default to false - GitHub is opt-in
+      };
 
-      // Get connected server IDs from state
-      const connectedServerIds = get().servers
-        .filter(server => server.status === 'connected')
-        .map(server => server.id);
+      const mergedSettings = { ...defaultSettings, ...settings };
 
       const newProject: Project = {
         id: projectId,
         name,
-        settings: {
-          ...DEFAULT_PROJECT_SETTINGS,
-          ...(currentProject && {
-            apiKey: currentProject.settings.apiKey,
-            groqApiKey: currentProject.settings.groqApiKey,
-            systemPrompt: '',
-          }),
-          mcpServerIds: connectedServerIds,
-          ...settings,
-        },
+        settings: mergedSettings,
         conversations: [],
         createdAt: new Date(),
         updatedAt: new Date(),
-        order: Math.max(...projects.map(p => p.order || 0), 0) + 1
+        order: Math.max(...state.projects.map(p => p.order), 0) + 1,
       };
 
-      set(state => ({
+      const updatedState: ProjectState = {
+        ...state,
         projects: [...state.projects, newProject],
         activeProjectId: projectId,
-      }));
+        activeConversationId: null
+      };
 
-      // Save state after updating
-      saveState({
-        projects: [...projects, newProject],
-        activeProjectId: projectId,
-        activeConversationId: null,
-      }).catch(error => {
-        console.error('Error saving state:', error);
-      });
+      set(updatedState);
 
-      // Create initial chat
-      const conversationId = generateId();
-      set(state => ({
-        projects: state.projects.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            conversations: [{
-              id: conversationId,
-              name: '(New Chat)',
-              lastUpdated: new Date(),
-              messages: [],
-              createdAt: new Date()
-            }],
-            updatedAt: new Date()
-          };
-        }),
-        activeConversationId: conversationId,
-      }));
+      // Find connected MCP servers
+      const connectedServerIds = state.servers
+        .filter(server => server.status === 'connected')
+        .map(server => server.id);
 
-      // Save state after creating initial chat
-      const updatedState = get();
+      // Add first connected server to project's MCP servers
+      if (connectedServerIds.length > 0) {
+        const updatedSettings = {
+          ...mergedSettings,
+          mcpServerIds: [connectedServerIds[0]]
+        };
+        
+        get().updateProjectSettings(projectId, { settings: updatedSettings });
+      }
+
       saveState(updatedState).catch(error => {
         console.error('Error saving state:', error);
       });
@@ -670,6 +688,77 @@ export const useStore = create<RootState>((set, get) => {
           
           setupProject();
         }, 1000); // 1 second delay
+      }
+
+      return projectId;
+    },
+
+    createProjectFromClonedRepo: async (repoPath: string, projectName?: string): Promise<string> => {
+      const state = get();
+      const { executeTool } = state;
+      
+      // Find connected MCP servers
+      const connectedServerIds = state.servers
+        .filter(server => server.status === 'connected')
+        .map(server => server.id);
+
+      if (connectedServerIds.length === 0) {
+        throw new Error('No connected MCP servers available. Please connect a server first.');
+      }
+
+      const mcpServerId = connectedServerIds[0];
+      
+      // Import the function dynamically to avoid circular dependency
+      const { createProjectFromClonedRepo } = await import('../lib/projectPathService');
+      
+      // Create project configuration from cloned repo
+      const repoConfig = await createProjectFromClonedRepo(
+        repoPath, 
+        projectName, 
+        mcpServerId, 
+        executeTool
+      );
+      
+      const projectId = generateId();
+      
+             const defaultSettings: ProjectSettings = {
+         provider: 'anthropic' as const,
+         model: 'claude-3-5-sonnet-20241022',
+         systemPrompt: '',
+         mcpServerIds: [mcpServerId],
+         elideToolResults: false,
+         messageWindowSize: 20,
+         enableGitHub: false  // Default to false - GitHub is opt-in
+       };
+
+      const newProject: Project = {
+        id: projectId,
+        name: repoConfig.name,
+        settings: defaultSettings,
+        conversations: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        order: Math.max(...state.projects.map(p => p.order), 0) + 1,
+        customPath: repoConfig.customPath  // Store the custom path for cloned repo
+      };
+
+      const updatedState: ProjectState = {
+        ...state,
+        projects: [...state.projects, newProject],
+        activeProjectId: projectId,
+        activeConversationId: null
+      };
+
+      set(updatedState);
+
+      saveState(updatedState).catch(error => {
+        console.error('Error saving state:', error);
+      });
+
+      console.log(`Created project "${repoConfig.name}" from cloned repository: ${repoConfig.customPath}`);
+      
+      if (repoConfig.repoInfo?.isCloned) {
+        console.log(`Detected cloned repository from: ${repoConfig.repoInfo.repoUrl}`);
       }
 
       return projectId;
@@ -993,13 +1082,52 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>) => {
+      // 🚨 EMERGENCY: System health throttling temporarily disabled for recovery
+      // if (shouldThrottleOperation() && toolName !== 'Initialize') {
+      //   console.warn('System unhealthy - throttling non-critical operations');
+      //   throw new Error('System temporarily unavailable - please try again in a moment');
+      // }
+      
+      // 🔍 ENHANCED DEBUGGING: Log exact request details
+      console.log('🔧 executeTool: Detailed request info:', {
+        serverId,
+        toolName,
+        args: JSON.stringify(args, null, 2),
+        timestamp: new Date().toISOString()
+      });
+      
       const connection = connectionsRef.get(serverId);
       if (!connection) {
+        recordSystemError('CONNECTION', `No connection found for server ${serverId}`);
         throw new Error(`No connection found for server ${serverId}`);
       }
 
       if (connection.readyState !== WebSocket.OPEN) {
-        throw new Error(`WebSocket is not open for server ${serverId}`);
+        // Log the WebSocket state for debugging
+        const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+        const stateName = stateNames[connection.readyState] || 'UNKNOWN';
+        console.warn(`WebSocket is ${stateName} for server ${serverId}`);
+        
+        // If WebSocket is closed, try to reconnect
+        if (connection.readyState === WebSocket.CLOSED) {
+          const server = get().servers.find(s => s.id === serverId);
+          if (server) {
+            console.log(`Attempting to reconnect WebSocket for ${serverId}`);
+            try {
+              await connectToServer(server);
+              const newConnection = connectionsRef.get(serverId);
+              if (newConnection && newConnection.readyState === WebSocket.OPEN) {
+                // Retry with new connection
+                return get().executeTool(serverId, toolName, args);
+              }
+                         } catch (reconnectError) {
+               recordSystemError('WEBSOCKET_RECONNECT', reconnectError);
+               console.error(`Failed to reconnect WebSocket for ${serverId}:`, reconnectError);
+             }
+          }
+        }
+        
+        throw new Error(`WebSocket is not open for server ${serverId} (state: ${stateName})`);
       }
 
       // Get current project context
@@ -1007,53 +1135,81 @@ export const useStore = create<RootState>((set, get) => {
       const project = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
 
       // Before executing ANY tool, ensure we're in the correct project workspace
+      // 🔧 FIXED: Skip automatic workspace init for explicit Initialize calls to avoid conflicts
       if (activeProjectId && toolName !== 'Initialize') {
         if (project) {
           try {
             const projectPath = getProjectPath(project.id, project.name);
+            const throttleKey = `${serverId}-${activeProjectId}`;
+            const lastInitTime = initializationThrottleRef.get(throttleKey) || 0;
+            const now = Date.now();
             
-            // Force initialize with project-specific directory before tool execution
-            const initRequestId = `init_${Date.now()}_${Math.random()}`;
-            const initPromise = new Promise((resolve, reject) => {
-              const timeoutId = setTimeout(() => {
-                pendingRequestsRef.delete(initRequestId);
-                reject(new Error('Initialize timeout'));
-              }, 10000);
+            // 🔧 FIXED: Always allow initialization for directory operations, bypass throttling for critical operations
+            const isCriticalOperation = toolName === 'BashCommand' && args.action_json && (
+              (args.action_json as any).command?.includes('mkdir') ||
+              (args.action_json as any).command?.includes('test -d') ||
+              (args.action_json as any).command?.includes('ls -la')
+            );
+            const shouldBypassThrottle = isCriticalOperation || (now - lastInitTime > INITIALIZATION_THROTTLE_MS);
+            
+            console.log(`🔍 Throttle check: toolName=${toolName}, hasActionJson=${!!args.action_json}, command=${(args.action_json as any)?.command}`);
+            console.log(`🔍 Throttle check: isCriticalOperation=${isCriticalOperation}, shouldBypassThrottle=${shouldBypassThrottle}`);
+            console.log(`🔍 Throttle check: timeSinceLastInit=${now - lastInitTime}ms, threshold=${INITIALIZATION_THROTTLE_MS}ms`);
+            
+            // Initialize if throttle time passed OR if this is a critical directory operation
+            if (shouldBypassThrottle) {
+              if (isCriticalOperation) {
+                console.log(`🔧 Bypassing throttle for critical directory operation: ${(args.action_json as any).command}`);
+              }
               
-              pendingRequestsRef.set(initRequestId, { 
-                resolve: (result: string) => {
-                  clearTimeout(timeoutId);
-                  resolve(result);
-                }, 
-                reject: (error: Error) => {
-                  clearTimeout(timeoutId);
-                  reject(error);
-                }
+              initializationThrottleRef.set(throttleKey, now);
+              
+              // Force initialize with project-specific directory before tool execution
+              const initRequestId = `init_${Date.now()}_${Math.random()}`;
+              const initPromise = new Promise((resolve, reject) => {
+                const timeoutId = setTimeout(() => {
+                  pendingRequestsRef.delete(initRequestId);
+                  reject(new Error('Initialize timeout'));
+                }, 10000);
+                
+                pendingRequestsRef.set(initRequestId, { 
+                  resolve: (result: string) => {
+                    clearTimeout(timeoutId);
+                    resolve(result);
+                  }, 
+                  reject: (error: Error) => {
+                    clearTimeout(timeoutId);
+                    reject(error);
+                  }
+                });
+
+                const initCall = {
+                  jsonrpc: '2.0',
+                  id: initRequestId,
+                  method: 'tools/call',
+                  params: {
+                    name: 'Initialize',
+                    arguments: {
+                      type: "first_call",
+                      any_workspace_path: projectPath, // Always use project-specific path
+                      initial_files_to_read: [],
+                      task_id_to_resume: "",
+                      mode_name: "wcgw",
+                      thread_id: args.thread_id || "project-tool"
+                    }
+                  }
+                };
+
+                connection.send(JSON.stringify(initCall));
               });
 
-              const initCall = {
-                jsonrpc: '2.0',
-                id: initRequestId,
-                method: 'tools/call',
-                params: {
-                  name: 'Initialize',
-                  arguments: {
-                    type: "first_call",
-                    any_workspace_path: projectPath, // Always use project-specific path
-                    initial_files_to_read: [],
-                    task_id_to_resume: "",
-                    mode_name: "wcgw",
-                    thread_id: args.thread_id || "project-tool"
-                  }
-                }
-              };
-
-              connection.send(JSON.stringify(initCall));
-            });
-
-            await initPromise;
-            console.log(`Forced workspace initialization to: ${projectPath}`);
+              await initPromise;
+              console.log(`✅ Workspace initialization completed for: ${projectPath}`);
+            } else {
+              console.log(`⏳ Skipping initialization (throttled) for ${projectPath} - ${Math.round((INITIALIZATION_THROTTLE_MS - (now - lastInitTime)) / 1000)}s remaining`);
+            }
           } catch (error) {
+            recordSystemError('WORKSPACE_INIT', error);
             console.warn(`Failed to force workspace initialization:`, error);
             // Continue with original tool call even if init fails
           }
@@ -1073,11 +1229,15 @@ export const useStore = create<RootState>((set, get) => {
             // Remove any mkdir commands that try to create project subdirectories
             let command = actionJson.command;
             
-            // If it's trying to create a directory, redirect to project directory
+            // If it's trying to create a directory that isn't the project directory itself, redirect to project directory
             if (command.includes('mkdir -p') && !command.includes(projectPath)) {
-              console.warn(`Intercepted mkdir command: ${command}`);
-              // Replace with a cd to project directory instead
-              command = `cd "${projectPath}"`;
+              // Allow creation of the project directory itself, but block subdirectory creation
+              const isMkdirProjectDir = command.includes(`mkdir -p "${projectPath}"`);
+              if (!isMkdirProjectDir) {
+                console.warn(`Intercepted mkdir command: ${command}`);
+                // Replace with a cd to project directory instead
+                command = `cd "${projectPath}"`;
+              }
             }
             
             // Ensure all commands run in project directory
@@ -1085,8 +1245,9 @@ export const useStore = create<RootState>((set, get) => {
               command = `cd "${projectPath}" && ${command}`;
             }
             
+            // 🔧 FIXED: Explicitly preserve the 'type' field and all other original properties
             modifiedArgs = {
-              ...modifiedArgs,
+              ...modifiedArgs,  // Preserve all original properties including 'type'
               action_json: { ...actionJson, command }
             };
           }
@@ -1123,12 +1284,32 @@ export const useStore = create<RootState>((set, get) => {
         // Store resolver with timeout
         const timeoutId = setTimeout(() => {
           pendingRequestsRef.delete(requestId);
+          recordSystemError('TOOL_TIMEOUT', `Tool ${toolName} execution timeout`);
           reject(new Error('Tool execution timeout'));
         }, 30000);
         
         pendingRequestsRef.set(requestId, { 
           resolve: (result: string) => {
             clearTimeout(timeoutId);
+            
+            // 🌿 NEW: Trigger auto-branch creation after successful tool execution
+            if (activeProjectId && project) {
+              try {
+                // Import and call branch store handler asynchronously to avoid blocking the tool result
+                import('./branchStore').then(({ useBranchStore }) => {
+                  const branchStore = useBranchStore.getState();
+                  console.log(`🔧 executeTool: Triggering branch check for tool: ${toolName}`);
+                  branchStore.handleToolExecution(activeProjectId, toolName).catch(error => {
+                    console.warn('🔧 executeTool: Branch creation check failed:', error);
+                  });
+                }).catch(error => {
+                  console.warn('🔧 executeTool: Failed to import branch store:', error);
+                });
+              } catch (error) {
+                console.warn('🔧 executeTool: Error in branch integration:', error);
+              }
+            }
+            
             resolve(result);
           }, 
           reject: (error: Error) => {

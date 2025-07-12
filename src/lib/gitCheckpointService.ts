@@ -2,6 +2,7 @@ import { useCheckpointStore } from '../stores/checkpointStore';
 import { useStore } from '../stores/rootStore';
 import { Project } from '../components/LlmChat/context/types';
 import { ensureProjectDirectory } from './projectPathService';
+import { autoInitGitIfNeeded } from './gitService';
 
 /**
  * Creates a Git checkpoint with both Git commit and Kibitz checkpoint
@@ -65,7 +66,7 @@ export const createGitCheckpoint = async (
 };
 
 /**
- * Auto-initializes Git for a new project
+ * Auto-initializes Git for a new project (always initialize Git, but GitHub is opt-in)
  * @param projectId Project ID
  */
 export const autoInitializeGitForProject = async (
@@ -91,25 +92,32 @@ export const autoInitializeGitForProject = async (
     const projectPath = await ensureProjectDirectory(project, mcpServerId, rootStore.executeTool);
     console.log(`Auto-initializing Git for project at: ${projectPath}`);
     
-    // Initialize Git repository
-    const success = await checkpointStore.initializeGitRepository(
+    // Auto-initialize Git repository if not already a Git repo
+    const gitResult = await autoInitGitIfNeeded(
       projectPath,
       project.name,
       mcpServerId,
       rootStore.executeTool
     );
     
-    if (success) {
-      // Create initial checkpoint
-      await checkpointStore.createManualCheckpoint(
-        projectId,
-        project,
-        "Initial project setup"
-      );
+    if (gitResult.success) {
+      if (gitResult.wasAlreadyGitRepo) {
+        console.log(`Project directory is already a Git repository: ${projectPath}`);
+      } else {
+        console.log(`Initialized new Git repository: ${projectPath}`);
+        
+        // Create initial checkpoint only for new Git repos
+        await checkpointStore.createManualCheckpoint(
+          projectId,
+          project,
+          "Initial project setup"
+        );
+      }
       
       return true;
     }
     
+    console.error('Failed to initialize Git repository:', gitResult.error);
     return false;
   } catch (error) {
     console.error('Failed to auto-initialize Git:', error);

@@ -122,6 +122,11 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
   
   // Create an automatic checkpoint after an operation
   createAutoCheckpointAfterOperation: async (projectId: string, project: Project, operation: string) => {
+    // 🔒 DISABLED: Auto-checkpoint creation to prevent multiple branches
+    console.log('⚠️ Auto-checkpoint creation disabled to prevent multiple branches');
+    return null;
+
+    /* ORIGINAL CODE DISABLED:
     const { config } = get();
     
     // Skip if auto-checkpointing is disabled
@@ -167,6 +172,7 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
       console.error('Failed to create auto checkpoint:', error);
       return null;
     }
+    */
   },
   
   // Select a checkpoint
@@ -332,7 +338,7 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
         console.log("Checking if this is a Git repository...");
         try {
           const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-            action_json: { command: `cd "${projectPath}" && git rev-parse --is-inside-work-tree` },
+            action_json: { command: 'git rev-parse --is-inside-work-tree' },
             thread_id: threadId
           });
           

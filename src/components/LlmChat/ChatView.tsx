@@ -14,6 +14,12 @@ import { useScrollControl } from './hooks/useScrollControl';
 import { useErrorDisplay } from './hooks/useErrorDisplay';
 import { usePagination } from './hooks/usePagination';
 import { MessagesLoadingIndicator } from './components/MessagesLoadingIndicator';
+import { useCommitTracking } from './hooks/useCommitTracking';
+import { CommitDisplay } from './components/CommitDisplay';
+import { FileChangeCounter } from './components/FileChangeCounter';
+import GitSessionService from '../../lib/gitSessionService';
+import { ensureProjectDirectory } from '../../lib/projectPathService';
+import { autoInitializeGitForProject } from '../../lib/gitAutoInitService';
 
 // Default message window size if not configured
 const DEFAULT_MESSAGE_WINDOW = 30;
@@ -30,12 +36,15 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     input: Record<string, unknown>;
     result: string | null;
   } | null>(null);
+  const [projectPath, setProjectPath] = useState<string | null>(null);
 
   const {
     projects,
     activeProjectId,
     activeConversationId,
     updateProjectSettings,
+    servers,
+    executeTool
   } = useStore();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -68,6 +77,129 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   useFocusControl();
   const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall, clearError: clearSendError } = useMessageSender();
   const { error, showError, clearError } = useErrorDisplay();
+  const { getConversationCommits, hasAutoCommit, manuallyAssociateLastCommit, lastCommitHash } = useCommitTracking();
+
+  // Listen for auto-commit events to associate commits with messages
+  useEffect(() => {
+    const handleAutoCommit = (event: CustomEvent) => {
+      const { commitHash, projectId, trigger } = event.detail;
+      console.log('🔗 ChatView: Auto-commit event received:', event.detail);
+      
+      // Only handle commits for the current project
+      if (projectId === activeProjectId) {
+        console.log('✅ ChatView: Auto-commit for current project, associating with last message');
+                 try {
+           // The commit tracking hook will automatically associate the commit
+           // since it's already in the auto-commit store
+           manuallyAssociateLastCommit();
+           console.log('✅ ChatView: Commit associated with message for revert functionality');
+         } catch (error) {
+           console.warn('⚠️ ChatView: Failed to associate commit with message:', error);
+         }
+      }
+    };
+
+    window.addEventListener('autoCommitCreated', handleAutoCommit as EventListener);
+    
+    return () => {
+      window.removeEventListener('autoCommitCreated', handleAutoCommit as EventListener);
+    };
+  }, [activeProjectId, manuallyAssociateLastCommit]);
+
+  // Get project path for revert functionality - Git-first approach
+  useEffect(() => {
+    const initProjectPath = async () => {
+      if (activeProject && servers.length > 0) {
+        try {
+          const activeMcpServers = servers.filter(server => 
+            server.status === 'connected' && 
+            activeProject.settings.mcpServerIds?.includes(server.id)
+          );
+          
+          if (activeMcpServers.length > 0) {
+            console.log('📂 initProjectPath: Starting Git-first initialization...');
+            
+            // 🔄 NEW APPROACH: Use Git auto-initialization instead of problematic directory validation
+            const gitResult = await autoInitializeGitForProject(
+              activeProject.id,
+              activeProject.name,
+              activeMcpServers[0].id,
+              executeTool
+            );
+            
+            console.log('📂 initProjectPath: Git auto-init result:', gitResult);
+            
+            if (gitResult.success && gitResult.projectPath) {
+              setProjectPath(gitResult.projectPath);
+              
+              console.log('✅ initProjectPath: Git-first setup completed successfully');
+              
+              if (gitResult.gitInitialized) {
+                console.log('✅ initProjectPath: Git repository is ready for auto-commit');
+              } else {
+                console.warn('⚠️ initProjectPath: Workspace ready but Git initialization incomplete');
+              }
+            } else {
+              console.error('❌ initProjectPath: Git auto-init failed:', gitResult.error);
+              
+              // Fallback to old approach only if absolutely necessary
+              console.log('🔄 initProjectPath: Falling back to directory validation approach...');
+              const path = await ensureProjectDirectory(
+                activeProject,
+                activeMcpServers[0].id,
+                executeTool
+              );
+              setProjectPath(path);
+            }
+          }
+        } catch (error) {
+          console.error('❌ initProjectPath: Both Git-first and fallback approaches failed:', error);
+          // Don't block the UI completely, but show a warning
+        }
+      }
+    };
+
+    initProjectPath();
+  }, [activeProject, servers, executeTool]);
+
+  // Handle revert to commit
+  const handleRevert = useCallback(async (commitHash: string) => {
+    if (!projectPath || !activeProject) {
+      showError('Project not available for revert');
+      return;
+    }
+
+    const activeMcpServers = servers.filter(server => 
+      server.status === 'connected' && 
+      activeProject.settings.mcpServerIds?.includes(server.id)
+    );
+
+    if (!activeMcpServers.length) {
+      showError('No active MCP servers available');
+      return;
+    }
+
+    try {
+      const sessionService = new GitSessionService(
+        projectPath,
+        activeMcpServers[0].id,
+        executeTool
+      );
+
+      const result = await sessionService.rollbackToCommit(commitHash, {
+        stashChanges: true,
+        createBackup: true
+      });
+
+      if (result.success) {
+        showError(`Reverted to commit ${commitHash.substring(0, 7)} successfully!`);
+      } else {
+        showError(result.error || 'Revert failed');
+      }
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Revert failed');
+    }
+  }, [projectPath, activeProject, servers, executeTool, showError]);
   
   // Pagination hook with direct container ref
   const {
@@ -129,6 +261,26 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   }
 
   const renderMessageContent = (message: Message, index: number) => {
+    // Early return if message is null/undefined
+    if (!message || !message.content) {
+      console.warn('ChatView: renderMessageContent received null/invalid message', { message, index });
+      return null;
+    }
+
+    // Check if this user message should show revert button
+    // Only show if there's a subsequent assistant message (LLM has responded)
+    const shouldShowRevert = message.role === 'user' && 
+                            !!message.commitHash && 
+                            !!message.canRevert &&
+                            visibleMessages.length > index + 1 && 
+                            visibleMessages[index + 1]?.role === 'assistant';
+
+    // Create message object with updated canRevert flag
+    const messageWithRevertFlag: Message = {
+      ...message,
+      canRevert: shouldShowRevert
+    };
+
     if (!Array.isArray(message.content)) {
       return (
         <MessageContentRenderer
@@ -142,29 +294,42 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           toolResult={null}
           contentIndex={0}
           messageIndex={index}
+          message={messageWithRevertFlag}
+          onRevert={handleRevert}
         />
       );
     }
 
-    return message.content.map((content, contentIndex) => (
-      <MessageContentRenderer
-        key={`${content.type}-${index}-${contentIndex}`}
-        content={content}
-        isUserMessage={message.role === 'user'}
-        onToolClick={(name: string, input: Record<string, unknown>, result: string | null) => {
-          setSelectedToolCall({ name, input, result });
-        }}
-        toolResult={
-          Array.isArray(message.content) &&
-          typeof message.content[contentIndex] === 'object' &&
-          'type' in message.content[contentIndex] &&
-          message.content[contentIndex].type === 'tool_use' ?
-            getToolResult(index, message.content[contentIndex].id) : null
-        }
-        contentIndex={contentIndex}
-        messageIndex={index}
-      />
-    ));
+    return message.content.map((content, contentIndex) => {
+      // Skip null/undefined content items
+      if (!content) {
+        console.warn('ChatView: Skipping null content item', { messageIndex: index, contentIndex });
+        return null;
+      }
+
+      return (
+        <MessageContentRenderer
+          key={`${content.type || 'unknown'}-${index}-${contentIndex}`}
+          content={content}
+          isUserMessage={message.role === 'user'}
+          onToolClick={(name: string, input: Record<string, unknown>, result: string | null) => {
+            setSelectedToolCall({ name, input, result });
+          }}
+          toolResult={
+            Array.isArray(message.content) &&
+            typeof message.content[contentIndex] === 'object' &&
+            message.content[contentIndex] &&
+            'type' in message.content[contentIndex] &&
+            message.content[contentIndex].type === 'tool_use' ?
+              getToolResult(index, message.content[contentIndex].id) : null
+          }
+          contentIndex={contentIndex}
+          messageIndex={index}
+          message={messageWithRevertFlag}
+          onRevert={handleRevert}
+        />
+      );
+    }).filter(Boolean); // Remove any null entries
   };
 
   if (!activeConversation) {
@@ -196,6 +361,12 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   return (
     <div id="chat-view" className="flex flex-col h-full relative">
       {activeProjectId && <ChatHeader projectId={activeProjectId} />}
+      
+      {/* File Change Counter */}
+      <div className="px-4 pt-2">
+        <FileChangeCounter />
+      </div>
+      
       <div 
         ref={scrollContainerRef} 
         className="h-[calc(100vh-4rem)] overflow-y-auto p-4"
@@ -239,6 +410,47 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
             );
           })}
         </div>
+
+        {/* 🔒 DISABLED: Commit messages suppressed from Chat UI as requested */}
+        {/* Temporary debug section for testing commit association */}
+        {hasAutoCommit && lastCommitHash && (
+          <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="text-sm">
+                <div className="font-medium">Debug: Last commit hash</div>
+                <div className="text-gray-600 dark:text-gray-400 font-mono text-xs">{lastCommitHash}</div>
+              </div>
+              <button
+                onClick={manuallyAssociateLastCommit}
+                className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Associate with Last Message
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Display recent commits if auto-commit is enabled */}
+        {false && hasAutoCommit && (
+          <div className="mb-4">
+            {getConversationCommits().slice(0, 3).map((commit, index) => (
+              <div key={commit.hash} className="mb-2">
+                <CommitDisplay 
+                  commit={commit}
+                  compact={index > 0} // First commit is full display, others are compact
+                  onRevert={(hash) => {
+                    console.log(`Revert to commit ${hash}`);
+                    // TODO: Implement revert functionality
+                  }}
+                  onViewDetails={(hash) => {
+                    console.log(`View details for commit ${hash}`);
+                    // TODO: Implement details view
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <ScrollToBottomButton

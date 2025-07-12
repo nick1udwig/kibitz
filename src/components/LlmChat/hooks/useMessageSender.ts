@@ -6,6 +6,8 @@ import { Message, MessageContent } from '../types';
 import { useStore } from '@/stores/rootStore';
 import { wakeLock } from '@/lib/wakeLock';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '../types/genericMessage';
+import { useAutoCommit, detectToolSuccess, detectFileChanges } from './useAutoCommit';
+import { detectBuildSuccess, detectTestSuccess } from '../../../stores/autoCommitStore';
 
 const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
 
@@ -25,6 +27,9 @@ export const useMessageSender = () => {
     executeTool,
     ensureActiveProjectDirectory
   } = useStore();
+
+  // Add auto-commit functionality
+  const { onToolExecution, onBuildSuccess, onTestSuccess } = useAutoCommit();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -406,6 +411,29 @@ Format: Only output the title, no quotes or explanation`
                 currentMessages.push(toolResultMessage);
                 updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
+                // Trigger auto-commit after successful tool execution
+                try {
+                  const toolSuccess = detectToolSuccess(unsanitizedTool.name as string, result);
+                  if (toolSuccess) {
+                    const changedFiles = detectFileChanges(unsanitizedTool.name as string, result);
+                    console.log(`Tool execution successful, triggering auto-commit for ${unsanitizedTool.name}`);
+                    
+                    // Prioritize build and test success over general tool execution
+                    if (detectBuildSuccess(unsanitizedTool.name as string, result)) {
+                      console.log('Detected build success, triggering build success auto-commit');
+                      await onBuildSuccess(result);
+                    } else if (detectTestSuccess(unsanitizedTool.name as string, result)) {
+                      console.log('Detected test success, triggering test success auto-commit');
+                      await onTestSuccess(result);
+                    } else {
+                      await onToolExecution(unsanitizedTool.name as string, result);
+                    }
+                  }
+                } catch (autoCommitError) {
+                  console.warn('Auto-commit failed after tool execution:', autoCommitError);
+                  // Don't fail the whole operation for auto-commit failures
+                }
+
               } catch (toolError) {
                 const errorMessage: Message = {
                   role: 'user',
@@ -603,6 +631,29 @@ Format: Only output the title, no quotes or explanation`
 
               currentMessages.push(toolResultMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+
+              // Trigger auto-commit after successful tool execution
+              try {
+                const toolSuccess = detectToolSuccess(toolUseContent.name, result);
+                if (toolSuccess) {
+                  const changedFiles = detectFileChanges(toolUseContent.name, result);
+                  console.log(`Tool execution successful, triggering auto-commit for ${toolUseContent.name}`);
+                  
+                  // Prioritize build and test success over general tool execution
+                  if (detectBuildSuccess(toolUseContent.name, result)) {
+                    console.log('Detected build success, triggering build success auto-commit');
+                    await onBuildSuccess(result);
+                  } else if (detectTestSuccess(toolUseContent.name, result)) {
+                    console.log('Detected test success, triggering test success auto-commit');
+                    await onTestSuccess(result);
+                  } else {
+                    await onToolExecution(toolUseContent.name, result);
+                  }
+                }
+              } catch (autoCommitError) {
+                console.warn('Auto-commit failed after tool execution:', autoCommitError);
+                // Don't fail the whole operation for auto-commit failures
+              }
 
               if (!shouldCancelRef.current) continue;
               break;

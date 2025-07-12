@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useCheckpointStore } from '@/stores/checkpointStore';
 import { useStore } from '@/stores/rootStore';
 import { CreateCheckpointDialog } from '@/components/CheckpointManager';
+// import SessionRestoreButton from './SessionRestoreButton'; // Temporarily disabled
 
 interface ChatHeaderProps {
   projectId: string;
@@ -66,9 +67,10 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ projectId }) => {
         console.log("Failed to initialize MCP environment:", initError);
       }
       
-      // Use hardcoded path instead of trying to detect it
-      const projectPath = "/Users/test/hello_world";
-      console.log(`Using hardcoded project path: ${projectPath}`);
+      // Get the proper project path using the project path service
+      const { ensureProjectDirectory } = await import('../../../lib/projectPathService');
+      const projectPath = await ensureProjectDirectory(project, mcpServerId, executeTool);
+      console.log(`Using detected project path: ${projectPath}`);
       
       const commitResult = await createGitCommit(
         projectPath,
@@ -139,6 +141,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ projectId }) => {
           <GitCommit className="h-4 w-4 mr-1" />
           <span className="hidden sm:inline">Commit</span>
         </Button>
+        
+{/* SessionRestoreButton temporarily removed - using per-message revert instead */}
       </div>
       
       <CreateCheckpointDialog

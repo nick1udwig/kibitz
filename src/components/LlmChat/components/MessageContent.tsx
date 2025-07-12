@@ -3,7 +3,8 @@ import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CopyButton } from '@/components/ui/copy';
-import { MessageContent as MessageContentType } from '../types';
+import { MessageContent as MessageContentType, Message } from '../types';
+import { RevertButton } from './RevertButton';
 
 interface MessageContentProps {
   content: MessageContentType;
@@ -12,6 +13,8 @@ interface MessageContentProps {
   toolResult: string | null;
   contentIndex: number;
   messageIndex: number;
+  message?: Message; // Full message object for revert functionality
+  onRevert?: (commitHash: string) => Promise<void>; // Callback for revert action
 }
 
 export const MessageContentRenderer: React.FC<MessageContentProps> = ({
@@ -20,8 +23,16 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
   onToolClick,
   toolResult,
   contentIndex,
-  messageIndex
+  messageIndex,
+  message,
+  onRevert
 }) => {
+  // Early return if content is null or undefined
+  if (!content || !content.type) {
+    console.warn('MessageContentRenderer: content is null or missing type', { content, messageIndex, contentIndex });
+    return null;
+  }
+
   if (content.type === 'text') {
     return (
       <div
@@ -30,7 +41,25 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
       >
         <div className="relative group w-full max-w-full overflow-x-auto">
           {!content.text.match(/```[\s\S]*```/) && (
-            <div className="absolute right-2 top-0 z-10">
+            <div className="absolute right-2 top-0 z-10 flex gap-1">
+              {/* Revert button - only show for user messages with commit hash */}
+              {isUserMessage && message?.commitHash && message?.canRevert && onRevert && (
+                <RevertButton
+                  commitHash={message.commitHash}
+                  messageTimestamp={message.timestamp}
+                  onRevert={onRevert}
+                />
+              )}
+              {/* Debug: Show why revert button might not be showing */}
+              {isUserMessage && (!message?.commitHash || !message?.canRevert) && (
+                <div 
+                  title={`Debug: commitHash=${!!message?.commitHash}, canRevert=${!!message?.canRevert}, onRevert=${!!onRevert}`}
+                  className="opacity-0 group-hover:opacity-50 text-xs text-gray-400"
+                >
+                  {!message?.commitHash && '🚫 No commit'}
+                  {message?.commitHash && !message?.canRevert && '🚫 Can\'t revert'}
+                </div>
+              )}
               <CopyButton
                 text={content.text.trim()}
                 light={isUserMessage}

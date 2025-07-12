@@ -23,6 +23,7 @@ export interface ProjectSettings extends LegacyProviderSettings {
   mcpServerIds: string[];  // Store server IDs instead of full server objects
   elideToolResults: boolean;
   messageWindowSize: number;  // Number of messages to show in truncated view
+  enableGitHub: boolean;  // Enable GitHub integration (default: false)
 }
 
 export interface ConversationBrief {
@@ -41,6 +42,7 @@ export interface Project {
   createdAt: Date;
   updatedAt: Date;
   order: number;  // Lower number means higher in the list
+  customPath?: string;  // Custom path for cloned repositories (optional)
 }
 
 export interface McpServerConnection extends McpServer {
@@ -63,6 +65,7 @@ export interface ProjectState {
   activeProjectId: string | null;
   activeConversationId: string | null;
   createProject: (name: string, settings?: Partial<ProjectSettings>) => void;
+  createProjectFromClonedRepo: (repoPath: string, projectName?: string) => Promise<string>;
   deleteProject: (id: string) => void;
   updateProjectSettings: (id: string, updates: {
     settings?: Partial<ProjectSettings>;

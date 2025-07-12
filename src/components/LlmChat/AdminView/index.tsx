@@ -19,6 +19,9 @@ import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
 import { getDefaultModelForProvider } from '@/stores/rootStore';
 import { CheckpointManager } from '@/components/CheckpointManager';
+import { ProjectAnalysisTestButton } from '../../ProjectAnalysisTestButton';
+import { RepoTestInstructions } from '../../RepoTestInstructions';
+import { RecoveryPanel } from '../../RecoveryPanel';
 
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings, servers, apiKeys, saveApiKeysToServer } = useStore();
@@ -108,6 +111,8 @@ export const AdminView = () => {
             <TabsTrigger value="config">Configuration</TabsTrigger>
             <TabsTrigger value="tools">Tools</TabsTrigger>
             <TabsTrigger value="checkpoints">Checkpoints</TabsTrigger>
+            <TabsTrigger value="recovery">🔧 Recovery</TabsTrigger>
+            <TabsTrigger value="repo-test">🧪 Repo Analysis</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -116,6 +121,13 @@ export const AdminView = () => {
         <ToolsView />
       ) : activeTab === 'checkpoints' ? (
         <CheckpointManager projectId={activeProjectId || ''} />
+      ) : activeTab === 'recovery' ? (
+        <RecoveryPanel />
+      ) : activeTab === 'repo-test' ? (
+        <div className="space-y-6">
+          <ProjectAnalysisTestButton />
+          <RepoTestInstructions />
+        </div>
       ) : (
         <>
           <Card>
