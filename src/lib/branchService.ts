@@ -520,13 +520,13 @@ export const revertToState = async (
 
 /**
  * Automatically creates a branch if changes warrant it
+ * 🚀 OPTIMIZED: Re-enabled with dynamic path support
  */
 export const autoCreateBranchIfNeeded = async (
   projectPath: string,
   serverId: string,
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<{ branchCreated: boolean; branchInfo?: BranchInfo; reason?: string }> => {
-  // 🔒 RE-ENABLED: Single auto-branch creation with strict controls
   try {
     console.log('🔍 autoCreateBranchIfNeeded: Checking if branch should be created...');
     
@@ -535,7 +535,7 @@ export const autoCreateBranchIfNeeded = async (
     if (!changeResult.shouldCreateBranch) {
       return {
         branchCreated: false,
-        reason: `Only ${changeResult.filesChanged} files changed (threshold: 3), ${changeResult.linesAdded + changeResult.linesRemoved} lines (threshold: 50)`
+        reason: `Only ${changeResult.filesChanged} files changed (threshold: 2), ${changeResult.linesAdded + changeResult.linesRemoved} lines (threshold: 30)`
       };
     }
 
@@ -612,8 +612,6 @@ export const autoCreateBranchIfNeeded = async (
       reason: `Error creating branch: ${error instanceof Error ? error.message : String(error)}`
     };
   }
-
-  /* ORIGINAL DISABLED CODE REMOVED */
 };
 
 /**

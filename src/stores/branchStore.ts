@@ -60,7 +60,7 @@ interface BranchState {
  */
 const DEFAULT_BRANCH_CONFIG: BranchConfig = {
   autoCreateBranches: true,
-  changeThreshold: 2,
+  changeThreshold: 2, // Trigger at 2+ files changed (matches user requirement)
   enableSmartNaming: true,
   defaultBranchType: 'iteration',
   autoMergeBugfixes: false,
@@ -97,14 +97,34 @@ export const useBranchStore = create<BranchState>((set, get) => ({
     );
     
     if (!activeMcpServers.length) {
-      throw new Error('No active MCP servers available');
+      console.warn('No active MCP servers available for branch detection, returning empty result');
+      return {
+        filesChanged: 0,
+        changedFiles: [],
+        linesAdded: 0,
+        linesRemoved: 0,
+        shouldCreateBranch: false,
+        suggestedBranchType: 'iteration',
+        suggestedBranchName: '',
+        description: 'No MCP servers available for change detection'
+      };
     }
     
     try {
       set({ isProcessing: true, lastOperation: 'Detecting changes' });
       
       const mcpServerId = activeMcpServers[0].id;
-      const projectPath = await ensureProjectDirectory(project, mcpServerId, rootStore.executeTool);
+      
+      // 🔧 TIMEOUT PROTECTION: Use ensureProjectDirectory with error handling
+      let projectPath: string;
+      try {
+        projectPath = await ensureProjectDirectory(project, mcpServerId, rootStore.executeTool);
+        console.log(`🔍 detectProjectChanges: Using project path: ${projectPath}`);
+      } catch (pathError) {
+        console.warn(`⚠️ detectProjectChanges: Failed to ensure project directory, using fallback path:`, pathError);
+        // Fallback to basic path generation without MCP verification
+        projectPath = `/Users/test/gitrepo/projects/${projectId}_${project.name.toLowerCase().replace(/\s+/g, '-')}`;
+      }
       
       const changeResult = await detectChanges(projectPath, mcpServerId, rootStore.executeTool);
       
@@ -117,6 +137,28 @@ export const useBranchStore = create<BranchState>((set, get) => ({
       }));
       
       return changeResult;
+    } catch (error) {
+      console.warn(`⚠️ detectProjectChanges: Non-fatal error for project ${projectId}:`, error);
+      // Return empty change result instead of throwing
+      const emptyResult: ChangeDetectionResult = {
+        filesChanged: 0,
+        changedFiles: [],
+        linesAdded: 0,
+        linesRemoved: 0,
+        shouldCreateBranch: false,
+        suggestedBranchType: 'iteration',
+        suggestedBranchName: '',
+        description: 'Unable to detect changes due to system issues'
+      };
+      
+      set(state => ({
+        pendingChanges: {
+          ...state.pendingChanges,
+          [projectId]: emptyResult
+        }
+      }));
+      
+      return emptyResult;
     } finally {
       set({ isProcessing: false, lastOperation: null });
     }
@@ -480,16 +522,32 @@ export const useBranchStore = create<BranchState>((set, get) => ({
       return;
     }
     
-    // Skip auto-branching for certain tools
-    const skipTools = ['Initialize', 'BashCommand'];
+    // Skip auto-branching for certain tools that don't modify files
+    const skipTools = ['Initialize', 'ReadFiles'];
+    
+    // 🚨 DEBUG: Enhanced logging to catch the exact issue
+    console.log(`🔍 DEBUG: toolName = "${toolName}" (length: ${toolName.length})`);
+    console.log(`🔍 DEBUG: skipTools = ${JSON.stringify(skipTools)}`);
+    console.log(`🔍 DEBUG: skipTools.includes(toolName) = ${skipTools.includes(toolName)}`);
+    
     if (skipTools.includes(toolName)) {
       console.log(`🔒 handleToolExecution: Skipping auto-branch for tool: ${toolName}`);
+      return;
+    }
+    
+    // Only create branches for tools that actually modify files
+    const eligibleTools = ['FileWriteOrEdit', 'BashCommand'];
+    if (!eligibleTools.includes(toolName)) {
+      console.log(`🔒 handleToolExecution: Tool ${toolName} not eligible for auto-branching`);
       return;
     }
     
     console.log(`✅ handleToolExecution: Tool ${toolName} eligible for auto-branching`);
     
     try {
+      // Small delay to let the tool operation complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       // Detect changes after tool execution
       console.log(`🔍 handleToolExecution: Detecting changes for project ${projectId}...`);
       const changeResult = await get().detectProjectChanges(projectId);

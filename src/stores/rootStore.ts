@@ -9,6 +9,8 @@ import { recordSystemError, shouldThrottleOperation } from '../lib/systemDiagnos
 
 const generateId = () => Math.random().toString(36).substring(7);
 
+// Removed global call stack - using simpler recursion prevention
+
 export const getDefaultModelForProvider = (provider?: string): string => {
   switch (provider) {
     case 'openai':
@@ -228,11 +230,19 @@ export const useStore = create<RootState>((set, get) => {
   // Using refs outside the store to maintain WebSocket connections
   const connectionsRef = new Map<string, WebSocket>();
   const reconnectTimeoutsRef = new Map<string, NodeJS.Timeout>();
-  const pendingRequestsRef = new Map<string, { resolve: (result: string) => void; reject: (error: Error) => void }>();
+  const pendingRequestsRef = new Map<string, { 
+    resolve: (result: string) => void; 
+    reject: (error: Error) => void;
+    toolName?: string;
+    args?: Record<string, unknown>;
+    serverId?: string;
+  }>();
+  
+  // Circuit breaker removed - let MCP handle its own error management
   
   // Throttling mechanism for workspace initialization
   const initializationThrottleRef = new Map<string, number>();
-  const INITIALIZATION_THROTTLE_MS = 5000; // 5 seconds between initializations per project
+  const INITIALIZATION_THROTTLE_MS = 1000; // Reduced from 5000ms to 1000ms for better responsiveness
 
   // Helper function to save API keys to server
   const saveApiKeysToServer = (keys: Record<string, string>) => {
@@ -408,12 +418,43 @@ export const useStore = create<RootState>((set, get) => {
                 if (response.error) {
                   // 🔍 SPECIAL HANDLING: Check for validation errors and provide detailed info
                   const errorMessage = response.error.message || 'Tool execution failed';
-                  if (errorMessage.includes('type') && errorMessage.includes('required property')) {
-                    console.error('🚨 CRITICAL: MCP Server BashCommand Validation Error:', {
+                  
+                  // 🔧 IMPROVED: Special handling for Initialize tool parsing errors
+                  if (pendingRequest.toolName === 'Initialize' && errorMessage.includes('validation')) {
+                    console.error('🚨 CRITICAL: Initialize tool argument parsing error:', {
                       error: errorMessage,
                       fullError: response.error,
-                      suggestion: 'The MCP server schema expects a different BashCommand format',
-                      recommendation: 'Try using a different tool or format'
+                      originalArgs: pendingRequest.args,
+                      suggestion: 'MCP server failed to parse Initialize arguments'
+                    });
+                    
+                    // Try simplified Initialize args as fallback
+                    if (!pendingRequest.args?.simplified_retry) {
+                      console.log('🔄 Attempting Initialize with simplified arguments...');
+                      const simplifiedArgs = {
+                        type: "first_call",
+                        any_workspace_path: pendingRequest.args?.any_workspace_path || ".",
+                        simplified_retry: true
+                      };
+                      
+                      // Retry with simplified args
+                      setTimeout(() => {
+                        get().executeTool(pendingRequest.serverId!, pendingRequest.toolName!, simplifiedArgs)
+                          .then(result => pendingRequest.resolve(result))
+                          .catch(retryError => pendingRequest.reject(retryError));
+                      }, 1000);
+                      return; // Don't reject yet, wait for retry
+                    }
+                  }
+                  
+                  if (errorMessage.includes('type') && errorMessage.includes('required property')) {
+                    console.error('🚨 CRITICAL: MCP Server Tool Validation Error:', {
+                      tool: pendingRequest.toolName,
+                      error: errorMessage,
+                      fullError: response.error,
+                      args: JSON.stringify(pendingRequest.args, null, 2),
+                      suggestion: 'The MCP server schema expects different argument format',
+                      recommendation: 'Check tool schema compatibility'
                     });
                   }
                   pendingRequest.reject(new Error(errorMessage));
@@ -1082,18 +1123,25 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>) => {
-      // 🚨 EMERGENCY: System health throttling temporarily disabled for recovery
-      // if (shouldThrottleOperation() && toolName !== 'Initialize') {
-      //   console.warn('System unhealthy - throttling non-critical operations');
-      //   throw new Error('System temporarily unavailable - please try again in a moment');
-      // }
+      // 🚨 SIMPLE RECURSION PREVENTION: Block auto-commit internal calls
+      const callKey = `${toolName}-${args.thread_id || 'no-thread'}`;
       
-      // 🔍 ENHANCED DEBUGGING: Log exact request details
+      // Circuit breaker removed - proceed directly to tool execution
+      
+      // Skip auto-commit triggering for internal operations
+      const isInternalCall = args.thread_id && 
+        (String(args.thread_id).includes('git-') || 
+         String(args.thread_id).includes('commit-') ||
+         String(args.thread_id).includes('auto-') ||
+         String(args.thread_id).includes('operations') ||
+         String(args.thread_id).includes('check'));
+      
       console.log('🔧 executeTool: Detailed request info:', {
         serverId,
         toolName,
         args: JSON.stringify(args, null, 2),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        isInternalCall
       });
       
       const connection = connectionsRef.get(serverId);
@@ -1102,173 +1150,151 @@ export const useStore = create<RootState>((set, get) => {
         throw new Error(`No connection found for server ${serverId}`);
       }
 
+      // Enhanced WebSocket state monitoring for BashCommand
+      const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+      const stateName = stateNames[connection.readyState] || 'UNKNOWN';
+      
+      if (toolName === 'BashCommand') {
+        console.log(`🔧 BashCommand WebSocket state: ${stateName} (${connection.readyState}) for server ${serverId}`);
+        console.log(`🔧 BashCommand pending requests: ${pendingRequestsRef.size}`);
+      }
+
       if (connection.readyState !== WebSocket.OPEN) {
-        // Log the WebSocket state for debugging
-        const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-        const stateName = stateNames[connection.readyState] || 'UNKNOWN';
-        console.warn(`WebSocket is ${stateName} for server ${serverId}`);
+        console.warn(`WebSocket is ${stateName} for server ${serverId} when executing ${toolName}`);
         
-        // If WebSocket is closed, try to reconnect
-        if (connection.readyState === WebSocket.CLOSED) {
+        // For BashCommand, be more aggressive about reconnection
+        if (toolName === 'BashCommand' || connection.readyState === WebSocket.CLOSED) {
           const server = get().servers.find(s => s.id === serverId);
           if (server) {
-            console.log(`Attempting to reconnect WebSocket for ${serverId}`);
+            console.log(`Attempting to reconnect WebSocket for ${serverId} (${toolName} execution)`);
             try {
               await connectToServer(server);
               const newConnection = connectionsRef.get(serverId);
               if (newConnection && newConnection.readyState === WebSocket.OPEN) {
+                console.log(`✅ WebSocket reconnected successfully for ${serverId}, retrying ${toolName}`);
                 // Retry with new connection
                 return get().executeTool(serverId, toolName, args);
               }
-                         } catch (reconnectError) {
-               recordSystemError('WEBSOCKET_RECONNECT', reconnectError);
-               console.error(`Failed to reconnect WebSocket for ${serverId}:`, reconnectError);
-             }
+            } catch (reconnectError) {
+              recordSystemError('WEBSOCKET_RECONNECT', reconnectError);
+              console.error(`Failed to reconnect WebSocket for ${serverId}:`, reconnectError);
+            }
           }
         }
         
-        throw new Error(`WebSocket is not open for server ${serverId} (state: ${stateName})`);
+        throw new Error(`WebSocket is not open for server ${serverId} (state: ${stateName}). Try reconnecting the MCP server.`);
       }
 
-      // Get current project context
+      // Get current project context for path interception
       const { activeProjectId, projects } = get();
       const project = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
 
-      // Before executing ANY tool, ensure we're in the correct project workspace
-      // 🔧 FIXED: Skip automatic workspace init for explicit Initialize calls to avoid conflicts
-      if (activeProjectId && toolName !== 'Initialize') {
-        if (project) {
-          try {
+      // 🚀 OPTIMIZED: Streamlined path interception without unnecessary initialization
+      let modifiedArgs = { ...args };
+      
+      // 🔍 DEBUG: Log tool execution details for workspace debugging
+      if (toolName === 'Initialize') {
+        console.log(`🔧 Initialize tool called with args:`, JSON.stringify(modifiedArgs, null, 2));
+        if (modifiedArgs.any_workspace_path) {
+          console.log(`🔧 Workspace path in Initialize: ${modifiedArgs.any_workspace_path}`);
+          
+          // 🚨 CRITICAL: Ensure Initialize always uses full project path
+          if (project && typeof modifiedArgs.any_workspace_path === 'string' && !modifiedArgs.any_workspace_path.startsWith('/Users/test/gitrepo/projects/')) {
             const projectPath = getProjectPath(project.id, project.name);
-            const throttleKey = `${serverId}-${activeProjectId}`;
-            const lastInitTime = initializationThrottleRef.get(throttleKey) || 0;
-            const now = Date.now();
-            
-            // 🔧 FIXED: Always allow initialization for directory operations, bypass throttling for critical operations
-            const isCriticalOperation = toolName === 'BashCommand' && args.action_json && (
-              (args.action_json as any).command?.includes('mkdir') ||
-              (args.action_json as any).command?.includes('test -d') ||
-              (args.action_json as any).command?.includes('ls -la')
-            );
-            const shouldBypassThrottle = isCriticalOperation || (now - lastInitTime > INITIALIZATION_THROTTLE_MS);
-            
-            console.log(`🔍 Throttle check: toolName=${toolName}, hasActionJson=${!!args.action_json}, command=${(args.action_json as any)?.command}`);
-            console.log(`🔍 Throttle check: isCriticalOperation=${isCriticalOperation}, shouldBypassThrottle=${shouldBypassThrottle}`);
-            console.log(`🔍 Throttle check: timeSinceLastInit=${now - lastInitTime}ms, threshold=${INITIALIZATION_THROTTLE_MS}ms`);
-            
-            // Initialize if throttle time passed OR if this is a critical directory operation
-            if (shouldBypassThrottle) {
-              if (isCriticalOperation) {
-                console.log(`🔧 Bypassing throttle for critical directory operation: ${(args.action_json as any).command}`);
-              }
-              
-              initializationThrottleRef.set(throttleKey, now);
-              
-              // Force initialize with project-specific directory before tool execution
-              const initRequestId = `init_${Date.now()}_${Math.random()}`;
-              const initPromise = new Promise((resolve, reject) => {
-                const timeoutId = setTimeout(() => {
-                  pendingRequestsRef.delete(initRequestId);
-                  reject(new Error('Initialize timeout'));
-                }, 10000);
-                
-                pendingRequestsRef.set(initRequestId, { 
-                  resolve: (result: string) => {
-                    clearTimeout(timeoutId);
-                    resolve(result);
-                  }, 
-                  reject: (error: Error) => {
-                    clearTimeout(timeoutId);
-                    reject(error);
-                  }
-                });
-
-                const initCall = {
-                  jsonrpc: '2.0',
-                  id: initRequestId,
-                  method: 'tools/call',
-                  params: {
-                    name: 'Initialize',
-                    arguments: {
-                      type: "first_call",
-                      any_workspace_path: projectPath, // Always use project-specific path
-                      initial_files_to_read: [],
-                      task_id_to_resume: "",
-                      mode_name: "wcgw",
-                      thread_id: args.thread_id || "project-tool"
-                    }
-                  }
-                };
-
-                connection.send(JSON.stringify(initCall));
-              });
-
-              await initPromise;
-              console.log(`✅ Workspace initialization completed for: ${projectPath}`);
-            } else {
-              console.log(`⏳ Skipping initialization (throttled) for ${projectPath} - ${Math.round((INITIALIZATION_THROTTLE_MS - (now - lastInitTime)) / 1000)}s remaining`);
-            }
-          } catch (error) {
-            recordSystemError('WORKSPACE_INIT', error);
-            console.warn(`Failed to force workspace initialization:`, error);
-            // Continue with original tool call even if init fails
+            console.log(`🔒 CRITICAL: Fixing Initialize workspace path from ${modifiedArgs.any_workspace_path} to ${projectPath}`);
+            modifiedArgs = {
+              ...modifiedArgs,
+              any_workspace_path: projectPath
+            };
           }
         }
       }
-
-      // Intercept and modify tool arguments to prevent directory creation
-      let modifiedArgs = { ...args };
+      
+      // 🚨 TEMPORARILY DISABLED: Project directory setup to prevent recursion
+      // This will be re-enabled after fixing the recursion issue
+      if (false && project && (toolName === 'FileWriteOrEdit' || toolName === 'BashCommand') && !modifiedArgs.any_workspace_path) {
+        console.log(`🔧 Project directory setup temporarily disabled to prevent recursion`);
+      }
       
       if (project && (toolName === 'BashCommand' || toolName === 'FileWriteOrEdit')) {
         const projectPath = getProjectPath(project.id, project.name);
         
-        // For BashCommand: prevent mkdir commands and ensure we're in project directory
-        if (toolName === 'BashCommand' && modifiedArgs.action_json) {
-          const actionJson = modifiedArgs.action_json as { command?: string };
-          if (actionJson.command) {
-            // Remove any mkdir commands that try to create project subdirectories
-            let command = actionJson.command;
-            
-            // If it's trying to create a directory that isn't the project directory itself, redirect to project directory
-            if (command.includes('mkdir -p') && !command.includes(projectPath)) {
-              // Allow creation of the project directory itself, but block subdirectory creation
-              const isMkdirProjectDir = command.includes(`mkdir -p "${projectPath}"`);
-              if (!isMkdirProjectDir) {
-                console.warn(`Intercepted mkdir command: ${command}`);
-                // Replace with a cd to project directory instead
-                command = `cd "${projectPath}"`;
-              }
-            }
-            
-            // Ensure all commands run in project directory
-            if (!command.startsWith('cd "') && !command.includes(' && ')) {
-              command = `cd "${projectPath}" && ${command}`;
-            }
-            
-            // 🔧 FIXED: Explicitly preserve the 'type' field and all other original properties
-            modifiedArgs = {
-              ...modifiedArgs,  // Preserve all original properties including 'type'
-              action_json: { ...actionJson, command }
-            };
+        // For BashCommand: ensure commands use full project path, not just project ID
+        if (toolName === 'BashCommand' && modifiedArgs.command) {
+          let command = modifiedArgs.command as string;
+          
+          // 🔍 DEBUG: Log original command for path debugging
+          console.log(`🔧 Original BashCommand: ${command}`);
+          
+          // 🚨 CRITICAL FIX: Replace project ID-only paths with full project paths
+          if (command.includes(`cd "${project.id}"`)) {
+            console.log(`🔒 Intercepted project ID-only path: cd "${project.id}"`);
+            command = command.replace(`cd "${project.id}"`, `cd "${projectPath}"`);
+            console.log(`🔧 Fixed to full path: ${command}`);
           }
+          
+          // 🚨 ADDITIONAL FIX: Handle git commands that might use project ID paths
+          if (command.includes(`"${project.id}"`) && !command.includes(projectPath)) {
+            console.log(`🔒 Intercepted project ID in command: ${command}`);
+            command = command.replace(`"${project.id}"`, `"${projectPath}"`);
+            console.log(`🔧 Fixed project ID path: ${command}`);
+          }
+          
+          // Block subdirectory creation attempts
+          if (command.includes('mkdir -p') && !command.includes(projectPath)) {
+            const isMkdirProjectDir = command.includes(`mkdir -p "${projectPath}"`);
+            if (!isMkdirProjectDir) {
+              console.log(`🔒 Intercepted mkdir command: ${command}`);
+              // Replace with a pwd command to show current directory
+              command = `pwd`;
+            }
+          }
+          
+          // 🚨 CRITICAL FIX: Ensure ALL commands run in the project directory
+          if (!command.includes(`cd "`)) {
+            console.log(`🔧 Prepending project path to ALL commands: ${command}`);
+            command = `cd "${projectPath}" && ${command}`;
+            console.log(`🔧 Command now runs in project directory: ${command}`);
+          }
+          
+          console.log(`🔧 Final BashCommand: ${command}`);
+          
+          modifiedArgs = {
+            ...modifiedArgs,
+            action_json: {
+              command: command
+            },
+            thread_id: modifiedArgs.thread_id
+          };
         }
         
-        // For FileWriteOrEdit: ensure file paths are relative to project directory
+        // For FileWriteOrEdit: ensure file paths are absolute and in project directory
         if (toolName === 'FileWriteOrEdit' && modifiedArgs.file_path) {
           let filePath = modifiedArgs.file_path as string;
           
-          // If it's an absolute path outside our project, make it relative
-          if (filePath.startsWith('/') && !filePath.startsWith(projectPath)) {
+          console.log(`🔧 FileWriteOrEdit path processing: "${filePath}" for project: ${projectPath}`);
+          
+          // If it's a relative path, make it absolute within the project directory
+          if (!filePath.startsWith('/')) {
+            filePath = `${projectPath}/${filePath}`;
+            console.log(`🔧 Converted relative to absolute path: ${filePath}`);
+          }
+          // If it's an absolute path outside our project, redirect it to project directory
+          else if (!filePath.startsWith(projectPath)) {
             const fileName = filePath.split('/').pop() || 'file.txt';
-            filePath = fileName;
-            console.log(`Intercepted file path, redirected to: ${fileName}`);
+            filePath = `${projectPath}/${fileName}`;
+            console.log(`🔒 Redirected external path to project: ${filePath}`);
           }
           
-          // If it includes subdirectory creation, extract just the filename
-          if (filePath.includes('/') && !filePath.startsWith(projectPath)) {
-            const fileName = filePath.split('/').pop() || 'file.txt';
-            filePath = fileName;
-            console.log(`Intercepted subdirectory creation, using filename: ${fileName}`);
+          // Handle subdirectory attempts - flatten to project root
+          if (filePath.includes('/') && filePath.startsWith(projectPath)) {
+            const pathParts = filePath.split('/');
+            const fileName = pathParts.pop() || 'file.txt';
+            // Only allow files directly in project directory, no subdirectories
+            if (pathParts.length > projectPath.split('/').length) {
+              filePath = `${projectPath}/${fileName}`;
+              console.log(`🔒 Flattened subdirectory path to: ${filePath}`);
+            }
           }
           
           modifiedArgs = {
@@ -1281,41 +1307,77 @@ export const useStore = create<RootState>((set, get) => {
       return new Promise((resolve, reject) => {
         const requestId = `req_${Date.now()}_${Math.random()}`;
         
-        // Store resolver with timeout
-        const timeoutId = setTimeout(() => {
-          pendingRequestsRef.delete(requestId);
-          recordSystemError('TOOL_TIMEOUT', `Tool ${toolName} execution timeout`);
-          reject(new Error('Tool execution timeout'));
-        }, 30000);
+        // 🔧 NO TIMEOUT: Let MCP server handle its own timeouts to avoid breaking the system
+        console.log(`🔧 executeTool: Starting ${toolName} without timeout restrictions`);
         
         pendingRequestsRef.set(requestId, { 
           resolve: (result: string) => {
-            clearTimeout(timeoutId);
-            
-            // 🌿 NEW: Trigger auto-branch creation after successful tool execution
-            if (activeProjectId && project) {
-              try {
-                // Import and call branch store handler asynchronously to avoid blocking the tool result
-                import('./branchStore').then(({ useBranchStore }) => {
-                  const branchStore = useBranchStore.getState();
-                  console.log(`🔧 executeTool: Triggering branch check for tool: ${toolName}`);
-                  branchStore.handleToolExecution(activeProjectId, toolName).catch(error => {
-                    console.warn('🔧 executeTool: Branch creation check failed:', error);
-                  });
-                }).catch(error => {
-                  console.warn('🔧 executeTool: Failed to import branch store:', error);
-                });
-              } catch (error) {
-                console.warn('🔧 executeTool: Error in branch integration:', error);
-              }
-            }
-            
+            // ✅ IMMEDIATE RESOLVE: Return result to user immediately, run post-hooks async
             resolve(result);
+            
+            // 🔄 SAFE BACKGROUND HOOKS: Re-enabled with cascade prevention
+            if (activeProjectId && project && toolName !== 'Initialize' && toolName !== 'BashCommand') {
+              // Use setTimeout to ensure these run after the promise resolves
+              setTimeout(() => {
+                try {
+                  // Import and call branch store handler asynchronously
+                  import('./branchStore').then(({ useBranchStore }) => {
+                    const branchStore = useBranchStore.getState();
+                    console.log(`🔧 executeTool: Triggering background branch check for tool: ${toolName}`);
+                    branchStore.handleToolExecution(activeProjectId, toolName).catch(error => {
+                      console.warn('🔧 executeTool: Background branch creation check failed:', error);
+                    });
+                  }).catch(error => {
+                    console.warn('🔧 executeTool: Failed to import branch store:', error);
+                  });
+                  
+                  // 🚨 PREVENT INFINITE RECURSION: Only trigger auto-commit for user-initiated tools
+                  if (!isInternalCall) {
+                    console.log(`🔧 executeTool: Tool eligible for background auto-commit trigger: ${toolName}`);
+                    
+                    // 🚨 CRITICAL FIX: Add auto-commit trigger after tool execution
+                    import('./autoCommitStore').then(({ useAutoCommitStore }) => {
+                      const { shouldAutoCommit, executeAutoCommit } = useAutoCommitStore.getState();
+                      
+                      const autoCommitContext = {
+                        trigger: 'tool_execution' as const,
+                        toolName,
+                        projectId: activeProjectId,
+                        projectPath: getProjectPath(activeProjectId, project.name),
+                        timestamp: Date.now()
+                      };
+                      
+                      console.log(`🔧 executeTool: Background auto-commit context:`, autoCommitContext);
+                      
+                      if (shouldAutoCommit(autoCommitContext)) {
+                        console.log(`✅ executeTool: Background auto-commit check passed, executing...`);
+                        executeAutoCommit(autoCommitContext).then(() => {
+                          console.log(`✅ executeTool: Background auto-commit completed for tool: ${toolName}`);
+                        }).catch(autoCommitError => {
+                          console.error(`❌ executeTool: Background auto-commit execution failed for tool: ${toolName}`, autoCommitError);
+                        });
+                      } else {
+                        console.log(`❌ executeTool: Background auto-commit check failed for tool: ${toolName}`);
+                      }
+                    }).catch(error => {
+                      console.warn('🔧 executeTool: Failed to import auto-commit store:', error);
+                    });
+                  } else {
+                    console.log(`🔒 executeTool: Skipping background auto-commit for internal tool: ${toolName} (internal call)`);
+                  }
+                } catch (error) {
+                  console.warn('🔧 executeTool: Error in background branch integration:', error);
+                }
+              }, 0); // Run immediately but asynchronously
+            }
           }, 
           reject: (error: Error) => {
-            clearTimeout(timeoutId);
+            // Error - no circuit breaker logic, just pass through the error
             reject(error);
-          }
+          },
+          toolName: toolName,
+          args: args,
+          serverId: serverId
         });
 
         const toolCall = {
@@ -1324,11 +1386,18 @@ export const useStore = create<RootState>((set, get) => {
           method: 'tools/call',
           params: {
             name: toolName,
-            arguments: modifiedArgs // Use modified arguments
+            arguments: modifiedArgs
           }
         };
 
-        connection.send(JSON.stringify(toolCall));
+        try {
+          connection.send(JSON.stringify(toolCall));
+          console.log(`🔧 executeTool: Sent ${toolName} request with ID ${requestId}`);
+        } catch (sendError) {
+          pendingRequestsRef.delete(requestId);
+          console.error(`🚨 executeTool: Failed to send ${toolName} request:`, sendError);
+          reject(new Error(`Failed to send tool request: ${sendError instanceof Error ? sendError.message : String(sendError)}`));
+        }
       });
     },
 
@@ -1336,27 +1405,94 @@ export const useStore = create<RootState>((set, get) => {
     ensureActiveProjectDirectory: async () => {
       const { activeProjectId, projects, servers } = get();
       
-      if (!activeProjectId) return;
+      console.log(`🔧 ensureActiveProjectDirectory called`);
+      console.log(`🔧 Debug info:`, {
+        activeProjectId: `"${activeProjectId}"`,
+        projectsCount: projects.length,
+        serversCount: servers.length,
+        projectsList: projects.map(p => ({ id: p.id, name: p.name }))
+      });
+      
+      if (!activeProjectId) {
+        console.error(`❌ No active project ID, this should not happen during tool execution`);
+        return;
+      }
       
       const project = projects.find(p => p.id === activeProjectId);
-      if (!project) return;
+      if (!project) {
+        console.error(`❌ Project ${activeProjectId} not found in projects list`);
+        console.error(`❌ Available projects:`, projects.map(p => ({ id: p.id, name: p.name })));
+        return;
+      }
+      
+      console.log(`🔧 Found project:`, {
+        id: `"${project.id}"`,
+        name: `"${project.name}"`,
+        customPath: `"${project.customPath || ''}"`,
+        hasSettings: !!project.settings,
+        mcpServerIds: project.settings?.mcpServerIds || []
+      });
       
       const activeMcpServers = servers.filter(server => 
         server.status === 'connected' && project.settings.mcpServerIds?.includes(server.id)
       );
       
-      if (!activeMcpServers.length) return;
+      console.log(`🔧 Active MCP servers:`, {
+        totalServers: servers.length,
+        connectedServers: servers.filter(s => s.status === 'connected').length,
+        projectMcpServerIds: project.settings.mcpServerIds,
+        activeMcpServersCount: activeMcpServers.length,
+        activeMcpServerIds: activeMcpServers.map(s => s.id)
+      });
+      
+      if (!activeMcpServers.length) {
+        console.warn(`⚠️ No active MCP servers for project ${project.name}, skipping directory setup`);
+        return;
+      }
       
       try {
         const mcpServerId = activeMcpServers[0].id;
+        console.log(`🔧 Setting up project directory for ${project.name} using MCP server ${mcpServerId}`);
+        
         const projectPath = await ensureProjectDirectory(project, mcpServerId, get().executeTool);
         
         // The ensureProjectDirectory function now properly initializes ws-mcp
         // with the project-specific directory, so all subsequent tool calls
         // will work in the correct project workspace
-        console.log(`Ensured project directory for ${project.name}: ${projectPath}`);
+        console.log(`✅ Successfully ensured project directory for ${project.name}: ${projectPath}`);
+        
+        // 🔍 TRIGGER: Call auto-commit system to check for changes and create branches
+        try {
+          const { useAutoCommitStore } = await import('./autoCommitStore');
+          const autoCommitStore = useAutoCommitStore.getState();
+          
+          if (autoCommitStore.config.enabled) {
+            console.log(`🔧 Triggering auto-commit check for project: ${project.name}`);
+            
+            // Track project setup as a file change to potentially trigger auto-commit
+            autoCommitStore.trackFileChange(`${projectPath}/project-setup`);
+            
+            const context = {
+              projectId: activeProjectId,
+              projectPath,
+              trigger: 'tool_execution' as const,
+              toolName: 'ProjectSetup',
+              summary: 'Project directory setup and initialization'
+            };
+            
+            if (autoCommitStore.shouldAutoCommit(context)) {
+              autoCommitStore.executeAutoCommit(context).catch(error => {
+                console.warn('Auto-commit after project setup failed:', error);
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to trigger auto-commit after project setup:', error);
+        }
+        
       } catch (error) {
-        console.warn('Failed to ensure project directory:', error);
+        console.error(`❌ Failed to ensure project directory for ${project.name}:`, error);
+        throw error; // Re-throw to surface the error
       }
     },
 

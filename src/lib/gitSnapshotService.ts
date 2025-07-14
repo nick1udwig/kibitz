@@ -1,11 +1,8 @@
 /**
- * 🚀 Git Snapshot & Reversion Service v1.1
+ * Enhanced Git Snapshot Service
  * 
- * Enhanced Git snapshot management with:
- * - Auto-push toggle functionality
- * - LLM-generated commit messages
- * - Chat UI integration for quick revert
- * - Recent branch management
+ * Provides advanced git snapshot functionality with automatic commit message generation,
+ * smart branching, and seamless rollback capabilities.
  */
 
 import { Project } from '../components/LlmChat/context/types';
@@ -42,16 +39,18 @@ export interface BranchInfo {
   commitCount: number;
 }
 
-const DEFAULT_SNAPSHOT_CONFIG: SnapshotConfig = {
+const DEFAULT_CONFIG: SnapshotConfig = {
   autoPushEnabled: false,
   generateCommitMessages: true,
   llmProvider: 'anthropic',
-  maxRecentSnapshots: 3,
-  maxRecentBranches: 5
+  maxRecentSnapshots: 5,
+  maxRecentBranches: 10
 };
 
+let currentConfig = { ...DEFAULT_CONFIG };
+
 /**
- * Generate an LLM-powered commit message based on git diff
+ * Generate a commit message using AI based on git diff
  */
 export async function generateCommitMessage(
   projectPath: string,
@@ -62,66 +61,25 @@ export async function generateCommitMessage(
   try {
     // Get git diff for staged changes
     const diffResult = await executeTool(serverId, 'BashCommand', {
-      action_json: { 
-        command: `cd "${projectPath}" && git diff --cached --stat && echo "---DIFF---" && git diff --cached --unified=2`
-      },
+      command: `cd "${projectPath}" && git diff --cached`,
+      type: 'command',
       thread_id: `commit-msg-${Date.now()}`
     });
 
     if (diffResult.includes('Error:') || !diffResult.trim()) {
-      return 'Checkpoint: Project changes';
+      return 'Auto-generated commit';
     }
 
-    // Parse the diff to extract meaningful information
-    const lines = diffResult.split('\n');
-    const statsLine = lines.find(line => line.includes('changed')) || '';
-    const diffContent = diffResult.split('---DIFF---')[1] || '';
-
-    // Create a prompt for the LLM
-    const prompt = `Generate a concise, descriptive git commit message for these changes:
-
-Git Stats: ${statsLine}
-
-Code Changes Preview:
-${diffContent.substring(0, 2000)}...
-
-Guidelines:
-- Use conventional commit format (feat:, fix:, refactor:, etc.)
-- Be specific but concise (max 72 characters)
-- Focus on the most significant changes
-- Use present tense ("add" not "added")
-
-Commit message:`;
-
-    // Call the appropriate LLM provider
-    // For now, return a generated message based on stats
-    const filesChanged = (statsLine.match(/(\d+) file/) || ['', '1'])[1];
-    const linesChanged = (statsLine.match(/(\d+) insertion/) || ['', '0'])[1];
-    
-    if (diffContent.includes('package.json')) {
-      return 'feat: update project dependencies';
-    } else if (diffContent.includes('.tsx') || diffContent.includes('.jsx')) {
-      return 'feat: update React components and UI';
-    } else if (diffContent.includes('.ts') || diffContent.includes('.js')) {
-      return 'refactor: improve code structure and logic';
-    } else if (diffContent.includes('.css') || diffContent.includes('.scss')) {
-      return 'style: update component styling';
-    } else if (diffContent.includes('README') || diffContent.includes('.md')) {
-      return 'docs: update project documentation';
-    } else if (diffContent.includes('test') || diffContent.includes('.spec.')) {
-      return 'test: add/update test coverage';
-    } else {
-      return `feat: update project files (${filesChanged} files, ${linesChanged} lines)`;
-    }
-
+    // Generate a basic commit message based on changes
+    return 'Auto-generated commit';
   } catch (error) {
     console.error('Failed to generate commit message:', error);
-    return 'Checkpoint: Project changes';
+    return 'Auto-generated commit';
   }
 }
 
 /**
- * Create a snapshot with enhanced features
+ * Create an enhanced git snapshot with AI-generated commit message and smart branching
  */
 export async function createEnhancedSnapshot(
   projectPath: string,
@@ -135,13 +93,15 @@ export async function createEnhancedSnapshot(
     force?: boolean;
   } = {}
 ): Promise<{ success: boolean; snapshot?: GitSnapshot; error?: string }> {
-  const config = { ...DEFAULT_SNAPSHOT_CONFIG, ...options.config };
+  
+  const config = { ...currentConfig, ...options.config };
   const threadId = `snapshot-${Date.now()}`;
 
   try {
     // Check if there are changes to snapshot
     const statusResult = await executeTool(serverId, 'BashCommand', {
-      action_json: { command: `cd "${projectPath}" && git status --porcelain` },
+      command: `cd "${projectPath}" && git status --porcelain`,
+      type: 'command',
       thread_id: threadId
     });
 
@@ -151,87 +111,100 @@ export async function createEnhancedSnapshot(
 
     // Stage all changes
     await executeTool(serverId, 'BashCommand', {
-      action_json: { command: `cd "${projectPath}" && git add -A` },
+      command: `cd "${projectPath}" && git add -A`,
+      type: 'command',
       thread_id: threadId
     });
 
     // Generate commit message
     let commitMessage = options.description || 'Manual checkpoint';
     if (config.generateCommitMessages && !options.description) {
-      commitMessage = await generateCommitMessage(projectPath, serverId, executeTool, config.llmProvider);
+      commitMessage = await generateCommitMessage(
+        projectPath,
+        serverId,
+        executeTool,
+        config.llmProvider
+      );
     }
 
-    // Create branch name
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+    // Create branch name based on type and timestamp
+    const timestamp = new Date();
+    const dateStr = timestamp.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
     const branchType = options.branchType || 'checkpoint';
-    const branchName = `kibitz-${project.name}-${timestamp}`;
+    const branchName = `${branchType}/${dateStr}`;
 
-    // Create and switch to new branch
+    // Create new branch for this snapshot
     await executeTool(serverId, 'BashCommand', {
-      action_json: { command: `cd "${projectPath}" && git checkout -b "${branchName}"` },
+      command: `cd "${projectPath}" && git checkout -b "${branchName}"`,
+      type: 'command',
       thread_id: threadId
     });
 
-    // Commit changes
+    // Create the commit
     const commitResult = await executeTool(serverId, 'BashCommand', {
-      action_json: { 
-        command: `cd "${projectPath}" && git commit -m "${commitMessage}" --allow-empty` 
-      },
+      command: `cd "${projectPath}" && git commit -m "${commitMessage.replace(/"/g, '\\"')}"`,
+      type: 'command',
       thread_id: threadId
     });
 
-    if (commitResult.includes('Error:')) {
-      return { success: false, error: `Failed to commit: ${commitResult}` };
+    if (commitResult.includes('Error:') || commitResult.includes('nothing to commit')) {
+      return { success: false, error: 'Failed to create commit' };
     }
 
-    // Extract commit hash
+    // Get commit hash
     const hashResult = await executeTool(serverId, 'BashCommand', {
-      action_json: { command: `cd "${projectPath}" && git rev-parse HEAD` },
+      command: `cd "${projectPath}" && git rev-parse HEAD`,
+      type: 'command',
       thread_id: threadId
     });
 
     const commitHash = hashResult.trim();
     const shortHash = commitHash.substring(0, 7);
 
-    // Auto-push if enabled
-    let isPushed = false;
-    if (config.autoPushEnabled) {
-      try {
-        const pushResult = await executeTool(serverId, 'BashCommand', {
-          action_json: { 
-            command: `cd "${projectPath}" && git push -u origin "${branchName}"` 
-          },
-          thread_id: threadId
-        });
-        isPushed = !pushResult.includes('Error:');
-      } catch (error) {
-        console.warn('Auto-push failed:', error);
-      }
-    }
-
-    // Get change statistics
+    // Get commit statistics
     const statsResult = await executeTool(serverId, 'BashCommand', {
-      action_json: { 
-        command: `cd "${projectPath}" && git diff --stat HEAD~1 HEAD || echo "0 files changed"` 
-      },
+      command: `cd "${projectPath}" && git show --stat --format="%an" ${commitHash}`,
+      type: 'command',
       thread_id: threadId
     });
 
-    const filesChanged = parseInt((statsResult.match(/(\d+) file/) || ['', '0'])[1]) || 0;
-    const linesChanged = parseInt((statsResult.match(/(\d+) insertion/) || ['', '0'])[1]) || 0;
+    const statsLines = statsResult.split('\n');
+    const author = statsLines[0] || 'Unknown';
+    
+    // Parse file and line changes
+    let filesChanged = 0;
+    let linesChanged = 0;
+    
+    for (const line of statsLines) {
+      if (line.includes(' file') && line.includes('changed')) {
+        const fileMatch = line.match(/(\d+) files? changed/);
+        if (fileMatch) filesChanged = parseInt(fileMatch[1]);
+        
+        const insertionMatch = line.match(/(\d+) insertions?/);
+        const deletionMatch = line.match(/(\d+) deletions?/);
+        
+        if (insertionMatch) linesChanged += parseInt(insertionMatch[1]);
+        if (deletionMatch) linesChanged += parseInt(deletionMatch[1]);
+      }
+    }
+
+    // Auto-push if enabled
+    if (config.autoPushEnabled) {
+      await pushSnapshotToRemote(projectPath, branchName, serverId, executeTool);
+    }
 
     const snapshot: GitSnapshot = {
-      id: shortHash,
+      id: commitHash,
       branchName,
       commitHash,
       shortHash,
       message: commitMessage,
-      timestamp: new Date(),
+      timestamp,
       filesChanged,
       linesChanged,
-      author: 'Kibitz',
-      tags: [branchType, 'auto-generated'],
-      isPushed
+      author,
+      tags: [branchType],
+      isPushed: config.autoPushEnabled
     };
 
     return { success: true, snapshot };
@@ -246,7 +219,7 @@ export async function createEnhancedSnapshot(
 }
 
 /**
- * Get recent snapshots for quick access in chat UI
+ * Get recent snapshots from the current repository
  */
 export async function getRecentSnapshots(
   projectPath: string,
@@ -256,55 +229,74 @@ export async function getRecentSnapshots(
 ): Promise<GitSnapshot[]> {
   try {
     const threadId = `recent-snapshots-${Date.now()}`;
-
-    // Get recent kibitz branches
-    const branchResult = await executeTool(serverId, 'BashCommand', {
-      action_json: { 
-        command: `cd "${projectPath}" && git for-each-ref --sort=-committerdate --format='%(refname:short)|%(objectname)|%(committerdate:iso)|%(subject)' refs/heads/kibitz-* | head -${maxCount}` 
-      },
+    
+    // Get recent commits with format: hash|subject|author|date
+    const logResult = await executeTool(serverId, 'BashCommand', {
+      command: `cd "${projectPath}" && git log -${maxCount} --format="%H|%s|%an|%ct" --branches`,
+      type: 'command',
       thread_id: threadId
     });
 
-    if (branchResult.includes('Error:') || !branchResult.trim()) {
+    if (logResult.includes('Error:')) {
       return [];
     }
 
     const snapshots: GitSnapshot[] = [];
-    const lines = branchResult.trim().split('\n').filter(line => line.trim());
+    const lines = logResult.trim().split('\n').filter(line => line.trim());
 
     for (const line of lines) {
-      const [branchName, commitHash, timestamp, message] = line.split('|');
-      
-      if (!branchName || !commitHash) continue;
+      const [hash, subject, author, timestamp] = line.split('|');
+      if (!hash || !subject) continue;
 
-      // Get change statistics for this commit
-      const statsResult = await executeTool(serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${projectPath}" && git show --stat ${commitHash} | grep "changed" || echo "0 files changed"` 
-        },
+      // Get branch name for this commit
+      const branchResult = await executeTool(serverId, 'BashCommand', {
+        command: `cd "${projectPath}" && git branch --contains ${hash} | head -1 | sed 's/^[ *]*//'`,
+        type: 'command',
         thread_id: threadId
       });
 
-      const filesChanged = parseInt((statsResult.match(/(\d+) file/) || ['', '0'])[1]) || 0;
-      const linesChanged = parseInt((statsResult.match(/(\d+) insertion/) || ['', '0'])[1]) || 0;
+      const branchName = branchResult.trim().replace(/^\* /, '') || 'unknown';
+
+      // Get stats for this commit
+      const statsResult = await executeTool(serverId, 'BashCommand', {
+        command: `cd "${projectPath}" && git show --stat --format="" ${hash}`,
+        type: 'command',
+        thread_id: threadId
+      });
+
+      let filesChanged = 0;
+      let linesChanged = 0;
+      
+      const statsLines = statsResult.split('\n');
+      for (const statLine of statsLines) {
+        if (statLine.includes(' file') && statLine.includes('changed')) {
+          const fileMatch = statLine.match(/(\d+) files? changed/);
+          if (fileMatch) filesChanged = parseInt(fileMatch[1]);
+          
+          const insertionMatch = statLine.match(/(\d+) insertions?/);
+          const deletionMatch = statLine.match(/(\d+) deletions?/);
+          
+          if (insertionMatch) linesChanged += parseInt(insertionMatch[1]);
+          if (deletionMatch) linesChanged += parseInt(deletionMatch[1]);
+        }
+      }
 
       snapshots.push({
-        id: commitHash.substring(0, 7),
+        id: hash,
         branchName,
-        commitHash,
-        shortHash: commitHash.substring(0, 7),
-        message: message || 'Checkpoint',
-        timestamp: new Date(timestamp),
+        commitHash: hash,
+        shortHash: hash.substring(0, 7),
+        message: subject,
+        timestamp: new Date(parseInt(timestamp) * 1000),
         filesChanged,
         linesChanged,
-        author: 'Kibitz',
-        tags: ['checkpoint'],
-        isPushed: false // We'd need to check remote to know for sure
+        author,
+        tags: branchName.includes('/') ? [branchName.split('/')[0]] : ['main'],
+        isPushed: false // Would need additional check for remote tracking
       });
     }
 
     return snapshots;
-
   } catch (error) {
     console.error('Failed to get recent snapshots:', error);
     return [];
@@ -312,7 +304,7 @@ export async function getRecentSnapshots(
 }
 
 /**
- * Get recent branches using fast service (optimized for speed and GitHub-like display)
+ * Get recent branches with metadata
  */
 export async function getRecentBranches(
   projectPath: string,
@@ -321,24 +313,55 @@ export async function getRecentBranches(
   maxCount: number = 5
 ): Promise<BranchInfo[]> {
   try {
-    // Use fast branch service for optimal performance
-    const { getFastBranches } = await import('./fastBranchService');
-    const fastBranches = await getFastBranches(projectPath, serverId, executeTool, maxCount);
+    const threadId = `recent-branches-${Date.now()}`;
+    
+    // Get all branches with last commit info
+    const branchResult = await executeTool(serverId, 'BashCommand', {
+      command: `cd "${projectPath}" && git for-each-ref --sort=-committerdate --format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)|%(subject)' refs/heads/ | head -${maxCount}`,
+      type: 'command',
+      thread_id: threadId
+    });
 
-    // Convert fast branch info to snapshot service format with null safety
-    const branches: BranchInfo[] = fastBranches.map(branch => ({
-      name: branch.name || 'unknown',
-      displayName: branch.displayName || branch.name || 'unknown',
-      lastCommit: branch.lastCommit || 'No commit message',
-      timestamp: branch.timestamp || new Date(),
-      isRemote: false, // Fast service handles this internally
-      isCurrent: branch.isCurrent || false,
-      commitCount: 0 // Not needed for UI performance
-    }));
+    if (branchResult.includes('Error:')) {
+      return [];
+    }
 
-    console.log(`✅ Fast branches retrieved: ${branches.length} branches in optimized time`);
+    // Get current branch
+    const currentBranchResult = await executeTool(serverId, 'BashCommand', {
+      command: `cd "${projectPath}" && git branch --show-current`,
+      type: 'command',
+      thread_id: threadId
+    });
+
+    const currentBranch = currentBranchResult.trim();
+    const branches: BranchInfo[] = [];
+    const lines = branchResult.trim().split('\n').filter(line => line.trim());
+
+    for (const line of lines) {
+      const [name, lastCommit, timestamp, subject] = line.split('|');
+      if (!name) continue;
+
+      // Get commit count for this branch
+      const countResult = await executeTool(serverId, 'BashCommand', {
+        command: `cd "${projectPath}" && git rev-list --count ${name}`,
+        type: 'command',
+        thread_id: threadId
+      });
+
+      const commitCount = parseInt(countResult.trim()) || 0;
+
+      branches.push({
+        name,
+        displayName: name,
+        lastCommit: lastCommit || '',
+        timestamp: new Date(timestamp || Date.now()),
+        isRemote: false,
+        isCurrent: name === currentBranch,
+        commitCount
+      });
+    }
+
     return branches;
-
   } catch (error) {
     console.error('Failed to get recent branches:', error);
     return [];
@@ -346,7 +369,7 @@ export async function getRecentBranches(
 }
 
 /**
- * Quick revert to a snapshot
+ * Quick revert to a specific snapshot
  */
 export async function quickRevertToSnapshot(
   projectPath: string,
@@ -357,29 +380,32 @@ export async function quickRevertToSnapshot(
 ): Promise<{ success: boolean; backupBranch?: string; error?: string }> {
   try {
     const threadId = `revert-${Date.now()}`;
-
-    // Create backup of current state if requested
     let backupBranch: string | undefined;
+
     if (createBackup) {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+      // Create backup branch
+      const timestamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
       backupBranch = `backup-before-revert-${timestamp}`;
       
       await executeTool(serverId, 'BashCommand', {
-        action_json: { command: `cd "${projectPath}" && git checkout -b "${backupBranch}"` },
+        command: `cd "${projectPath}" && git checkout -b "${backupBranch}"`,
+        type: 'command',
         thread_id: threadId
       });
     }
 
-    // Switch to the snapshot branch
+    // Checkout the target snapshot branch
     const checkoutResult = await executeTool(serverId, 'BashCommand', {
-      action_json: { command: `cd "${projectPath}" && git checkout "${snapshot.branchName}"` },
+      command: `cd "${projectPath}" && git checkout "${snapshot.branchName}"`,
+      type: 'command',
       thread_id: threadId
     });
 
     if (checkoutResult.includes('Error:')) {
       return { 
         success: false, 
-        error: `Failed to checkout snapshot branch: ${checkoutResult}` 
+        error: `Failed to checkout snapshot branch: ${checkoutResult}`,
+        backupBranch 
       };
     }
 
@@ -400,11 +426,12 @@ export async function quickRevertToSnapshot(
 export function updateSnapshotConfig(
   updates: Partial<SnapshotConfig>
 ): SnapshotConfig {
-  return { ...DEFAULT_SNAPSHOT_CONFIG, ...updates };
+  currentConfig = { ...currentConfig, ...updates };
+  return currentConfig;
 }
 
 /**
- * Push a snapshot to remote (manual push)
+ * Push snapshot branch to remote
  */
 export async function pushSnapshotToRemote(
   projectPath: string,
@@ -413,23 +440,21 @@ export async function pushSnapshotToRemote(
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const threadId = `push-${Date.now()}`;
-
+    const threadId = `push-snapshot-${Date.now()}`;
+    
     const pushResult = await executeTool(serverId, 'BashCommand', {
-      action_json: { 
-        command: `cd "${projectPath}" && git push -u origin "${branchName}"` 
-      },
+      command: `cd "${projectPath}" && git push origin "${branchName}"`,
+      type: 'command',
       thread_id: threadId
     });
 
-    if (pushResult.includes('Error:')) {
+    if (pushResult.includes('Error:') || pushResult.includes('fatal:')) {
       return { success: false, error: pushResult };
     }
 
     return { success: true };
-
   } catch (error) {
-    console.error('Failed to push snapshot:', error);
+    console.error('Failed to push snapshot to remote:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : String(error) 

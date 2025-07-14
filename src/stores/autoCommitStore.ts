@@ -6,6 +6,7 @@ import { useBranchStore } from './branchStore';
 // import { shouldCreateCheckpoint, createAutoCheckpoint } from '../lib/checkpointRollbackService';
 import { pushToRemote, autoSetupGitHub, executeGitCommand } from '../lib/gitService';
 import { persistentStorage } from '../lib/persistentStorageService';
+import { getProjectPath } from '../lib/projectPathService';
 import { Checkpoint } from '../types/Checkpoint';
 
 export interface AutoCommitConfig {
@@ -36,35 +37,31 @@ export interface AutoCommitConfig {
   };
 }
 
-interface AutoCommitState {
+export interface AutoCommitContext {
+  projectId: string;
+  projectPath: string;
+  trigger: 'tool_execution' | 'file_change' | 'build_success' | 'test_success' | 'timer';
+  toolName?: string;
+  summary?: string;
+}
+
+export interface AutoCommitState {
   config: AutoCommitConfig;
   isProcessing: boolean;
   lastCommitTimestamp: number | null;
-  pendingChanges: Set<string>; // Track files that have changed
+  pendingChanges: Set<string>;
   lastCommitHash: string | null;
   lastPushTimestamp: number | null;
   
   // 🔒 IMPROVED: Better concurrency control
-  activeOperations: Map<string, Promise<boolean>>; // Track active operations by project
-  operationQueue: Map<string, NodeJS.Timeout>; // Track debounce timeouts by project
-  
-  // Actions
+  activeOperations: Map<string, Promise<boolean>>;
+  operationQueue: Map<string, AutoCommitContext[]>;
+
   updateConfig: (updates: Partial<AutoCommitConfig>) => void;
   shouldAutoCommit: (context: AutoCommitContext) => boolean;
   executeAutoCommit: (context: AutoCommitContext) => Promise<boolean>;
   trackFileChange: (filePath: string) => void;
   clearPendingChanges: () => void;
-}
-
-export interface AutoCommitContext {
-  projectId: string;
-  projectPath: string;
-  trigger: 'tool_execution' | 'build_success' | 'test_success' | 'file_change' | 'timer';
-  toolName?: string;
-  toolOutput?: string;
-  changedFiles?: string[];
-  buildOutput?: string;
-  testResults?: string;
 }
 
 // 🔒 FIXED: Improved default configuration for better auto-branch creation
@@ -89,115 +86,47 @@ const DEFAULT_CONFIG: AutoCommitConfig = {
   // 🌿 NEW: Enable auto-branch creation with lower thresholds
   branchManagement: {
     enabled: true,
-    fileThreshold: 3, // Create branch when 3+ files change
-    lineThreshold: 50, // Or when 50+ lines change
+    fileThreshold: 2, // Create branch when 2+ files change (as requested by user)
+    lineThreshold: 30, // Or when 30+ lines change (lowered for responsiveness)
     branchPrefix: 'auto',
     keepHistory: true
   }
 };
 
-// Enhanced build detection
-export const detectBuildSuccess = (toolName: string, toolOutput: string): boolean => {
-  const toolNameLower = toolName.toLowerCase();
-  const outputLower = toolOutput.toLowerCase();
+/**
+ * Generates a commit message based on context and configuration
+ * @param context Auto-commit context
+ * @param config Auto-commit configuration
+ * @param branchName Optional branch name if auto-branch was created
+ */
+const generateCommitMessage = (
+  context: AutoCommitContext,
+  config: AutoCommitConfig,
+  branchName: string | null
+): string => {
+  let message = config.commitMessageTemplate;
   
-  // Check for build-related tool names
-  const isBuildTool = toolNameLower.includes('build') || 
-                      toolNameLower.includes('compile') ||
-                      toolNameLower.includes('npm') ||
-                      toolNameLower.includes('yarn') ||
-                      toolNameLower.includes('pnpm') ||
-                      toolNameLower.includes('bun') ||
-                      toolNameLower.includes('cargo') ||
-                      toolNameLower.includes('make') ||
-                      toolNameLower.includes('gradle') ||
-                      toolNameLower.includes('maven');
+  // Replace placeholders
+  message = message.replace('{trigger}', context.trigger);
+  message = message.replace('{summary}', context.summary || 'changes detected');
+  message = message.replace('{toolName}', context.toolName || 'unknown');
+  message = message.replace('{timestamp}', new Date().toISOString());
   
-  if (!isBuildTool) return false;
+  // Add branch info if available
+  if (branchName) {
+    message += ` (branch: ${branchName})`;
+  }
   
-  // Check for successful completion indicators
-  const successIndicators = [
-    'completed successfully',
-    'build successful',
-    'compilation successful',
-    'built successfully',
-    'done in',
-    'finished in',
-    'success',
-    'completed'
-  ];
-  
-  // Check for failure indicators (which would override success)
-  const failureIndicators = [
-    'error',
-    'failed',
-    'failure',
-    'compilation failed',
-    'build failed',
-    'exception',
-    'fatal'
-  ];
-  
-  const hasFailure = failureIndicators.some(indicator => 
-    outputLower.includes(indicator)
-  );
-  
-  if (hasFailure) return false;
-  
-  return successIndicators.some(indicator => 
-    outputLower.includes(indicator)
-  );
+  return message;
 };
 
-// Enhanced test detection
-export const detectTestSuccess = (toolName: string, toolOutput: string): boolean => {
-  const toolNameLower = toolName.toLowerCase();
-  const outputLower = toolOutput.toLowerCase();
-  
-  // Check for test-related tool names
-  const isTestTool = toolNameLower.includes('test') || 
-                     toolNameLower.includes('jest') ||
-                     toolNameLower.includes('mocha') ||
-                     toolNameLower.includes('cypress') ||
-                     toolNameLower.includes('playwright') ||
-                     toolNameLower.includes('vitest') ||
-                     toolNameLower.includes('pytest') ||
-                     toolNameLower.includes('cargo test') ||
-                     toolNameLower.includes('go test');
-  
-  if (!isTestTool) return false;
-  
-  // Check for test success indicators
-  const successIndicators = [
-    'all tests passed',
-    'tests passed',
-    'test passed',
-    '✓',
-    '✔',
-    'passed',
-    'ok',
-    'success'
-  ];
-  
-  const failureIndicators = [
-    'failed',
-    'failure',
-    'error',
-    'exception',
-    '✗',
-    '✖',
-    'assertion'
-  ];
-  
-  const hasFailure = failureIndicators.some(indicator => 
-    outputLower.includes(indicator)
-  );
-  
-  if (hasFailure) return false;
-  
-  return successIndicators.some(indicator => 
-    outputLower.includes(indicator)
-  );
+/**
+ * 🚀 OPTIMIZED: Get project path dynamically
+ * @param projectId Project ID
+ * @param projectName Optional project name
+ */
+const getAutoCommitProjectPath = (projectId: string, projectName?: string): string => {
+  return getProjectPath(projectId, projectName);
 };
 
 export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
@@ -290,31 +219,18 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
     }
     console.log('✅ shouldAutoCommit: minimum changes satisfied');
     
-    // Check if too soon after last commit
+    // Check consecutive commits
     if (config.conditions.skipConsecutiveCommits && lastCommitTimestamp) {
       const timeSinceLastCommit = Date.now() - lastCommitTimestamp;
-      console.log(`🔍 Checking consecutive commits: ${timeSinceLastCommit}ms since last commit, min delay: ${config.conditions.delayAfterLastChange}ms`);
-      if (timeSinceLastCommit < config.conditions.delayAfterLastChange) {
-        console.log('❌ shouldAutoCommit: too soon after last commit');
+      const minInterval = config.conditions.delayAfterLastChange * 2; // Double the delay for consecutive check
+      
+      if (timeSinceLastCommit < minInterval) {
+        console.log(`❌ shouldAutoCommit: consecutive commit too soon (${timeSinceLastCommit}ms < ${minInterval}ms)`);
         return false;
       }
-      console.log('✅ shouldAutoCommit: enough time since last commit');
     }
     
-    // Check required keywords in tool output
-    if (config.conditions.requiredKeywords.length > 0 && context.toolOutput) {
-      console.log(`🔍 Checking required keywords: ${config.conditions.requiredKeywords} in output`);
-      const hasRequiredKeyword = config.conditions.requiredKeywords.some(keyword =>
-        context.toolOutput!.toLowerCase().includes(keyword.toLowerCase())
-      );
-      if (!hasRequiredKeyword) {
-        console.log('❌ shouldAutoCommit: required keywords not found in output');
-        return false;
-      }
-      console.log('✅ shouldAutoCommit: required keywords found');
-    }
-    
-    console.log('✅ shouldAutoCommit: all conditions passed!');
+    console.log('✅ shouldAutoCommit: all checks passed');
     return true;
   },
 
@@ -328,14 +244,8 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
       return await activeOperations.get(context.projectId)!;
     }
     
-    // 🔒 IMPROVED: Create operation promise and track it - FIXED INLINE IMPLEMENTATION
+    // 🔒 IMPROVED: Create operation promise and track it - TIMEOUT REMOVED
     const operationPromise = (async () => {
-      // Add timeout to prevent stuck processing state
-      const processingTimeout = setTimeout(() => {
-        console.error('⏰ executeAutoCommit: Timeout - forcing isProcessing reset');
-        set({ isProcessing: false });
-      }, 60000); // 60 second timeout
-      
       set({ isProcessing: true });
       
       try {
@@ -626,7 +536,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
         return false;
       } finally {
         // Always clear the timeout and reset processing state
-        clearTimeout(processingTimeout);
+        // clearTimeout(processingTimeout); // Removed as per edit hint
         set({ isProcessing: false });
         
         // 🔒 CRITICAL: Ensure operation tracking is cleaned up even on errors
@@ -666,66 +576,4 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
   clearPendingChanges: () => {
     set({ pendingChanges: new Set() });
   },
-}));
-
-function generateCommitMessage(context: AutoCommitContext, config: AutoCommitConfig, branchName?: string | null): string {
-  let summary = '';
-  
-  // 🆔 NEW: Get project context for scoped messages
-  const rootStore = useStore.getState();
-  const activeProject = rootStore.projects.find(p => p.id === context.projectId);
-  const projectName = activeProject?.name || 'unknown';
-  const projectPrefix = `[${projectName}]`;
-  
-  switch (context.trigger) {
-    case 'tool_execution':
-      summary = context.toolName ? `executed ${context.toolName}` : 'tool execution completed';
-      // Enhanced detection for specific operations
-      if (context.toolOutput && context.toolName) {
-        const output = context.toolOutput.toLowerCase();
-        const toolName = context.toolName.toLowerCase();
-        
-        if (detectBuildSuccess(context.toolName, context.toolOutput)) {
-          summary = 'successful build completed';
-        } else if (detectTestSuccess(context.toolName, context.toolOutput)) {
-          summary = 'tests passed successfully';
-        } else if (toolName.includes('install') && output.includes('package')) {
-          summary = 'packages installed';
-        } else if (toolName.includes('create') || toolName.includes('write')) {
-          // Try to extract filename from tool output
-          const fileMatch = context.toolOutput.match(/(?:created|wrote|saved|modified).*?([a-zA-Z0-9._-]+\.[a-zA-Z0-9]+)/i);
-          if (fileMatch && fileMatch[1]) {
-            summary = `created/modified ${fileMatch[1]}`;
-          } else {
-            summary = 'files created/modified';
-          }
-        }
-      }
-      break;
-    case 'build_success':
-      summary = 'successful build';
-      break;
-    case 'test_success':
-      summary = 'tests passed';
-      break;
-    case 'file_change':
-      summary = `${context.changedFiles?.length || 'multiple'} files changed`;
-      break;
-    case 'timer':
-      summary = 'periodic checkpoint';
-      break;
-  }
-  
-  // 🆔 NEW: Create project-scoped commit message
-  const baseMessage = config.commitMessageTemplate
-    .replace('{trigger}', context.trigger.replace('_', ' '))
-    .replace('{summary}', summary)
-    .replace('{toolName}', context.toolName || '')
-    .replace('{timestamp}', new Date().toISOString());
-  
-  // Add branch info if auto-branch was created
-  const branchSuffix = branchName ? ` [${branchName}]` : '';
-  
-  // Add project prefix to ensure commit isolation
-  return `${projectPrefix} ${baseMessage}${branchSuffix}`;
-} 
+})); 

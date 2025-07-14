@@ -61,9 +61,11 @@ export const executeGitCommand = async (
   try {
     // Validate the path - if it contains "Error:" or other indicators it's not valid
     if (!cwd || typeof cwd !== 'string' || cwd.includes('Error:') || cwd.includes('No such file')) {
-      console.warn(`Invalid path detected: "${cwd}", using fallback`);
-      cwd = "/Users/test/workx/kibitz";
+      console.warn(`Invalid path detected: "${cwd}", using current directory`);
+      cwd = ".";
     }
+    
+    console.log(`🔧 executeGitCommand: Using working directory: "${cwd}" for command: "${command}"`);
     
     // Storage for the thread ID
     let threadId = "git-operations";
@@ -102,7 +104,9 @@ export const executeGitCommand = async (
       console.log(`Executing bash command: ${fullCommand} with thread_id=${threadId}`);
       
       const result = await executeTool(serverId, 'BashCommand', {
-        action_json: { command: fullCommand },
+        action_json: {
+          command: fullCommand
+        },
         thread_id: threadId
       });
       
@@ -154,25 +158,15 @@ export const executeGitCommand = async (
         output: actualOutput
       };
     } catch (bashError) {
-      console.log('BashCommand failed, trying terminal tool as fallback:', bashError);
+      console.error('BashCommand execution failed:', bashError);
       
-      // Fallback to terminal tool (older MCP servers) - FIXED: Include thread_id
-      try {
-        const result = await executeTool(serverId, 'BashCommand', {
-          action_json: { 
-            command: `cd "${cwd}" && ${command}` 
-          },
-          thread_id: threadId
-        });
-        
-        return {
-          success: !result.includes('Error:') && !result.includes('fatal:') && !result.includes('No such file'),
-          output: result
-        };
-      } catch (bashError) {
-        console.error('Bash command execution failed:', bashError);
-        throw new Error(`Failed to execute command: ${command} - ${bashError}`);
-      }
+      // 🔧 REMOVED: Fallback logic that creates additional timeout-prone calls
+      // Previously this would try a second BashCommand call which could cascade timeouts
+      return {
+        success: false,
+        output: '',
+        error: bashError instanceof Error ? bashError.message : String(bashError)
+      };
     }
   } catch (error) {
     console.error('Git command execution failed:', error);

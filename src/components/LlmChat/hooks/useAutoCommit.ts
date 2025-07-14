@@ -1,88 +1,46 @@
 import { useCallback, useRef, useEffect } from 'react';
 import { useAutoCommitStore, AutoCommitContext } from '../../../stores/autoCommitStore';
 import { useStore } from '../../../stores/rootStore';
-import { ensureProjectDirectory } from '../../../lib/projectPathService';
+import { getProjectPath } from '../../../lib/projectPathService';
 
-// Helper to detect if tool output indicates file changes
-const detectFileChanges = (toolName: string, toolOutput: string): string[] => {
-  const toolNameLower = toolName.toLowerCase();
-  const changedFiles: string[] = [];
-  
-  // Look for file paths in output
-  const filePatterns = [
-    /(?:created|modified|updated|wrote to|saved)\s+([^\s]+\.[\w]+)/gi,
-    /(?:file|path):\s*([^\s]+\.[\w]+)/gi,
-    /([^\s]+\.[\w]+)\s+(?:created|modified|updated)/gi
-  ];
-  
-  filePatterns.forEach(pattern => {
-    const matches = toolOutput.matchAll(pattern);
-    for (const match of matches) {
-      if (match[1]) {
-        changedFiles.push(match[1]);
-      }
-    }
-  });
-  
-  // If no specific files detected but tool likely modified files
-  if (changedFiles.length === 0 && (
-    toolNameLower.includes('write') || 
-    toolNameLower.includes('create') || 
-    toolNameLower.includes('edit') ||
-    toolNameLower.includes('save')
-  )) {
-    // Use unique identifier per operation to avoid Set deduplication issues
-    changedFiles.push(`unknown_file_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`);
-  }
-  
-  return [...new Set(changedFiles)]; // Remove duplicates
-};
-
-// Export helper functions
-export { detectFileChanges };
-
+/**
+ * Hook for managing auto-commit functionality
+ * 🚀 OPTIMIZED: Uses dynamic project paths for universal compatibility
+ */
 export const useAutoCommit = () => {
-  const { 
-    shouldAutoCommit, 
-    executeAutoCommit, 
-    trackFileChange,
+  const {
     config,
-    isProcessing 
+    isProcessing,
+    shouldAutoCommit,
+    executeAutoCommit,
+    updateConfig,
+    trackFileChange,
+    clearPendingChanges,
+    lastCommitTimestamp,
+    lastCommitHash,
+    lastPushTimestamp
   } = useAutoCommitStore();
-  
-  const { 
-    projects, 
-    activeProjectId, 
-    servers,
-    executeTool 
-  } = useStore();
-  
+
+  const { activeProjectId, projects } = useStore();
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Helper to get project path
-  const getProjectPath = useCallback(async (projectId: string) => {
+
+  // Get active project
+  const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
+
+  // 🚀 OPTIMIZED: Dynamic project path resolution
+  const getProjectPathForAutoCommit = useCallback((projectId: string): string => {
     const project = projects.find(p => p.id === projectId);
-    if (!project) return null;
-    
-    const activeMcpServers = servers.filter(server => 
-      server.status === 'connected' && 
-      project.settings.mcpServerIds?.includes(server.id)
-    );
-    
-    if (!activeMcpServers.length) return null;
-    
-    try {
-      const projectPath = await ensureProjectDirectory(
-        project, 
-        activeMcpServers[0].id, 
-        executeTool
-      );
-      return projectPath;
-    } catch (error) {
-      console.error('Failed to get project path:', error);
-      return null;
-    }
-  }, [projects, servers, executeTool]);
+    return getProjectPath(projectId, project?.name, project?.customPath);
+  }, [projects]);
+
+  // Cleanup debounce timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Main auto-commit trigger function
   const triggerAutoCommit = useCallback(async (context: Omit<AutoCommitContext, 'projectPath' | 'projectId'>) => {
@@ -124,11 +82,7 @@ export const useAutoCommit = () => {
     }
     
     console.log('✅ Pre-checks passed, getting project path...');
-    const projectPath = await getProjectPath(activeProjectId);
-    if (!projectPath) {
-      console.log('❌ Failed to get project path');
-      return false;
-    }
+    const projectPath = getProjectPathForAutoCommit(activeProjectId);
     
     console.log('✅ Project path obtained:', projectPath);
     
@@ -182,66 +136,70 @@ export const useAutoCommit = () => {
     activeProjectId, 
     shouldAutoCommit, 
     executeAutoCommit, 
-    getProjectPath
+    getProjectPathForAutoCommit
   ]);
 
-  // Specific trigger functions for different scenarios
-  const onToolExecution = useCallback(async (toolName: string, toolOutput: string) => {
-    // Automatically track file changes for this tool execution
-    const changedFiles = detectFileChanges(toolName, toolOutput);
-    console.log('📁 onToolExecution: Detected file changes:', changedFiles);
-    
-    // Track the changes in the store
-    changedFiles.forEach(trackFileChange);
-    
+  // Helper function to trigger auto-commit after tool execution
+  const triggerToolExecutionCommit = useCallback(async (toolName: string, summary?: string) => {
     return await triggerAutoCommit({
       trigger: 'tool_execution',
       toolName,
-      toolOutput
+      summary
     });
-  }, [triggerAutoCommit, trackFileChange]);
+  }, [triggerAutoCommit]);
 
-  const onBuildSuccess = useCallback(async (buildOutput: string) => {
+  // Helper function to trigger auto-commit after build success
+  const triggerBuildSuccessCommit = useCallback(async (summary?: string) => {
     return await triggerAutoCommit({
       trigger: 'build_success',
-      buildOutput
+      summary
     });
   }, [triggerAutoCommit]);
 
-  const onTestSuccess = useCallback(async (testResults: string) => {
+  // Helper function to trigger auto-commit after test success
+  const triggerTestSuccessCommit = useCallback(async (summary?: string) => {
     return await triggerAutoCommit({
       trigger: 'test_success',
-      testResults
+      summary
     });
   }, [triggerAutoCommit]);
 
-  const onFileChange = useCallback(async (changedFiles: string[]) => {
-    // Track individual file changes
-    changedFiles.forEach(trackFileChange);
-    
+  // Helper function to trigger auto-commit after file changes
+  const triggerFileChangeCommit = useCallback(async (summary?: string) => {
     return await triggerAutoCommit({
       trigger: 'file_change',
-      changedFiles
+      summary
     });
-  }, [triggerAutoCommit, trackFileChange]);
-
-  // Clean up debounce timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-    };
-  }, []);
+  }, [triggerAutoCommit]);
 
   return {
-    triggerAutoCommit,
-    onToolExecution,
-    onBuildSuccess,
-    onTestSuccess,
-    onFileChange,
+    // Configuration
+    config,
+    updateConfig,
+    
+    // State
     isProcessing,
-    config
+    lastCommitTimestamp,
+    lastCommitHash,
+    lastPushTimestamp,
+    
+    // Actions
+    triggerAutoCommit,
+    triggerToolExecutionCommit,
+    triggerBuildSuccessCommit,
+    triggerTestSuccessCommit,
+    triggerFileChangeCommit,
+    trackFileChange,
+    clearPendingChanges,
+    
+    // Aliases for useMessageSender compatibility
+    onToolExecution: triggerToolExecutionCommit,
+    onBuildSuccess: triggerBuildSuccessCommit,
+    onTestSuccess: triggerTestSuccessCommit,
+    
+    // Utilities
+    activeProject,
+    getProjectPath: getProjectPathForAutoCommit
   };
 };
 
@@ -285,4 +243,111 @@ export const detectToolSuccess = (toolName: string, toolOutput: string): boolean
          !outputLower.includes('failed') && 
          !outputLower.includes('fatal') &&
          !outputLower.includes('exception');
+};
+
+// 🔧 MISSING FUNCTION: Detect build success specifically
+export const detectBuildSuccess = (toolName: string, toolOutput: string): boolean => {
+  const toolNameLower = toolName.toLowerCase();
+  const outputLower = toolOutput.toLowerCase();
+  
+  // Check if this is a build-related tool
+  const isBuildTool = toolNameLower.includes('build') || 
+                     toolNameLower.includes('compile') || 
+                     toolNameLower.includes('npm') || 
+                     toolNameLower.includes('yarn') ||
+                     toolNameLower.includes('webpack') ||
+                     toolNameLower.includes('vite') ||
+                     toolNameLower.includes('rollup') ||
+                     toolNameLower.includes('tsc') ||
+                     toolNameLower.includes('babel');
+  
+  if (!isBuildTool) return false;
+  
+  // Check for success indicators
+  return (outputLower.includes('success') || 
+          outputLower.includes('built') || 
+          outputLower.includes('completed successfully') ||
+          outputLower.includes('✓') ||
+          outputLower.includes('build completed') ||
+          outputLower.includes('compilation successful') ||
+          (outputLower.includes('completed') && !outputLower.includes('error'))) &&
+         !outputLower.includes('error') && 
+         !outputLower.includes('failed') && 
+         !outputLower.includes('warning');
+};
+
+// 🔧 MISSING FUNCTION: Detect test success specifically  
+export const detectTestSuccess = (toolName: string, toolOutput: string): boolean => {
+  const toolNameLower = toolName.toLowerCase();
+  const outputLower = toolOutput.toLowerCase();
+  
+  // Check if this is a test-related tool
+  const isTestTool = toolNameLower.includes('test') || 
+                    toolNameLower.includes('jest') || 
+                    toolNameLower.includes('pytest') ||
+                    toolNameLower.includes('mocha') ||
+                    toolNameLower.includes('karma') ||
+                    toolNameLower.includes('vitest') ||
+                    toolNameLower.includes('cypress') ||
+                    toolNameLower.includes('spec');
+  
+  if (!isTestTool) return false;
+  
+  // Check for success indicators
+  return (outputLower.includes('passed') || 
+          outputLower.includes('ok') || 
+          outputLower.includes('✓') ||
+          outputLower.includes('all tests passed') ||
+          outputLower.includes('tests passed') ||
+          (outputLower.includes('test') && outputLower.includes('success'))) && 
+         !outputLower.includes('failed') && 
+         !outputLower.includes('error') &&
+         !outputLower.includes('failing');
+};
+
+// 🔧 MISSING FUNCTION: Detect file changes from tool output
+export const detectFileChanges = (toolName: string, toolOutput: string): string[] => {
+  const toolNameLower = toolName.toLowerCase();
+  const outputLower = toolOutput.toLowerCase();
+  
+  // For file creation/modification tools, extract file names
+  if (toolNameLower.includes('write') || toolNameLower.includes('create') || toolNameLower.includes('edit')) {
+    const filePatterns = [
+      /created?\s+(?:file\s+)?['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
+      /wrote\s+(?:to\s+)?['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
+      /modified\s+['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
+      /updated\s+['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
+      /saved\s+(?:to\s+)?['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi
+    ];
+    
+    const files: string[] = [];
+    filePatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(toolOutput)) !== null) {
+        files.push(match[1]);
+      }
+    });
+    
+    return [...new Set(files)]; // Remove duplicates
+  }
+  
+  // For git tools, extract changed files
+  if (toolNameLower.includes('git')) {
+    const gitPatterns = [
+      /\s+([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)\s*\|\s*\d+/g, // git status format
+      /(?:new file|modified|deleted):\s+([^\s]+)/g
+    ];
+    
+    const files: string[] = [];
+    gitPatterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(toolOutput)) !== null) {
+        files.push(match[1]);
+      }
+    });
+    
+    return [...new Set(files)];
+  }
+  
+  return [];
 }; 

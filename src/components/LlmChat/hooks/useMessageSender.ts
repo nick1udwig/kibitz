@@ -6,8 +6,7 @@ import { Message, MessageContent } from '../types';
 import { useStore } from '@/stores/rootStore';
 import { wakeLock } from '@/lib/wakeLock';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '../types/genericMessage';
-import { useAutoCommit, detectToolSuccess, detectFileChanges } from './useAutoCommit';
-import { detectBuildSuccess, detectTestSuccess } from '../../../stores/autoCommitStore';
+import { useAutoCommit, detectToolSuccess, detectFileChanges, detectBuildSuccess, detectTestSuccess } from './useAutoCommit';
 
 const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
 

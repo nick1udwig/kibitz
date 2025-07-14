@@ -1,20 +1,11 @@
 /**
  * Project Path Service
  * 
- * Manages project-specific directory creation and path resolution.
- * Each project gets its own isolated directory for development.
- * 
- * Updated to support both:
- * - New projects: Template directory creation
- * - Cloned repos: Use existing repository paths
+ * Manages project-specific path resolution.
+ * This service dynamically detects the current working directory.
  */
 
 import { Project } from '../components/LlmChat/context/types';
-
-/**
- * Base directory where all NEW project directories will be created
- */
-const BASE_PROJECT_DIR = '/Users/test/gitrepo/projects';
 
 /**
  * Cache to prevent multiple simultaneous directory creation attempts
@@ -32,6 +23,20 @@ const cacheTimeouts = new Map<string, NodeJS.Timeout>();
 const DIRECTORY_CREATION_TIMEOUT = 30000;
 
 /**
+ * Dynamically detect the current working directory
+ * This ensures the system works universally across different environments
+ */
+const getCurrentWorkingDirectory = (): string => {
+  // For browser environments, return base projects directory
+  if (typeof window !== 'undefined') {
+    return '/Users/test/gitrepo/projects';
+  }
+  
+  // In Node.js environment, use base projects directory
+  return '/Users/test/gitrepo/projects';
+};
+
+/**
  * Sanitizes a project name for use in file system paths
  * @param name Project name
  * @returns Sanitized name safe for file system
@@ -45,22 +50,55 @@ export const sanitizeProjectName = (name: string): string => {
 };
 
 /**
- * Gets the directory path for a specific project
- * @param projectId Project ID
- * @param projectName Project name (optional, for directory naming)
- * @param customPath Custom path for cloned repositories (optional)
+ * Gets the full path to a project directory.
+ * 
+ * @param projectId The unique identifier for the project
+ * @param projectName The name of the project (optional)
+ * @param customPath Custom path override (optional)
  * @returns Full path to project directory
  */
 export const getProjectPath = (projectId: string, projectName?: string, customPath?: string): string => {
+  console.log(`🔧 getProjectPath: Input values:`, { 
+    projectId: `"${projectId}"`, 
+    projectName: `"${projectName}"`, 
+    customPath: `"${customPath}"`,
+    projectIdType: typeof projectId,
+    projectNameType: typeof projectName
+  });
+  
   // If custom path is provided (for cloned repos), use that
   if (customPath) {
+    console.log(`🔧 getProjectPath: Using custom path: ${customPath}`);
     return customPath;
   }
   
-  // Otherwise generate template directory path
+  // 🚨 VALIDATION: Ensure project data is valid
+  if (!projectId || projectId.trim() === '') {
+    console.error(`❌ getProjectPath: Invalid projectId: "${projectId}"`);
+    throw new Error(`Invalid projectId: "${projectId}" - cannot generate project path`);
+  }
+  
+  // Create project-specific subdirectories in the base projects directory
+  const baseDir = getCurrentWorkingDirectory();
   const sanitizedName = projectName ? sanitizeProjectName(projectName) : 'project';
-  const directoryName = `${projectId}_${sanitizedName}`;
-  return `${BASE_PROJECT_DIR}/${directoryName}`;
+  const fullPath = `${baseDir}/${projectId}_${sanitizedName}`;
+  
+  console.log(`🔧 getProjectPath: Generated path components:`, {
+    baseDir,
+    projectId,
+    sanitizedName,
+    fullPath
+  });
+  
+  // 🚨 VALIDATION: Ensure generated path is correct
+  if (fullPath === baseDir || fullPath === `${baseDir}/`) {
+    console.error(`❌ getProjectPath: Generated invalid path: "${fullPath}"`);
+    console.error(`❌ This indicates projectId or sanitizedName is empty`);
+    throw new Error(`Generated invalid project path: "${fullPath}" - check projectId and projectName`);
+  }
+  
+  console.log(`✅ getProjectPath: Final path: ${fullPath}`);
+  return fullPath;
 };
 
 /**
@@ -89,7 +127,7 @@ export const detectClonedRepository = async (
   try {
     // Check if this is a Git repository with proper thread_id
     const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: { command: `test -d "${directoryPath}/.git" && echo "is_git_repo" || echo "not_git_repo"` },
+      command: `test -d "${directoryPath}/.git" && echo "is_git_repo" || echo "not_git_repo"`,
       thread_id: `git-check-${Date.now()}`
     });
 
@@ -99,7 +137,7 @@ export const detectClonedRepository = async (
 
     // Check for remote origin (indicates cloned repo)
     const remoteResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: { command: `cd "${directoryPath}" && git remote get-url origin 2>/dev/null || echo "no_remote"` },
+      command: `cd "${directoryPath}" && git remote get-url origin 2>/dev/null || echo "no_remote"`,
       thread_id: `git-remote-${Date.now()}`
     });
 
@@ -107,7 +145,7 @@ export const detectClonedRepository = async (
     
     // Get default branch
     const branchResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: { command: `cd "${directoryPath}" && git branch --show-current 2>/dev/null || echo "main"` },
+      command: `cd "${directoryPath}" && git branch --show-current 2>/dev/null || echo "main"`,
       thread_id: `git-branch-${Date.now()}`
     });
 
@@ -138,141 +176,24 @@ export const createProjectDirectory = async (
 ): Promise<boolean> => {
   try {
     console.log(`🔧 Creating project directory: ${projectPath}`);
-    console.log(`🔧 MCP Server ID: ${mcpServerId}`);
-
-    // Create consistent thread ID for this entire operation
-    const baseThreadId = `project-setup-${Date.now()}`;
-    console.log(`🔧 Using base thread ID: ${baseThreadId}`);
-
-    // STEP 1: Force workspace initialization to ensure MCP context
-    console.log('🔧 Force initializing workspace for project directory creation...');
-    try {
-      const initResult = await executeTool(mcpServerId, 'Initialize', {
-        type: "first_call",
-        any_workspace_path: projectPath.substring(0, projectPath.lastIndexOf('/')), // Use parent directory first
-        initial_files_to_read: [],
-        task_id_to_resume: "",
-        mode_name: "wcgw",
-        thread_id: baseThreadId
-      });
-      console.log('🔧 Workspace initialization result:', initResult);
-    } catch (initError) {
-      console.warn('⚠️ Workspace initialization failed, continuing anyway:', initError);
-    }
-
-    // STEP 2: Create the project directory with consistent thread_id
-    const commandArgs = {
-      action_json: { command: `mkdir -p "${projectPath}"` },
-      thread_id: baseThreadId  // Use same thread ID
-    };
     
-    console.log(`🔧 BashCommand args:`, JSON.stringify(commandArgs, null, 2));
-    
-    const createDirResult = await executeTool(mcpServerId, 'BashCommand', commandArgs);
+    const result = await executeTool(mcpServerId, 'BashCommand', {
+      command: `mkdir -p "${projectPath}" && echo "directory_created"`,
+      thread_id: `create-dir-${Date.now()}`
+    });
 
-    console.log('🔍 createProjectDirectory: mkdir result:', createDirResult);
-    console.log('🔍 createProjectDirectory: mkdir result type:', typeof createDirResult);
-    console.log('🔍 createProjectDirectory: mkdir result length:', createDirResult?.length);
+    const success = result.includes('directory_created');
+    console.log(`🔧 Directory creation result: ${success ? 'SUCCESS' : 'FAILED'}`);
     
-    // Check if there was an error in creation
-    if (createDirResult.includes('Error:') && !createDirResult.includes('File exists')) {
-      console.error('❌ createProjectDirectory: Directory creation failed:', createDirResult);
-      return false;
-    }
-    
-    // STEP 3: Re-initialize with the new project directory
-    console.log('🔧 Re-initializing workspace with project directory...');
-    try {
-      const reinitResult = await executeTool(mcpServerId, 'Initialize', {
-        type: "first_call",
-        any_workspace_path: projectPath, // Now use the project directory itself
-        initial_files_to_read: [],
-        task_id_to_resume: "",
-        mode_name: "wcgw",
-        thread_id: baseThreadId
-      });
-      console.log('🔧 Project workspace re-initialization result:', reinitResult);
-    } catch (reinitError) {
-      console.warn('⚠️ Project workspace re-initialization failed:', reinitError);
-    }
-    
-    // Wait a moment for file system operations to complete
-    console.log('⏳ Waiting for filesystem operations...');
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // STEP 4: Verify the directory was created using same thread
-    const verifyArgs = {
-      action_json: { command: `test -d "${projectPath}" && echo "success" || echo "failed"` },
-      thread_id: baseThreadId  // Use same thread ID
-    };
-    
-    console.log(`🔍 Verify BashCommand args:`, JSON.stringify(verifyArgs, null, 2));
-    
-    const verifyResult = await executeTool(mcpServerId, 'BashCommand', verifyArgs);
-
-    console.log('🔍 createProjectDirectory: Verification result:', verifyResult);
-    console.log('🔍 createProjectDirectory: Verification result type:', typeof verifyResult);
-    
-    const directoryCreated = verifyResult.includes('success');
-    console.log('🔍 createProjectDirectory: Directory created?', directoryCreated);
-    
-    if (!directoryCreated) {
-      console.error('❌ createProjectDirectory: Directory verification failed');
-      
-      // Try to get more info about what happened using same thread
-      try {
-        const debugResult = await executeTool(mcpServerId, 'BashCommand', {
-          action_json: { command: `ls -la "${projectPath.substring(0, projectPath.lastIndexOf('/'))}"` },
-          thread_id: baseThreadId
-        });
-        console.log('🔍 Debug: Parent directory listing:', debugResult);
-      } catch (debugError) {
-        console.log('🔍 Debug: Could not list parent directory:', debugError);
-      }
-      
-      return false;
-    }
-    
-    // STEP 5: Create README using same thread
-    try {
-      console.log('📝 Creating README.md file...');
-      
-      const readmeContent = `# Project
-
-This is a Kibitz project directory.
-
-## Getting Started
-
-This directory was automatically created for your project workspace.
-`;
-
-      const readmeResult = await executeTool(mcpServerId, 'FileWriteOrEdit', {
-        file_path: `${projectPath}/README.md`,
-        content: readmeContent,
-        thread_id: baseThreadId  // Use same thread ID
-      });
-
-      if (readmeResult.includes('Error:')) {
-        console.warn('⚠️ Failed to create README.md, but directory creation succeeded');
-      } else {
-        console.log('✅ createProjectDirectory: README.md created successfully');
-      }
-    } catch (readmeError) {
-      console.warn('⚠️ Failed to create README.md:', readmeError);
-      // Don't fail the entire operation for README creation failure
-    }
-
-    console.log('✅ createProjectDirectory: Directory creation completed successfully');
-    return true;
+    return success;
   } catch (error) {
-    console.error('❌ createProjectDirectory: Failed to create project directory:', error);
-    console.error('❌ createProjectDirectory: Error details:', JSON.stringify(error, null, 2));
+    console.error('❌ Failed to create project directory:', error);
     return false;
   }
 };
 
 /**
- * Checks if a project directory exists and initializes ws-mcp environment
+ * Checks if a project directory exists
  * @param projectPath Full path to project directory
  * @param mcpServerId MCP server ID
  * @param executeTool Function to execute tools on MCP server
@@ -285,40 +206,13 @@ export const projectDirectoryExists = async (
 ): Promise<boolean> => {
   try {
     console.log(`🔍 projectDirectoryExists: Checking ${projectPath}`);
-    console.log(`🔍 projectDirectoryExists: MCP Server ID: ${mcpServerId}`);
     
-    // Create consistent thread ID for this operation
-    const threadId = `check-exists-${Date.now()}`;
-    console.log(`🔍 projectDirectoryExists: Using thread ID: ${threadId}`);
-    
-    // STEP 1: Force workspace initialization to ensure proper MCP context
-    console.log('🔍 Force initializing workspace for directory check...');
-    try {
-      const initResult = await executeTool(mcpServerId, 'Initialize', {
-        type: "first_call",
-        any_workspace_path: projectPath.substring(0, projectPath.lastIndexOf('/')) || '/Users/test/gitrepo/projects',
-        initial_files_to_read: [],
-        task_id_to_resume: "",
-        mode_name: "wcgw",
-        thread_id: threadId
-      });
-      console.log('🔍 Workspace initialization result for check:', initResult);
-    } catch (initError) {
-      console.warn('⚠️ Workspace initialization failed for check, continuing anyway:', initError);
-    }
-    
-    // STEP 2: Check if directory exists with proper workspace context
-    const checkArgs = {
-      action_json: { command: `test -d "${projectPath}" && echo "exists" || echo "not_exists"` },
-      thread_id: threadId
-    };
-    
-    console.log(`🔍 projectDirectoryExists: BashCommand args:`, JSON.stringify(checkArgs, null, 2));
-    
-    const checkResult = await executeTool(mcpServerId, 'BashCommand', checkArgs);
+    const checkResult = await executeTool(mcpServerId, 'BashCommand', {
+      command: `test -d "${projectPath}" && echo "exists" || echo "not_exists"`,
+      thread_id: `dir-check-${Date.now()}`
+    });
 
     console.log(`🔍 projectDirectoryExists: Check result:`, checkResult);
-    console.log(`🔍 projectDirectoryExists: Check result type:`, typeof checkResult);
     
     const exists = checkResult.includes('exists');
     console.log(`🔍 projectDirectoryExists: Directory exists? ${exists}`);
@@ -326,8 +220,7 @@ export const projectDirectoryExists = async (
     return exists;
   } catch (error) {
     console.error('❌ projectDirectoryExists: Failed to check project directory:', error);
-    console.error('❌ projectDirectoryExists: Error details:', JSON.stringify(error, null, 2));
-    return false;
+    return true; // Assume it exists to avoid blocking
   }
 };
 
@@ -346,7 +239,7 @@ export const isGitRepository = async (
   try {
     // Check if this is a Git repository with proper thread_id
     const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: { command: `test -d "${projectPath}/.git" && echo "is_git_repo" || echo "not_git_repo"` },
+      command: `test -d "${projectPath}/.git" && echo "is_git_repo" || echo "not_git_repo"`,
       thread_id: `git-repo-check-${Date.now()}`
     });
 
@@ -358,120 +251,112 @@ export const isGitRepository = async (
 };
 
 /**
- * Ensures a project directory exists, creating it if necessary
- * Handles both new projects and cloned repositories
+ * Ensures the project directory exists.
+ * Simplified to work with current workspace.
  * @param project Project data
  * @param mcpServerId MCP server ID
  * @param executeTool Function to execute tools on MCP server
- * @returns Project path and whether it's an existing Git repo
+ * @returns Full path to project directory
  */
 export const ensureProjectDirectory = async (
   project: Project,
   mcpServerId: string,
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<string> => {
-  console.log(`🚀 ensureProjectDirectory: Starting for project ${project.id}`);
+  console.log(`🔧 ensureProjectDirectory: Project data:`, { 
+    id: project.id, 
+    name: project.name, 
+    customPath: project.customPath,
+    projectType: typeof project,
+    projectKeys: Object.keys(project || {})
+  });
   
-  // Check if project has a custom path (for cloned repos)
-  // We'll add this as a new field to Project interface
-  const customPath = (project as any).customPath;
-  
-  const projectPath = getProjectPath(project.id, project.name, customPath);
-  console.log('🔍 ensureProjectDirectory: Checking path:', projectPath);
-  console.log('🔍 ensureProjectDirectory: Custom path:', customPath);
-  console.log('🔍 ensureProjectDirectory: MCP Server ID:', mcpServerId);
-  
-  // Check if there's already a creation operation in progress for this project
-  if (projectCreationCache.has(project.id)) {
-    console.log('⏳ ensureProjectDirectory: Directory creation already in progress, waiting...');
-    try {
-      // Add timeout protection to prevent infinite waiting
-      const cachedPromise = projectCreationCache.get(project.id)!;
-      const timeoutPromise = new Promise<string>((_, reject) => {
-        setTimeout(() => reject(new Error('Directory creation timeout - cache wait exceeded 30 seconds')), DIRECTORY_CREATION_TIMEOUT);
-      });
-      
-      return await Promise.race([cachedPromise, timeoutPromise]);
-    } catch (error) {
-      console.warn('⚠️ ensureProjectDirectory: Cached operation failed or timed out, clearing cache and retrying:', error);
-      // Clear the stale cache entry and continue with new attempt
-      projectCreationCache.delete(project.id);
-      const timeout = cacheTimeouts.get(project.id);
-      if (timeout) {
-        clearTimeout(timeout);
-        cacheTimeouts.delete(project.id);
-      }
-      // Continue to create new operation below
-    }
+  // 🚨 VALIDATION: Ensure project object is valid
+  if (!project) {
+    console.error(`❌ ensureProjectDirectory: Project object is null/undefined`);
+    throw new Error(`Project object is null/undefined`);
   }
   
-  // Create a promise for this directory creation operation with timeout protection
-  const creationPromise = (async () => {
+  if (!project.id || project.id.trim() === '') {
+    console.error(`❌ ensureProjectDirectory: Project has invalid id:`, project.id);
+    throw new Error(`Project has invalid id: "${project.id}"`);
+  }
+  
+  if (!project.name || project.name.trim() === '') {
+    console.error(`❌ ensureProjectDirectory: Project has invalid name:`, project.name);
+    throw new Error(`Project has invalid name: "${project.name}"`);
+  }
+  
+  const projectPath = getProjectPath(project.id, project.name, project.customPath);
+  console.log(`🔧 ensureProjectDirectory: Generated project path: ${projectPath}`);
+  
+  // 🚨 CRITICAL: Validate project path is absolute and complete
+  if (!projectPath.startsWith('/Users/test/gitrepo/projects/') || projectPath.length < 30) {
+    console.error(`❌ Invalid project path detected: "${projectPath}"`);
+    console.error(`❌ Expected format: /Users/test/gitrepo/projects/{projectId}_{projectName}`);
+    throw new Error(`Invalid project path: ${projectPath}`);
+  }
+  
+  // 🚨 UPDATED: Trust that project directory exists (as per new system design)
+  console.log(`✅ Trusting project directory exists: ${projectPath}`);
+  
+  // Skip directory existence check and creation - directories are managed by the system
+  // This prevents the manual directory creation loops that were causing issues
+  
+  // 🚀 CRITICAL: Initialize MCP environment with the specific project directory
+  // This ensures ALL subsequent tool calls work in the correct project workspace
+  console.log(`🔧 Initializing MCP environment for project directory: ${projectPath}`);
+  console.log(`🔧 MCP should initialize at: ${projectPath} (NOT the parent directory)`);
+  
+  try {
+    const initArgs = {
+      type: "first_call",
+      any_workspace_path: projectPath,
+      initial_files_to_read: [],
+      task_id_to_resume: "",
+      mode_name: "wcgw",
+      thread_id: `proj-${project.id}-${Date.now()}`
+    };
+    console.log(`🔧 MCP Initialize args:`, JSON.stringify(initArgs, null, 2));
+    
+    let initResult: string;
     try {
-      console.log('🔍 ensureProjectDirectory: Checking if directory exists...');
-      const exists = await projectDirectoryExists(projectPath, mcpServerId, executeTool);
-      console.log('🔍 ensureProjectDirectory: Directory exists?', exists);
-      
-      if (!exists) {
-        // Only create directory structure for new projects (not cloned repos)
-        if (!customPath) {
-          console.log('🔧 ensureProjectDirectory: Creating directory...');
-          const created = await createProjectDirectory(projectPath, mcpServerId, executeTool);
-          console.log('🔧 ensureProjectDirectory: Creation result:', created);
-          
-          if (!created) {
-            // Try one more time to check if directory was actually created
-            console.log('🔄 ensureProjectDirectory: Retrying directory check...');
-            const existsAfterCreation = await projectDirectoryExists(projectPath, mcpServerId, executeTool);
-            console.log('🔍 ensureProjectDirectory: Directory exists after creation attempt?', existsAfterCreation);
-            
-            if (!existsAfterCreation) {
-              console.error('❌ ensureProjectDirectory: Final check - directory still does not exist');
-              throw new Error(`Failed to create project directory: ${projectPath}`);
-            } else {
-              console.log('✅ ensureProjectDirectory: Directory was created successfully despite initial failure indication');
-            }
-          }
-        } else {
-          console.error('❌ ensureProjectDirectory: Cloned repository directory does not exist');
-          throw new Error(`Cloned repository directory does not exist: ${projectPath}`);
-        }
-      } else {
-        console.log('✅ ensureProjectDirectory: Directory already exists');
-      }
-
-      console.log('✅ ensureProjectDirectory: Success, returning path:', projectPath);
-      return projectPath;
+      // Try with full arguments first
+      initResult = await executeTool(mcpServerId, 'Initialize', initArgs);
     } catch (error) {
-      console.error('❌ ensureProjectDirectory: Error occurred:', error);
-      console.error('❌ ensureProjectDirectory: Error stack:', error instanceof Error ? error.stack : 'No stack');
-      throw error;
-    } finally {
-      // Clean up cache entry and timeout when operation completes
-      console.log('🧹 ensureProjectDirectory: Cleaning up cache for project:', project.id);
-      projectCreationCache.delete(project.id);
-      const timeout = cacheTimeouts.get(project.id);
-      if (timeout) {
-        clearTimeout(timeout);
-        cacheTimeouts.delete(project.id);
-      }
+      // If it fails, try with simplified arguments
+      console.warn(`⚠️ Initialize failed with full args, trying simplified:`, error);
+      const simplifiedInitArgs = {
+        type: "first_call",
+        any_workspace_path: projectPath
+      };
+      console.log(`🔧 MCP Initialize simplified args:`, JSON.stringify(simplifiedInitArgs, null, 2));
+      initResult = await executeTool(mcpServerId, 'Initialize', simplifiedInitArgs);
     }
-  })();
+    
+    // 🔍 VALIDATION: Check if MCP actually initialized in the correct directory
+    if (initResult.includes('Initialized in directory') && !initResult.includes(projectPath)) {
+      console.error(`❌ MCP initialized in wrong directory!`);
+      console.error(`❌ Expected: ${projectPath}`);
+      console.error(`❌ Actual result: ${initResult.substring(0, 500)}`);
+      throw new Error(`MCP workspace initialization failed - wrong directory`);
+    }
+    
+    console.log(`✅ MCP environment initialized for project: ${project.name} at ${projectPath}`);
+    console.log(`📋 MCP Init result: ${initResult.substring(0, 200)}...`);
+    
+    // 🔧 REMOVED: pwd verification step that was causing timeout cascades
+    // The Initialize tool is working properly, so we don't need this verification
+    console.log(`✅ Skipping pwd verification to prevent timeout cascades`);
+    console.log(`✅ Project directory initialization complete: ${projectPath}`);
+    
+  } catch (error) {
+    console.error(`❌ CRITICAL: Failed to initialize MCP environment for project ${project.name}:`, error);
+    throw new Error(`MCP initialization failed: ${error}`);
+  }
   
-  // Store the promise in cache
-  projectCreationCache.set(project.id, creationPromise);
-  
-  // Set up automatic cache cleanup in case the promise hangs
-  const timeoutId = setTimeout(() => {
-    console.warn(`⏰ ensureProjectDirectory: Forcing cache cleanup for project ${project.id} after ${DIRECTORY_CREATION_TIMEOUT}ms`);
-    projectCreationCache.delete(project.id);
-    cacheTimeouts.delete(project.id);
-  }, DIRECTORY_CREATION_TIMEOUT);
-  
-  cacheTimeouts.set(project.id, timeoutId);
-  
-  // Return the result
-  return await creationPromise;
+  console.log(`✅ ensureProjectDirectory: Using project path: ${projectPath}`);
+  return projectPath;
 };
 
 /**

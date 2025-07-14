@@ -20,6 +20,8 @@ import { FileChangeCounter } from './components/FileChangeCounter';
 import GitSessionService from '../../lib/gitSessionService';
 import { ensureProjectDirectory } from '../../lib/projectPathService';
 import { autoInitializeGitForProject } from '../../lib/gitAutoInitService';
+import { getProjectPath } from '../../lib/projectPathService';
+import { useAutoCommit } from './hooks/useAutoCommit';
 
 // Default message window size if not configured
 const DEFAULT_MESSAGE_WINDOW = 30;
@@ -78,6 +80,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall, clearError: clearSendError } = useMessageSender();
   const { error, showError, clearError } = useErrorDisplay();
   const { getConversationCommits, hasAutoCommit, manuallyAssociateLastCommit, lastCommitHash } = useCommitTracking();
+  
+  // 🚨 CRITICAL FIX: Add auto-commit hook
+  const { triggerAutoCommit } = useAutoCommit();
 
   // Listen for auto-commit events to associate commits with messages
   useEffect(() => {
@@ -106,7 +111,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     };
   }, [activeProjectId, manuallyAssociateLastCommit]);
 
-  // Get project path for revert functionality - Git-first approach
+  // Get project path for revert functionality - Optimized approach
   useEffect(() => {
     const initProjectPath = async () => {
       if (activeProject && servers.length > 0) {
@@ -117,50 +122,37 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           );
           
           if (activeMcpServers.length > 0) {
-            console.log('📂 initProjectPath: Starting Git-first initialization...');
+            console.log('📂 initProjectPath: Starting optimized Git initialization...');
             
-            // 🔄 NEW APPROACH: Use Git auto-initialization instead of problematic directory validation
+            // �� OPTIMIZED: Use the simplified Git auto-initialization system
             const gitResult = await autoInitializeGitForProject(
               activeProject.id,
               activeProject.name,
-              activeMcpServers[0].id,
-              executeTool
+              activeMcpServers[0].id
             );
             
-            console.log('📂 initProjectPath: Git auto-init result:', gitResult);
-            
-            if (gitResult.success && gitResult.projectPath) {
-              setProjectPath(gitResult.projectPath);
-              
-              console.log('✅ initProjectPath: Git-first setup completed successfully');
-              
-              if (gitResult.gitInitialized) {
-                console.log('✅ initProjectPath: Git repository is ready for auto-commit');
-              } else {
-                console.warn('⚠️ initProjectPath: Workspace ready but Git initialization incomplete');
-              }
+            if (gitResult.success) {
+              console.log('✅ initProjectPath: Git initialization successful');
+              const projectPath = getProjectPath(activeProject.id, activeProject.name);
+              setProjectPath(projectPath);
             } else {
-              console.error('❌ initProjectPath: Git auto-init failed:', gitResult.error);
-              
-              // Fallback to old approach only if absolutely necessary
-              console.log('🔄 initProjectPath: Falling back to directory validation approach...');
-              const path = await ensureProjectDirectory(
-                activeProject,
-                activeMcpServers[0].id,
-                executeTool
-              );
-              setProjectPath(path);
+              console.error('❌ initProjectPath: Git initialization failed:', gitResult.error);
+              // Still set the project path for basic functionality
+              const projectPath = getProjectPath(activeProject.id, activeProject.name);
+              setProjectPath(projectPath);
             }
           }
         } catch (error) {
-          console.error('❌ initProjectPath: Both Git-first and fallback approaches failed:', error);
-          // Don't block the UI completely, but show a warning
+          console.error('❌ initProjectPath: Error during initialization:', error);
+          // Fallback to basic path setting
+          const projectPath = getProjectPath(activeProject.id, activeProject.name);
+          setProjectPath(projectPath);
         }
       }
     };
 
     initProjectPath();
-  }, [activeProject, servers, executeTool]);
+  }, [activeProject, servers]);
 
   // Handle revert to commit
   const handleRevert = useCallback(async (commitHash: string) => {

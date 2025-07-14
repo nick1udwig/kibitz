@@ -556,16 +556,16 @@ export class LocalPersistenceService {
           
           const projectId = dirName.substring(0, underscoreIndex);
           const projectName = dirName.substring(underscoreIndex + 1).replace(/-/g, ' ');
-          
-          // Check if it's a Git repository
-          const gitCheckResult = await executeGitCommand(
-            serverId,
-            'git rev-parse --is-inside-work-tree',
-            projectPath,
-            executeTool
-          );
-          
-          const hasGit = gitCheckResult.success && gitCheckResult.output.includes('true');
+        
+        // Check if it's a Git repository
+        const gitCheckResult = await executeGitCommand(
+          serverId,
+          'git rev-parse --is-inside-work-tree',
+          projectPath,
+          executeTool
+        );
+        
+        const hasGit = gitCheckResult.success && gitCheckResult.output.includes('true');
           
           // Try to read metadata files
           let metadata: ProjectMetadata | null = null;

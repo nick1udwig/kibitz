@@ -198,7 +198,8 @@ export class CheckpointAPI {
       
       // Get current branch for response
       const currentBranchResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { command: `cd "${projectPath}" && git branch --show-current` },
+        command: `cd "${projectPath}" && git branch --show-current`,
+        type: 'command',
         thread_id: 'checkpoint-api'
       });
       

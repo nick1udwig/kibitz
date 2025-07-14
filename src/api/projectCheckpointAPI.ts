@@ -135,7 +135,8 @@ export class ProjectCheckpointAPI {
         // Verify it's a git repository
         try {
           const gitCheck = await executeTool(serverId, 'BashCommand', {
-            action_json: { command: `test -d "${projectPath}/.git" && echo "is_git" || echo "not_git"` },
+            command: `test -d "${projectPath}/.git" && echo "is_git" || echo "not_git"`,
+            type: 'command',
             thread_id: requestId
           });
           isGitRepo = gitCheck.includes('is_git');
@@ -337,7 +338,8 @@ export class ProjectCheckpointAPI {
       
       // Get current branch
       const currentBranchResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { command: `cd "${projectPath}" && git branch --show-current` },
+        command: `cd "${projectPath}" && git branch --show-current`,
+        type: 'command',
         thread_id: this.requestId
       });
       
@@ -515,7 +517,8 @@ export class ProjectCheckpointAPI {
       
       // Check git status
       const gitStatusResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { command: `cd "${projectPath}" && git status --porcelain` },
+        command: `cd "${projectPath}" && git status --porcelain`,
+        type: 'command',
         thread_id: this.requestId
       });
       
@@ -523,7 +526,8 @@ export class ProjectCheckpointAPI {
       
       // Get branch info
       const branchResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { command: `cd "${projectPath}" && git branch --show-current` },
+        command: `cd "${projectPath}" && git branch --show-current`,
+        type: 'command',
         thread_id: this.requestId
       });
       
@@ -569,10 +573,10 @@ export class ProjectCheckpointAPI {
     threadId: string
   ): Promise<boolean> {
     try {
-      // Initialize MCP environment with base directory
+      // Initialize MCP environment with project directory
       await executeTool(serverId, 'Initialize', {
         type: "first_call",
-        any_workspace_path: BASE_PROJECT_DIR,
+        any_workspace_path: projectPath,
         initial_files_to_read: [],
         task_id_to_resume: "",
         mode_name: "wcgw",
@@ -581,7 +585,8 @@ export class ProjectCheckpointAPI {
 
       // Create the project directory
       const createDirResult = await executeTool(serverId, 'BashCommand', {
-        action_json: { command: `mkdir -p "${projectPath}"` },
+        command: `mkdir -p "${projectPath}"`,
+        type: 'command',
         thread_id: threadId
       });
 

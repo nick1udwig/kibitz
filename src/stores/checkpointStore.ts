@@ -338,7 +338,8 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
         console.log("Checking if this is a Git repository...");
         try {
           const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-            action_json: { command: 'git rev-parse --is-inside-work-tree' },
+            command: 'git rev-parse --is-inside-work-tree',
+            type: 'command',
             thread_id: threadId
           });
           
