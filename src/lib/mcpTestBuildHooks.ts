@@ -202,8 +202,8 @@ export class MCPTestBuildHooks {
 
       // Execute original command
       const commandResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${workingDirectory}" && ${originalCommand}` 
+        action_json: {
+          command: `cd "${workingDirectory}" && ${originalCommand}`
         }
       });
 

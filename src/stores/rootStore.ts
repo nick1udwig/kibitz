@@ -1,11 +1,13 @@
 import { create } from 'zustand';
-import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection } from '../components/LlmChat/context/types';
+import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, McpServerConnection, WorkspaceMapping, WorkspaceCreationOptions, ConversationWorkspaceSettings } from '../components/LlmChat/context/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
-import { loadState, saveState, loadMcpServers, saveMcpServers } from '../lib/db';
+import { loadState, saveState, loadMcpServers, saveMcpServers, loadWorkspaceMappings, saveWorkspaceMappings, getWorkspaceByConversationId, updateWorkspaceMapping, deleteWorkspaceMapping } from '../lib/db';
 import { WsTool } from '../components/LlmChat/types/toolTypes';
 import { autoInitializeGitForProject } from '../lib/gitCheckpointService';
 import { ensureProjectDirectory, getProjectPath } from '../lib/projectPathService';
 import { recordSystemError, shouldThrottleOperation } from '../lib/systemDiagnostics';
+import { createWorkspaceMapping } from '../lib/conversationWorkspaceService';
+import { initializeAutoCommitAgent, stopAutoCommitAgent, getAutoCommitAgent } from '../lib/autoCommitAgent';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
@@ -216,6 +218,12 @@ interface RootState extends ProjectState, McpState {
   renameProject: (projectId: string, newName: string) => void;
   setActiveProject: (projectId: string | null) => void;
   setActiveConversation: (conversationId: string | null) => void;
+  // Workspace methods
+  createConversationWorkspace: (conversationId: string, options?: WorkspaceCreationOptions) => Promise<WorkspaceMapping>;
+  deleteConversationWorkspace: (conversationId: string) => Promise<void>;
+  switchConversationWorkspace: (conversationId: string) => Promise<void>;
+  getConversationWorkspace: (conversationId: string) => WorkspaceMapping | null;
+  updateConversationSettings: (projectId: string, conversationId: string, settings: Partial<ConversationWorkspaceSettings>) => void;
   // MCP methods
   addServer: (server: McpServer) => Promise<McpServerConnection | undefined>;
   removeServer: (serverId: string) => void;
@@ -255,6 +263,61 @@ export const useStore = create<RootState>((set, get) => {
     }).catch(error => {
       console.error('Failed to save API keys:', error);
     });
+  };
+
+  // Helper method to initialize auto-commit agent for a project
+  const initializeAutoCommitForProject = async (projectId: string): Promise<void> => {
+    try {
+      console.log(`🔧 Initializing auto-commit agent for project: ${projectId}`);
+      
+      const state = get();
+      const project = state.projects.find(p => p.id === projectId);
+      
+      if (!project) {
+        console.warn(`Project ${projectId} not found, skipping auto-commit initialization`);
+        return;
+      }
+      
+      // Find connected MCP servers
+      const connectedServers = state.servers.filter(server => 
+        server.status === 'connected' && project.settings.mcpServerIds?.includes(server.id)
+      );
+      
+      if (connectedServers.length === 0) {
+        console.warn(`No connected MCP servers for project ${project.name}, skipping auto-commit initialization`);
+        return;
+      }
+      
+      const mcpServerId = connectedServers[0].id;
+      
+      // Create auto-commit context
+      const autoCommitContext = {
+        projectId: project.id,
+        projectName: project.name,
+        activeConversationId: state.activeConversationId,
+        mcpServerId: mcpServerId,
+        executeTool: state.executeTool
+      };
+      
+      console.log(`🔧 Auto-commit context created:`, {
+        projectId: autoCommitContext.projectId,
+        projectName: autoCommitContext.projectName,
+        activeConversationId: autoCommitContext.activeConversationId,
+        mcpServerId: autoCommitContext.mcpServerId,
+        hasExecuteTool: typeof autoCommitContext.executeTool === 'function'
+      });
+      
+      // Stop any existing agent
+      await stopAutoCommitAgent();
+      
+      // Initialize the agent with the context
+      await initializeAutoCommitAgent(autoCommitContext);
+      
+      console.log(`✅ Auto-commit agent initialized for project: ${project.name}`);
+      
+    } catch (error) {
+      console.error(`❌ Failed to initialize auto-commit agent for project ${projectId}:`, error);
+    }
   };
 
   const cleanupServer = (serverId: string) => {
@@ -506,6 +569,9 @@ export const useStore = create<RootState>((set, get) => {
     }
   };
 
+  // Workspace mappings state
+  let workspaceMappings: WorkspaceMapping[] = [];
+
   return {
     // State
     projects: [],
@@ -537,6 +603,15 @@ export const useStore = create<RootState>((set, get) => {
           } catch (error) {
             console.error('Failed to load API keys:', error);
           }
+        }
+
+        // Load workspace mappings
+        try {
+          workspaceMappings = await loadWorkspaceMappings();
+          console.log(`Loaded ${workspaceMappings.length} workspace mappings`);
+        } catch (error) {
+          console.error('Failed to load workspace mappings:', error);
+          workspaceMappings = [];
         }
 
         // Always try to load saved servers first
@@ -722,13 +797,18 @@ export const useStore = create<RootState>((set, get) => {
                 .catch(error => {
                   console.error('Error initializing Git repository:', error);
                 });
+
+              // Initialize auto-commit agent for the new project
+              console.log(`🔧 Setting up auto-commit agent for new project: ${name}`);
+              await initializeAutoCommitForProject(projectId);
+              
             } catch (error) {
               console.error('Error setting up project directory:', error);
             }
           };
           
           setupProject();
-        }, 1000); // 1 second delay
+        }, 2000); // Increased delay to ensure MCP servers and Git are ready
       }
 
       return projectId;
@@ -1041,6 +1121,21 @@ export const useStore = create<RootState>((set, get) => {
 
         return newState;
       });
+
+      // Initialize auto-commit agent for the new active project
+      if (projectId) {
+        // Use setTimeout to ensure state is updated first
+        setTimeout(() => {
+          initializeAutoCommitForProject(projectId).catch(error => {
+            console.error(`Failed to initialize auto-commit for project ${projectId}:`, error);
+          });
+        }, 1000);
+      } else {
+        // Stop auto-commit agent if no project is active
+        stopAutoCommitAgent().catch(error => {
+          console.error('Failed to stop auto-commit agent:', error);
+        });
+      }
     },
 
     setActiveConversation: (conversationId: string | null) => {
@@ -1052,6 +1147,133 @@ export const useStore = create<RootState>((set, get) => {
 
         saveState(newState).catch(error => {
           console.error('Error saving state:', error);
+        });
+
+        return newState;
+      });
+    },
+
+    // Workspace methods
+    createConversationWorkspace: async (conversationId: string, options?: WorkspaceCreationOptions): Promise<WorkspaceMapping> => {
+      const { activeProjectId, projects } = get();
+      
+      if (!activeProjectId) {
+        throw new Error('No active project');
+      }
+
+      const project = projects.find(p => p.id === activeProjectId);
+      if (!project) {
+        throw new Error('Active project not found');
+      }
+
+      // Find the conversation
+      const conversation = project.conversations.find(c => c.id === conversationId);
+      if (!conversation) {
+        throw new Error('Conversation not found');
+      }
+
+      // Create workspace mapping
+      const workspaceMapping = createWorkspaceMapping(
+        conversationId,
+        activeProjectId,
+        conversation.name,
+        options
+      );
+
+      try {
+        // Save to database
+        const existingMappings = await loadWorkspaceMappings();
+        const updatedMappings = [...existingMappings, workspaceMapping];
+        await saveWorkspaceMappings(updatedMappings);
+
+        // Update local state
+        workspaceMappings = updatedMappings;
+
+        console.log(`Created workspace for conversation ${conversationId}: ${workspaceMapping.workspacePath}`);
+        return workspaceMapping;
+      } catch (error) {
+        console.error('Failed to create conversation workspace:', error);
+        throw new Error(`Failed to create conversation workspace: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+
+    deleteConversationWorkspace: async (conversationId: string): Promise<void> => {
+      try {
+        const workspace = await getWorkspaceByConversationId(conversationId);
+        if (!workspace) {
+          console.warn(`No workspace found for conversation ${conversationId}`);
+          return;
+        }
+
+        // Delete from database
+        await deleteWorkspaceMapping(workspace.workspaceId);
+
+        // Update local state
+        workspaceMappings = workspaceMappings.filter(w => w.conversationId !== conversationId);
+
+        console.log(`Deleted workspace for conversation ${conversationId}`);
+      } catch (error) {
+        console.error('Failed to delete conversation workspace:', error);
+        throw new Error(`Failed to delete conversation workspace: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+
+    switchConversationWorkspace: async (conversationId: string): Promise<void> => {
+      try {
+        const workspace = await getWorkspaceByConversationId(conversationId);
+        if (!workspace) {
+          throw new Error(`No workspace found for conversation ${conversationId}`);
+        }
+
+        // Update last accessed time
+        const updatedWorkspace = {
+          ...workspace,
+          lastAccessedAt: new Date()
+        };
+
+        await updateWorkspaceMapping(updatedWorkspace);
+
+        // Update local state
+        workspaceMappings = workspaceMappings.map(w => 
+          w.conversationId === conversationId ? updatedWorkspace : w
+        );
+
+        console.log(`Switched to workspace for conversation ${conversationId}: ${workspace.workspacePath}`);
+      } catch (error) {
+        console.error('Failed to switch conversation workspace:', error);
+        throw new Error(`Failed to switch conversation workspace: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    },
+
+    getConversationWorkspace: (conversationId: string): WorkspaceMapping | null => {
+      return workspaceMappings.find(w => w.conversationId === conversationId) || null;
+    },
+
+    updateConversationSettings: (projectId: string, conversationId: string, settings: Partial<ConversationWorkspaceSettings>): void => {
+      set(state => {
+        const newState = {
+          ...state,
+          projects: state.projects.map(p => {
+            if (p.id !== projectId) return p;
+            return {
+              ...p,
+              conversations: p.conversations.map(c => {
+                if (c.id !== conversationId) return c;
+                return {
+                  ...c,
+                  settings: {
+                    ...c.settings,
+                    ...settings
+                  }
+                };
+              }),
+              updatedAt: new Date()
+            };
+          })
+        };
+
+        saveState(newState).catch(error => {
+          console.error('Error saving conversation settings:', error);
         });
 
         return newState;
@@ -1144,6 +1366,18 @@ export const useStore = create<RootState>((set, get) => {
         isInternalCall
       });
       
+      // 🔍 CRITICAL DEBUG: Check for raw command format in BashCommand BEFORE processing
+      if (toolName === 'BashCommand') {
+        if (args.command && !args.action_json) {
+          console.error('🚨 CRITICAL: BashCommand called with raw command format BEFORE processing!', {
+            command: args.command,
+            hasActionJson: !!args.action_json,
+            allArgs: Object.keys(args),
+            stackTrace: new Error().stack
+          });
+        }
+      }
+      
       const connection = connectionsRef.get(serverId);
       if (!connection) {
         recordSystemError('CONNECTION', `No connection found for server ${serverId}`);
@@ -1216,6 +1450,16 @@ export const useStore = create<RootState>((set, get) => {
         console.log(`🔧 Project directory setup temporarily disabled to prevent recursion`);
       }
       
+      // 🔍 CRITICAL DEBUG: Check if project exists for BashCommand processing
+      if (toolName === 'BashCommand') {
+        console.log('🔧 BashCommand processing check:', {
+          hasProject: !!project,
+          activeProjectId,
+          projectsCount: projects.length,
+          projectFound: project ? { id: project.id, name: project.name } : null
+        });
+      }
+      
       if (project && (toolName === 'BashCommand' || toolName === 'FileWriteOrEdit')) {
         const projectPath = getProjectPath(project.id, project.name);
         
@@ -1259,10 +1503,13 @@ export const useStore = create<RootState>((set, get) => {
           
           console.log(`🔧 Final BashCommand: ${command}`);
           
+          // Remove the raw command property and use only action_json format
+          const { command: _, ...argsWithoutCommand } = modifiedArgs;
           modifiedArgs = {
-            ...modifiedArgs,
+            ...argsWithoutCommand,
             action_json: {
-              command: command
+              command: command,
+              type: 'command' // Move type field inside action_json where it belongs
             },
             thread_id: modifiedArgs.thread_id
           };
@@ -1304,6 +1551,46 @@ export const useStore = create<RootState>((set, get) => {
         }
       }
 
+      // 🚨 CRITICAL FIX: Handle BashCommand even without project context
+      if (!project && toolName === 'BashCommand' && modifiedArgs.command && !modifiedArgs.action_json) {
+        console.warn('🔧 BashCommand without project context - converting to action_json format');
+        const { command: commandValue, ...argsWithoutCommand } = modifiedArgs;
+        modifiedArgs = {
+          ...argsWithoutCommand,
+          action_json: {
+            command: commandValue,
+            type: 'command' // Add type field inside action_json where it belongs
+          },
+          thread_id: modifiedArgs.thread_id
+        };
+      }
+
+      // 🔍 CRITICAL DEBUG: Check for raw command format in BashCommand AFTER processing
+      if (toolName === 'BashCommand') {
+        if (modifiedArgs.command && !modifiedArgs.action_json) {
+          console.error('🚨 CRITICAL: BashCommand still has raw command format AFTER processing!', {
+            command: modifiedArgs.command,
+            hasActionJson: !!modifiedArgs.action_json,
+            allArgs: Object.keys(modifiedArgs),
+            stackTrace: new Error().stack
+          });
+        } else if (modifiedArgs.action_json) {
+          // 🔧 CRITICAL: Ensure ALL BashCommand calls have type field inside action_json
+          const actionJson = modifiedArgs.action_json as any;
+          if (!actionJson.type) {
+            console.warn('🔧 BashCommand missing type field inside action_json - adding it');
+            actionJson.type = 'command';
+          }
+          
+          console.log('✅ BashCommand correctly formatted with action_json:', {
+            hasCommand: !!modifiedArgs.command,
+            hasActionJson: !!modifiedArgs.action_json,
+            hasType: !!actionJson.type,
+            command: actionJson.command ? actionJson.command.substring(0, 100) + '...' : 'no command'
+          });
+        }
+      }
+
       return new Promise((resolve, reject) => {
         const requestId = `req_${Date.now()}_${Math.random()}`;
         
@@ -1337,13 +1624,29 @@ export const useStore = create<RootState>((set, get) => {
                     
                     // 🚨 CRITICAL FIX: Add auto-commit trigger after tool execution
                     import('./autoCommitStore').then(({ useAutoCommitStore }) => {
-                      const { shouldAutoCommit, executeAutoCommit } = useAutoCommitStore.getState();
+                      const { shouldAutoCommit, executeAutoCommit, trackFileChange } = useAutoCommitStore.getState();
+                      
+                      // 🔗 NEW: Track file changes for FileWriteOrEdit
+                      if (toolName === 'FileWriteOrEdit') {
+                        try {
+                          // Extract file path from the tool arguments
+                          const filePath = (args as any).file_path || 'unknown_file';
+                          console.log(`📝 Tracking file change for auto-commit: ${filePath}`);
+                          trackFileChange(filePath);
+                        } catch (trackError) {
+                          console.error('Failed to track file change:', trackError);
+                        }
+                      }
+                      
+                      // 🔧 CRITICAL FIX: Remove quotes from activeProjectId and project.name
+                      const cleanProjectId = activeProjectId.replace(/"/g, '');
+                      const cleanProjectName = project.name.replace(/"/g, '');
                       
                       const autoCommitContext = {
                         trigger: 'tool_execution' as const,
                         toolName,
-                        projectId: activeProjectId,
-                        projectPath: getProjectPath(activeProjectId, project.name),
+                        projectId: cleanProjectId,
+                        projectPath: getProjectPath(cleanProjectId, cleanProjectName),
                         timestamp: Date.now()
                       };
                       
@@ -1461,33 +1764,23 @@ export const useStore = create<RootState>((set, get) => {
         // will work in the correct project workspace
         console.log(`✅ Successfully ensured project directory for ${project.name}: ${projectPath}`);
         
-        // 🔍 TRIGGER: Call auto-commit system to check for changes and create branches
+        // 🔧 INITIALIZE: Auto-commit agent for the project
         try {
-          const { useAutoCommitStore } = await import('./autoCommitStore');
-          const autoCommitStore = useAutoCommitStore.getState();
+          console.log(`🔧 Ensuring auto-commit agent is initialized for project: ${project.name}`);
           
-          if (autoCommitStore.config.enabled) {
-            console.log(`🔧 Triggering auto-commit check for project: ${project.name}`);
-            
-            // Track project setup as a file change to potentially trigger auto-commit
-            autoCommitStore.trackFileChange(`${projectPath}/project-setup`);
-            
-            const context = {
-              projectId: activeProjectId,
-              projectPath,
-              trigger: 'tool_execution' as const,
-              toolName: 'ProjectSetup',
-              summary: 'Project directory setup and initialization'
-            };
-            
-            if (autoCommitStore.shouldAutoCommit(context)) {
-              autoCommitStore.executeAutoCommit(context).catch(error => {
-                console.warn('Auto-commit after project setup failed:', error);
-              });
-            }
+          // Check if auto-commit agent is already running for this project
+          const agent = getAutoCommitAgent();
+          const isRunning = agent.isAgentRunning();
+          
+          if (!isRunning) {
+            console.log(`🔧 Auto-commit agent not running, initializing for project: ${project.name}`);
+            await initializeAutoCommitForProject(activeProjectId);
+          } else {
+            console.log(`✅ Auto-commit agent already running for project: ${project.name}`);
           }
+          
         } catch (error) {
-          console.warn('Failed to trigger auto-commit after project setup:', error);
+          console.warn('Failed to initialize auto-commit agent for project:', error);
         }
         
       } catch (error) {

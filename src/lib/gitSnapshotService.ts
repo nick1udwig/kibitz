@@ -61,8 +61,9 @@ export async function generateCommitMessage(
   try {
     // Get git diff for staged changes
     const diffResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git diff --cached`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git diff --cached`
+      },
       thread_id: `commit-msg-${Date.now()}`
     });
 
@@ -100,8 +101,9 @@ export async function createEnhancedSnapshot(
   try {
     // Check if there are changes to snapshot
     const statusResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git status --porcelain`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git status --porcelain`
+      },
       thread_id: threadId
     });
 
@@ -111,8 +113,9 @@ export async function createEnhancedSnapshot(
 
     // Stage all changes
     await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git add -A`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git add -A`
+      },
       thread_id: threadId
     });
 
@@ -135,15 +138,17 @@ export async function createEnhancedSnapshot(
 
     // Create new branch for this snapshot
     await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git checkout -b "${branchName}"`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git checkout -b "${branchName}"`
+      },
       thread_id: threadId
     });
 
     // Create the commit
     const commitResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git commit -m "${commitMessage.replace(/"/g, '\\"')}"`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git commit -m "${commitMessage.replace(/"/g, '\\"')}"`
+      },
       thread_id: threadId
     });
 
@@ -153,8 +158,9 @@ export async function createEnhancedSnapshot(
 
     // Get commit hash
     const hashResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git rev-parse HEAD`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git rev-parse HEAD`
+      },
       thread_id: threadId
     });
 
@@ -163,8 +169,9 @@ export async function createEnhancedSnapshot(
 
     // Get commit statistics
     const statsResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git show --stat --format="%an" ${commitHash}`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git show --stat --format="%an" ${commitHash}`
+      },
       thread_id: threadId
     });
 
@@ -232,8 +239,9 @@ export async function getRecentSnapshots(
     
     // Get recent commits with format: hash|subject|author|date
     const logResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git log -${maxCount} --format="%H|%s|%an|%ct" --branches`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git log -${maxCount} --format="%H|%s|%an|%ct" --branches`
+      },
       thread_id: threadId
     });
 
@@ -250,8 +258,9 @@ export async function getRecentSnapshots(
 
       // Get branch name for this commit
       const branchResult = await executeTool(serverId, 'BashCommand', {
-        command: `cd "${projectPath}" && git branch --contains ${hash} | head -1 | sed 's/^[ *]*//'`,
-        type: 'command',
+        action_json: {
+          command: `cd "${projectPath}" && git branch --contains ${hash} | head -1 | sed 's/^[ *]*//'`
+        },
         thread_id: threadId
       });
 
@@ -259,8 +268,9 @@ export async function getRecentSnapshots(
 
       // Get stats for this commit
       const statsResult = await executeTool(serverId, 'BashCommand', {
-        command: `cd "${projectPath}" && git show --stat --format="" ${hash}`,
-        type: 'command',
+        action_json: {
+          command: `cd "${projectPath}" && git show --stat --format="" ${hash}`
+        },
         thread_id: threadId
       });
 
@@ -317,8 +327,9 @@ export async function getRecentBranches(
     
     // Get all branches with last commit info
     const branchResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git for-each-ref --sort=-committerdate --format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)|%(subject)' refs/heads/ | head -${maxCount}`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git for-each-ref --sort=-committerdate --format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)|%(subject)' refs/heads/ | head -${maxCount}`
+      },
       thread_id: threadId
     });
 
@@ -328,8 +339,9 @@ export async function getRecentBranches(
 
     // Get current branch
     const currentBranchResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git branch --show-current`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git branch --show-current`
+      },
       thread_id: threadId
     });
 
@@ -343,8 +355,9 @@ export async function getRecentBranches(
 
       // Get commit count for this branch
       const countResult = await executeTool(serverId, 'BashCommand', {
-        command: `cd "${projectPath}" && git rev-list --count ${name}`,
-        type: 'command',
+        action_json: {
+          command: `cd "${projectPath}" && git rev-list --count ${name}`
+        },
         thread_id: threadId
       });
 
@@ -443,8 +456,9 @@ export async function pushSnapshotToRemote(
     const threadId = `push-snapshot-${Date.now()}`;
     
     const pushResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git push origin "${branchName}"`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git push origin "${branchName}"`
+      },
       thread_id: threadId
     });
 

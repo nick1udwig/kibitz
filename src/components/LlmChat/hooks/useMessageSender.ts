@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import type { Tool as AnthropicToolType, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
@@ -7,6 +7,7 @@ import { useStore } from '@/stores/rootStore';
 import { wakeLock } from '@/lib/wakeLock';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '../types/genericMessage';
 import { useAutoCommit, detectToolSuccess, detectFileChanges, detectBuildSuccess, detectTestSuccess } from './useAutoCommit';
+import { getProjectPath } from '../../../lib/projectPathService';
 
 const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
 
@@ -28,9 +29,103 @@ export const useMessageSender = () => {
   } = useStore();
 
   // Add auto-commit functionality
-  const { onToolExecution, onBuildSuccess, onTestSuccess } = useAutoCommit();
+  const { 
+    onToolExecution, 
+    onBuildSuccess, 
+    onTestSuccess, 
+    trackFileChange 
+  } = useAutoCommit();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
+
+  // 🌿 NEW: Simple end-of-conversation branch creation
+  const [conversationFileCount, setConversationFileCount] = useState(0);
+  const [lastActivityTime, setLastActivityTime] = useState(Date.now());
+
+  // Track files created in this conversation
+  const trackConversationFile = useCallback((filename: string) => {
+    setConversationFileCount(prev => prev + 1);
+    setLastActivityTime(Date.now());
+    console.log(`🌿 Conversation file tracker: ${conversationFileCount + 1} files created in this conversation`);
+  }, [conversationFileCount]);
+
+  // Simple branch creation at conversation end
+  const createConversationBranch = useCallback(async () => {
+    if (!activeProject || conversationFileCount < 2) {
+      console.log(`🌿 Not creating branch: ${conversationFileCount} files (need 2+)`);
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+      const branchName = `conversation/${timestamp}`;
+      
+      console.log(`🌿 Creating conversation branch: ${branchName} for ${conversationFileCount} files`);
+      
+      // Simple git branch creation
+      const result = await executeTool('localhost-mcp', 'BashCommand', {
+        action_json: {
+          command: `cd "${getProjectPath(activeProject.id, activeProject.name)}" && git checkout -b ${branchName}`
+        },
+        thread_id: 'conversation-branch'
+      });
+
+      if (!result.includes('error')) {
+        console.log(`✅ Successfully created conversation branch: ${branchName}`);
+        
+        // Dispatch event for UI update
+        window.dispatchEvent(new CustomEvent('conversationBranchCreated', {
+          detail: {
+            projectId: activeProject.id,
+            branchName,
+            fileCount: conversationFileCount,
+            timestamp: Date.now()
+          }
+        }));
+      } else {
+        console.warn(`⚠️ Failed to create conversation branch:`, result);
+      }
+    } catch (error) {
+      console.error('❌ Error creating conversation branch:', error);
+    }
+  }, [activeProject, conversationFileCount, executeTool]);
+
+  // Auto-trigger branch creation after inactivity
+  useEffect(() => {
+    if (conversationFileCount < 2) return;
+
+    const timeout = setTimeout(() => {
+      const timeSinceLastActivity = Date.now() - lastActivityTime;
+      // Create branch after 30 seconds of inactivity with 2+ files
+      if (timeSinceLastActivity >= 30000) {
+        console.log(`🌿 Auto-creating branch after 30s inactivity with ${conversationFileCount} files`);
+        createConversationBranch();
+      }
+    }, 31000);
+
+    return () => clearTimeout(timeout);
+  }, [conversationFileCount, lastActivityTime, createConversationBranch]);
+
+  // 🌿 Expose manual branch creation for testing
+  const manualCreateBranch = useCallback(() => {
+    console.log(`🌿 Manual branch creation triggered with ${conversationFileCount} files`);
+    createConversationBranch();
+  }, [conversationFileCount, createConversationBranch]);
+
+  // 🌿 DEBUG: Log the current state for debugging  
+  useEffect(() => {
+    console.log(`🌿 Conversation state: ${conversationFileCount} files, last activity: ${new Date(lastActivityTime).toLocaleTimeString()}`);
+  }, [conversationFileCount, lastActivityTime]);
+
+  // 🌿 DEBUG: Expose manual branch creation to window for testing
+  useEffect(() => {
+    (window as any).createConversationBranch = manualCreateBranch;
+    (window as any).conversationFileCount = conversationFileCount;
+    return () => {
+      delete (window as any).createConversationBranch;
+      delete (window as any).conversationFileCount;
+    };
+  }, [manualCreateBranch, conversationFileCount]);
 
   const getUniqueTools = useCallback((should_cache: boolean) => {
     if (!activeProject?.settings.mcpServerIds?.length) {
@@ -416,6 +511,20 @@ Format: Only output the title, no quotes or explanation`
                   if (toolSuccess) {
                     const changedFiles = detectFileChanges(unsanitizedTool.name as string, result);
                     console.log(`Tool execution successful, triggering auto-commit for ${unsanitizedTool.name}`);
+                    console.log(`Detected changed files:`, changedFiles);
+                    
+                    // 🔧 CRITICAL FIX: Track each detected file change in pending changes
+                    // This ensures the 2-file threshold works properly for auto-branch creation
+                    if (changedFiles.length > 0) {
+                      console.log(`📁 Tracking ${changedFiles.length} changed files for auto-commit threshold`);
+                      changedFiles.forEach(filePath => {
+                        trackFileChange(filePath);
+                        console.log(`📁 Tracked file change: ${filePath}`);
+                        
+                        // 🌿 NEW: Also track for simple conversation branch creation
+                        trackConversationFile(filePath);
+                      });
+                    }
                     
                     // Prioritize build and test success over general tool execution
                     if (detectBuildSuccess(unsanitizedTool.name as string, result)) {
@@ -637,6 +746,20 @@ Format: Only output the title, no quotes or explanation`
                 if (toolSuccess) {
                   const changedFiles = detectFileChanges(toolUseContent.name, result);
                   console.log(`Tool execution successful, triggering auto-commit for ${toolUseContent.name}`);
+                  console.log(`Detected changed files:`, changedFiles);
+                  
+                  // 🔧 CRITICAL FIX: Track each detected file change in pending changes
+                  // This ensures the 2-file threshold works properly for auto-branch creation
+                  if (changedFiles.length > 0) {
+                    console.log(`📁 Tracking ${changedFiles.length} changed files for auto-commit threshold`);
+                    changedFiles.forEach(filePath => {
+                      trackFileChange(filePath);
+                      console.log(`📁 Tracked file change: ${filePath}`);
+                      
+                      // 🌿 NEW: Also track for simple conversation branch creation
+                      trackConversationFile(filePath);
+                    });
+                  }
                   
                   // Prioritize build and test success over general tool execution
                   if (detectBuildSuccess(toolUseContent.name, result)) {
@@ -727,6 +850,7 @@ Format: Only output the title, no quotes or explanation`
     error,
     handleSendMessage,
     cancelCurrentCall,
-    clearError
+    clearError,
+    manualCreateBranch // Expose the manual branch creation function
   };
 };

@@ -300,8 +300,8 @@ export class PreRunBranchManager {
   private async createBranch(branchName: string): Promise<void> {
     try {
       await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git checkout -b "${branchName}"` 
+        action_json: {
+          command: `cd "${this.projectPath}" && git checkout -b "${branchName}"`
         }
       });
     } catch (error) {
@@ -316,22 +316,22 @@ export class PreRunBranchManager {
     try {
       // Add all changes
       await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git add -A` 
+        action_json: {
+          command: `cd "${this.projectPath}" && git add -A`
         }
       });
 
       // Commit with message (allow empty commits for branch creation)
       await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git commit -m "${message}" --allow-empty` 
+        action_json: {
+          command: `cd "${this.projectPath}" && git commit -m "${message}" --allow-empty`
         }
       });
 
       // Get commit hash
       const hashResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git rev-parse HEAD` 
+        action_json: {
+          command: `cd "${this.projectPath}" && git rev-parse HEAD`
         }
       });
 

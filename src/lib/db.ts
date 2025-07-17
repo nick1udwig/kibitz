@@ -1,12 +1,20 @@
-import { Project, ConversationBrief } from '../components/LlmChat/context/types';
+import { Project, ConversationBrief, WorkspaceMapping, WorkspacePersistenceSchema, ConversationMigrationInfo, AutoCommitBranch, BranchRevert, AutoCommitAgentStatus, ConversationBranchHistory } from '../components/LlmChat/context/types';
 import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
 import { DEFAULT_PROJECT_SETTINGS } from '../stores/rootStore';
 import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
+import { 
+  generateWorkspaceId, 
+  generateWorkspacePath, 
+  createWorkspaceMapping, 
+  addWorkspaceToConversation,
+  createDefaultWorkspaceSettings,
+  logWorkspaceOperation
+} from './conversationWorkspaceService';
 
 const DB_NAME = 'kibitz_db';
-export const DB_VERSION = 8;
+export const DB_VERSION = 10; // 🌟 UPDATED: Version 10 for auto-commit branch support
 
 interface DbState {
   projects: Project[];
@@ -14,11 +22,17 @@ interface DbState {
   activeConversationId: string | null;
 }
 
+// 🌟 NEW: Extended database state with workspace information
+interface ExtendedDbState extends DbState {
+  workspaceMappings: WorkspaceMapping[];
+  workspaceSettings: Record<string, any>;
+}
+
 interface KibitzDb extends IDBDatabase {
   createObjectStore(name: string, options?: IDBObjectStoreParameters): IDBObjectStore;
 }
 
-const initDb = async (): Promise<KibitzDb> => {
+export const initDb = async (): Promise<KibitzDb> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -48,7 +62,8 @@ const initDb = async (): Promise<KibitzDb> => {
         projectStore.createIndex('settings.systemPrompt', 'settings.systemPrompt');
         projectStore.createIndex('conversations.name', 'conversations.name', { multiEntry: true });
         projectStore.createIndex('conversations.messages.content', 'conversations.messages.content', { multiEntry: true });
-      } else if (event.oldVersion < 2) {
+      }
+      if (event.oldVersion < 2) {
         // Adding the order index in version 2
         const transaction = (event.target as IDBOpenDBRequest).transaction;
         if (!transaction) {
@@ -74,11 +89,15 @@ const initDb = async (): Promise<KibitzDb> => {
             cursor.continue();
           }
         };
-      } else if (event.oldVersion < 3) {
+      }
+      if (event.oldVersion < 3) {
         // Move MCP servers to a separate object store
-        const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
-        mcpStore.createIndex('name', 'name');
-      } else if (event.oldVersion < 4) {
+        if (!db.objectStoreNames.contains('mcpServers')) {
+          const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
+          mcpStore.createIndex('name', 'name');
+        }
+      }
+      if (event.oldVersion < 4) {
         // Add provider field and separate API keys to existing projects
         const transaction = (event.target as IDBOpenDBRequest).transaction;
         if (!transaction) {
@@ -149,7 +168,8 @@ const initDb = async (): Promise<KibitzDb> => {
         projectStore.openCursor().onerror = (error) => {
           console.error('Error during v4 migration:', error);
         };
-      } else if (event.oldVersion < 5) {
+      }
+      if (event.oldVersion < 5) {
         // Add new providerConfig field to existing projects
         const transaction = (event.target as IDBOpenDBRequest).transaction;
         if (!transaction) {
@@ -185,7 +205,8 @@ const initDb = async (): Promise<KibitzDb> => {
         projectStore.openCursor().onerror = (error) => {
           console.error('Error during v5 migration:', error);
         };
-      } else if (event.oldVersion < 6) {
+      }
+      if (event.oldVersion < 6) {
         // Migrate messages to GenericMessage format
         const transaction = (event.target as IDBOpenDBRequest).transaction;
         if (!transaction) {
@@ -244,7 +265,8 @@ const initDb = async (): Promise<KibitzDb> => {
         projectStore.openCursor().onerror = (error) => {
           console.error('Error during v6 migration:', error);
         };
-      } else if (event.oldVersion < 7) {
+      }
+      if (event.oldVersion < 7) {
         // Add savedPrompts array to existing projects
         const transaction = (event.target as IDBOpenDBRequest).transaction;
         if (!transaction) {
@@ -278,6 +300,231 @@ const initDb = async (): Promise<KibitzDb> => {
         projectStore.openCursor().onerror = (error) => {
           console.error('Error during v7 migration:', error);
         };
+      }
+      if (event.oldVersion < 8) {
+        // Migration for version 8 - Add any missing fields
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during upgrade');
+          return;
+        }
+        const projectStore = transaction.objectStore('projects');
+
+        // Migrate existing projects
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const project = cursor.value;
+
+            try {
+              // Version 8 migration logic (if any)
+              cursor.update(project);
+            } catch (error) {
+              console.error('Error updating project during v8 migration:', error);
+            }
+            cursor.continue();
+          }
+        };
+
+        // Add error handling for the cursor operation
+        projectStore.openCursor().onerror = (error) => {
+          console.error('Error during v8 migration:', error);
+        };
+      }
+      if (event.oldVersion < 9) {
+        // 🌟 NEW: Version 9 - Add workspace support
+        logWorkspaceOperation('DATABASE_MIGRATION_V9', { oldVersion: event.oldVersion, newVersion: 9 });
+
+        // Create workspace mappings table
+        let workspaceStore: IDBObjectStore | undefined;
+        if (!db.objectStoreNames.contains('workspaceMappings')) {
+          workspaceStore = db.createObjectStore('workspaceMappings', { keyPath: 'workspaceId' });
+          workspaceStore.createIndex('conversationId', 'conversationId');
+          workspaceStore.createIndex('projectId', 'projectId');
+          workspaceStore.createIndex('workspaceStatus', 'workspaceStatus');
+          workspaceStore.createIndex('lastAccessedAt', 'lastAccessedAt');
+        }
+
+        // Create conversation settings table
+        let conversationSettingsStore: IDBObjectStore | undefined;
+        if (!db.objectStoreNames.contains('conversationSettings')) {
+          conversationSettingsStore = db.createObjectStore('conversationSettings', { keyPath: 'conversationId' });
+          conversationSettingsStore.createIndex('projectId', 'projectId');
+        }
+
+        // Create workspace backups table
+        if (!db.objectStoreNames.contains('workspaceBackups')) {
+          const workspaceBackupsStore = db.createObjectStore('workspaceBackups', { keyPath: 'workspaceId' });
+          workspaceBackupsStore.createIndex('createdAt', 'createdAt');
+        }
+
+        // Create workspace usage stats table
+        let workspaceStatsStore: IDBObjectStore | undefined;
+        if (!db.objectStoreNames.contains('workspaceStats')) {
+          workspaceStatsStore = db.createObjectStore('workspaceStats', { keyPath: 'id' });
+        }
+
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (!transaction) {
+          console.error('No transaction available during v9 upgrade');
+          return;
+        }
+        const projectStore = transaction.objectStore('projects');
+
+        // Migrate existing projects and conversations to workspace-aware format
+        projectStore.openCursor().onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const project = cursor.value;
+            let hasChanges = false;
+
+            // Add workspace-related fields to project
+            if (!project.workspaceIsolationEnabled) {
+              project.workspaceIsolationEnabled = false;
+              hasChanges = true;
+            }
+            if (!project.defaultWorkspaceSettings) {
+              project.defaultWorkspaceSettings = createDefaultWorkspaceSettings();
+              hasChanges = true;
+            }
+
+            // Migrate conversations to workspace format
+            if (project.conversations && Array.isArray(project.conversations)) {
+              project.conversations = project.conversations.map((conversation: ConversationBrief) => {
+                if (!conversation.workspaceId) {
+                  // Create workspace mapping for existing conversations
+                  const workspaceMapping = createWorkspaceMapping(
+                    conversation.id,
+                    project.id,
+                    conversation.name,
+                    { initializeGit: false }
+                  );
+
+                  // Add workspace to conversation
+                  const updatedConversation = addWorkspaceToConversation(conversation, workspaceMapping);
+                  
+                  // Store workspace mapping
+                  if (workspaceStore) {
+                    workspaceStore.add(workspaceMapping);
+                  }
+                  
+                  // Store conversation settings
+                  if (conversationSettingsStore) {
+                                        conversationSettingsStore.add({
+                      conversationId: conversation.id,
+                      projectId: project.id,
+                      settings: updatedConversation.settings || createDefaultWorkspaceSettings()
+                    });
+                  }
+
+                  logWorkspaceOperation('CONVERSATION_MIGRATION', {
+                    conversationId: conversation.id,
+                    projectId: project.id,
+                    workspaceId: workspaceMapping.workspaceId,
+                    workspacePath: workspaceMapping.workspacePath
+                  });
+
+                  hasChanges = true;
+                  return updatedConversation;
+                }
+                return conversation;
+              });
+            }
+
+            if (hasChanges) {
+              try {
+                cursor.update(project);
+              } catch (error) {
+                console.error('Error updating project during v9 migration:', error);
+              }
+            }
+            cursor.continue();
+          }
+        };
+
+        // Add error handling for the cursor operation
+        projectStore.openCursor().onerror = (error) => {
+          console.error('Error during v9 migration:', error);
+        };
+
+        // Initialize workspace statistics
+        if (workspaceStatsStore) {
+          workspaceStatsStore.add({
+          id: 'global',
+          totalWorkspaces: 0,
+          activeWorkspaces: 0,
+          archivedWorkspaces: 0,
+          totalSizeInBytes: 0,
+          averageWorkspaceSize: 0,
+          oldestWorkspace: new Date(),
+          newestWorkspace: new Date(),
+          mostUsedWorkspace: { workspaceId: '', accessCount: 0 },
+          lastUpdated: new Date()
+        });
+        }
+
+        logWorkspaceOperation('DATABASE_MIGRATION_V9_COMPLETE', { 
+          tablesCreated: ['workspaceMappings', 'conversationSettings', 'workspaceBackups', 'workspaceStats']
+        });
+      }
+      if (event.oldVersion < 10) {
+        // 🌟 NEW: Version 10 - Add auto-commit branch support
+        logWorkspaceOperation('DATABASE_MIGRATION_V10', { oldVersion: event.oldVersion, newVersion: 10 });
+
+        // Create auto-commit branches table
+        let branchesStore: IDBObjectStore | undefined;
+        if (!db.objectStoreNames.contains('autoCommitBranches')) {
+          branchesStore = db.createObjectStore('autoCommitBranches', { keyPath: 'branchId' });
+          branchesStore.createIndex('conversationId', 'conversationId');
+          branchesStore.createIndex('projectId', 'projectId');
+          branchesStore.createIndex('branchName', 'branchName');
+          branchesStore.createIndex('createdAt', 'createdAt');
+          branchesStore.createIndex('isAutoCommit', 'isAutoCommit');
+        }
+
+        // Create branch reverts table
+        if (!db.objectStoreNames.contains('branchReverts')) {
+          const revertsStore = db.createObjectStore('branchReverts', { keyPath: 'revertId' });
+          revertsStore.createIndex('conversationId', 'conversationId');
+          revertsStore.createIndex('projectId', 'projectId');
+          revertsStore.createIndex('sourceBranchId', 'sourceBranchId');
+          revertsStore.createIndex('targetBranchId', 'targetBranchId');
+          revertsStore.createIndex('revertedAt', 'revertedAt');
+          revertsStore.createIndex('revertStatus', 'revertStatus');
+        }
+
+        // Create auto-commit agent status table
+        let agentStatusStore: IDBObjectStore | undefined;
+        if (!db.objectStoreNames.contains('autoCommitAgentStatus')) {
+          agentStatusStore = db.createObjectStore('autoCommitAgentStatus', { keyPath: 'id' });
+        }
+
+        // Create branch history table
+        if (!db.objectStoreNames.contains('branchHistory')) {
+          const branchHistoryStore = db.createObjectStore('branchHistory', { keyPath: 'conversationId' });
+          branchHistoryStore.createIndex('projectId', 'projectId');
+          branchHistoryStore.createIndex('totalBranches', 'totalBranches');
+          branchHistoryStore.createIndex('oldestBranch', 'oldestBranch');
+          branchHistoryStore.createIndex('newestBranch', 'newestBranch');
+        }
+
+        // Initialize auto-commit agent status
+        if (agentStatusStore) {
+          agentStatusStore.add({
+          id: 'global',
+          isRunning: false,
+          totalBranchesCreated: 0,
+          totalCommits: 0,
+          totalReverts: 0,
+          currentInterval: 3, // 3 minutes default
+          errors: [],
+          lastUpdated: new Date()
+        });
+        }
+
+        logWorkspaceOperation('DATABASE_MIGRATION_V10_COMPLETE', { 
+          tablesCreated: ['autoCommitBranches', 'branchReverts', 'autoCommitAgentStatus', 'branchHistory']
+        });
       }
     };
   });
@@ -332,6 +579,585 @@ export const loadState = async (): Promise<DbState> => {
         activeProjectId: state.activeProjectId || null,
         activeConversationId: state.activeConversationId || null
       });
+    };
+
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Load workspace mappings from database
+export const loadWorkspaceMappings = async (): Promise<WorkspaceMapping[]> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['workspaceMappings'], 'readonly');
+    const workspaceStore = transaction.objectStore('workspaceMappings');
+    const workspaces: WorkspaceMapping[] = [];
+
+    workspaceStore.openCursor().onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor) {
+        // Convert date strings back to Date objects
+        const workspace = cursor.value;
+        workspace.createdAt = new Date(workspace.createdAt);
+        workspace.lastAccessedAt = new Date(workspace.lastAccessedAt);
+        if (workspace.lastBackupAt) {
+          workspace.lastBackupAt = new Date(workspace.lastBackupAt);
+        }
+        workspaces.push(workspace);
+        cursor.continue();
+      }
+    };
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('WORKSPACE_MAPPINGS_LOADED', { count: workspaces.length });
+      resolve(workspaces);
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Save workspace mappings to database
+export const saveWorkspaceMappings = async (workspaces: WorkspaceMapping[]): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['workspaceMappings'], 'readwrite');
+    const workspaceStore = transaction.objectStore('workspaceMappings');
+
+    // Clear existing mappings
+    workspaceStore.clear();
+
+    // Save all workspace mappings
+    workspaces.forEach(workspace => {
+      const sanitizedWorkspace = {
+        ...workspace,
+        createdAt: workspace.createdAt.toISOString(),
+        lastAccessedAt: workspace.lastAccessedAt.toISOString(),
+        lastBackupAt: workspace.lastBackupAt?.toISOString()
+      };
+      workspaceStore.add(sanitizedWorkspace);
+    });
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('WORKSPACE_MAPPINGS_SAVED', { count: workspaces.length });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Load conversation settings from database
+export const loadConversationSettings = async (): Promise<Record<string, any>> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['conversationSettings'], 'readonly');
+    const settingsStore = transaction.objectStore('conversationSettings');
+    const settings: Record<string, any> = {};
+
+    settingsStore.openCursor().onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor) {
+        settings[cursor.value.conversationId] = cursor.value.settings;
+        cursor.continue();
+      }
+    };
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('CONVERSATION_SETTINGS_LOADED', { count: Object.keys(settings).length });
+      resolve(settings);
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Save conversation settings to database
+export const saveConversationSettings = async (settings: Record<string, any>): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['conversationSettings'], 'readwrite');
+    const settingsStore = transaction.objectStore('conversationSettings');
+
+    // Clear existing settings
+    settingsStore.clear();
+
+    // Save all conversation settings
+    Object.entries(settings).forEach(([conversationId, settingsData]) => {
+      settingsStore.add({
+        conversationId,
+        settings: settingsData
+      });
+    });
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('CONVERSATION_SETTINGS_SAVED', { count: Object.keys(settings).length });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Get workspace mapping by conversation ID
+export const getWorkspaceByConversationId = async (conversationId: string): Promise<WorkspaceMapping | null> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['workspaceMappings'], 'readonly');
+    const workspaceStore = transaction.objectStore('workspaceMappings');
+    const index = workspaceStore.index('conversationId');
+
+    index.get(conversationId).onsuccess = (event) => {
+      const result = (event.target as IDBRequest).result;
+      if (result) {
+        // Convert date strings back to Date objects
+        result.createdAt = new Date(result.createdAt);
+        result.lastAccessedAt = new Date(result.lastAccessedAt);
+        if (result.lastBackupAt) {
+          result.lastBackupAt = new Date(result.lastBackupAt);
+        }
+        resolve(result);
+      } else {
+        resolve(null);
+      }
+    };
+
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Update workspace mapping
+export const updateWorkspaceMapping = async (workspaceMapping: WorkspaceMapping): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['workspaceMappings'], 'readwrite');
+    const workspaceStore = transaction.objectStore('workspaceMappings');
+
+    const sanitizedWorkspace = {
+      ...workspaceMapping,
+      createdAt: workspaceMapping.createdAt.toISOString(),
+      lastAccessedAt: workspaceMapping.lastAccessedAt.toISOString(),
+      lastBackupAt: workspaceMapping.lastBackupAt?.toISOString()
+    };
+
+    workspaceStore.put(sanitizedWorkspace);
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('WORKSPACE_MAPPING_UPDATED', { 
+        workspaceId: workspaceMapping.workspaceId,
+        conversationId: workspaceMapping.conversationId 
+      });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Delete workspace mapping
+export const deleteWorkspaceMapping = async (workspaceId: string): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['workspaceMappings', 'conversationSettings'], 'readwrite');
+    const workspaceStore = transaction.objectStore('workspaceMappings');
+    const settingsStore = transaction.objectStore('conversationSettings');
+
+    // First get the workspace mapping to find conversationId
+    workspaceStore.get(workspaceId).onsuccess = (event) => {
+      const workspace = (event.target as IDBRequest).result;
+      if (workspace) {
+        // Delete workspace mapping
+        workspaceStore.delete(workspaceId);
+        
+        // Delete associated conversation settings
+        settingsStore.delete(workspace.conversationId);
+        
+        logWorkspaceOperation('WORKSPACE_MAPPING_DELETED', { 
+          workspaceId,
+          conversationId: workspace.conversationId 
+        });
+      }
+    };
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Get workspace statistics
+export const getWorkspaceStats = async (): Promise<any> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['workspaceStats'], 'readonly');
+    const statsStore = transaction.objectStore('workspaceStats');
+
+    statsStore.get('global').onsuccess = (event) => {
+      const result = (event.target as IDBRequest).result;
+      if (result) {
+        resolve(result);
+      } else {
+        // Return default stats if none exist
+        resolve({
+          id: 'global',
+          totalWorkspaces: 0,
+          activeWorkspaces: 0,
+          archivedWorkspaces: 0,
+          totalSizeInBytes: 0,
+          averageWorkspaceSize: 0,
+          oldestWorkspace: new Date(),
+          newestWorkspace: new Date(),
+          mostUsedWorkspace: { workspaceId: '', accessCount: 0 },
+          lastUpdated: new Date()
+        });
+      }
+    };
+
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Update workspace statistics
+export const updateWorkspaceStats = async (stats: any): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['workspaceStats'], 'readwrite');
+    const statsStore = transaction.objectStore('workspaceStats');
+
+    const sanitizedStats = {
+      ...stats,
+      lastUpdated: new Date().toISOString()
+    };
+
+    statsStore.put(sanitizedStats);
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('WORKSPACE_STATS_UPDATED', { stats: sanitizedStats });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// 🌟 NEW: Auto-commit branch persistence functions
+
+// Save auto-commit branch
+export const saveAutoCommitBranch = async (branch: AutoCommitBranch): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['autoCommitBranches'], 'readwrite');
+    const branchesStore = transaction.objectStore('autoCommitBranches');
+
+    const sanitizedBranch = {
+      ...branch,
+      createdAt: branch.createdAt.toISOString(),
+      workspaceSnapshot: branch.workspaceSnapshot ? {
+        ...branch.workspaceSnapshot,
+        lastModified: branch.workspaceSnapshot.lastModified.toISOString()
+      } : undefined
+    };
+
+    branchesStore.put(sanitizedBranch);
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('AUTO_COMMIT_BRANCH_SAVED', { 
+        branchId: branch.branchId,
+        branchName: branch.branchName,
+        conversationId: branch.conversationId
+      });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Load auto-commit branches by conversation
+export const loadAutoCommitBranches = async (conversationId: string): Promise<AutoCommitBranch[]> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['autoCommitBranches'], 'readonly');
+    const branchesStore = transaction.objectStore('autoCommitBranches');
+    const index = branchesStore.index('conversationId');
+    const branches: AutoCommitBranch[] = [];
+
+    index.openCursor(IDBKeyRange.only(conversationId)).onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor) {
+        const branch = cursor.value;
+        // Convert date strings back to Date objects
+        branch.createdAt = new Date(branch.createdAt);
+        if (branch.workspaceSnapshot) {
+          branch.workspaceSnapshot.lastModified = new Date(branch.workspaceSnapshot.lastModified);
+        }
+        branches.push(branch);
+        cursor.continue();
+      }
+    };
+
+    transaction.oncomplete = () => {
+      // Sort branches by creation date (newest first)
+      branches.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      logWorkspaceOperation('AUTO_COMMIT_BRANCHES_LOADED', { 
+        conversationId,
+        count: branches.length
+      });
+      resolve(branches);
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Load all auto-commit branches for a project
+export const loadAutoCommitBranchesByProject = async (projectId: string): Promise<AutoCommitBranch[]> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['autoCommitBranches'], 'readonly');
+    const branchesStore = transaction.objectStore('autoCommitBranches');
+    const index = branchesStore.index('projectId');
+    const branches: AutoCommitBranch[] = [];
+
+    index.openCursor(IDBKeyRange.only(projectId)).onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor) {
+        const branch = cursor.value;
+        // Convert date strings back to Date objects
+        branch.createdAt = new Date(branch.createdAt);
+        if (branch.workspaceSnapshot) {
+          branch.workspaceSnapshot.lastModified = new Date(branch.workspaceSnapshot.lastModified);
+        }
+        branches.push(branch);
+        cursor.continue();
+      }
+    };
+
+    transaction.oncomplete = () => {
+      // Sort branches by creation date (newest first)
+      branches.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      logWorkspaceOperation('AUTO_COMMIT_BRANCHES_BY_PROJECT_LOADED', { 
+        projectId,
+        count: branches.length
+      });
+      resolve(branches);
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Delete auto-commit branch
+export const deleteAutoCommitBranch = async (branchId: string): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['autoCommitBranches'], 'readwrite');
+    const branchesStore = transaction.objectStore('autoCommitBranches');
+
+    branchesStore.delete(branchId);
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('AUTO_COMMIT_BRANCH_DELETED', { branchId });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Save branch revert
+export const saveBranchRevert = async (revert: BranchRevert): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['branchReverts'], 'readwrite');
+    const revertsStore = transaction.objectStore('branchReverts');
+
+    const sanitizedRevert = {
+      ...revert,
+      revertedAt: revert.revertedAt.toISOString()
+    };
+
+    revertsStore.put(sanitizedRevert);
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('BRANCH_REVERT_SAVED', { 
+        revertId: revert.revertId,
+        sourceBranchId: revert.sourceBranchId,
+        targetBranchId: revert.targetBranchId
+      });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Load branch reverts by conversation
+export const loadBranchReverts = async (conversationId: string): Promise<BranchRevert[]> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['branchReverts'], 'readonly');
+    const revertsStore = transaction.objectStore('branchReverts');
+    const index = revertsStore.index('conversationId');
+    const reverts: BranchRevert[] = [];
+
+    index.openCursor(IDBKeyRange.only(conversationId)).onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor) {
+        const revert = cursor.value;
+        // Convert date strings back to Date objects
+        revert.revertedAt = new Date(revert.revertedAt);
+        reverts.push(revert);
+        cursor.continue();
+      }
+    };
+
+    transaction.oncomplete = () => {
+      // Sort reverts by revert date (newest first)
+      reverts.sort((a, b) => b.revertedAt.getTime() - a.revertedAt.getTime());
+      logWorkspaceOperation('BRANCH_REVERTS_LOADED', { 
+        conversationId,
+        count: reverts.length
+      });
+      resolve(reverts);
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Get auto-commit agent status
+export const getAutoCommitAgentStatus = async (): Promise<AutoCommitAgentStatus> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['autoCommitAgentStatus'], 'readonly');
+    const statusStore = transaction.objectStore('autoCommitAgentStatus');
+
+    statusStore.get('global').onsuccess = (event) => {
+      const result = (event.target as IDBRequest).result;
+      if (result) {
+        // Convert date strings back to Date objects
+        if (result.lastRunAt) {
+          result.lastRunAt = new Date(result.lastRunAt);
+        }
+        if (result.nextRunAt) {
+          result.nextRunAt = new Date(result.nextRunAt);
+        }
+        resolve(result);
+      } else {
+        // Return default status if none exists
+        resolve({
+          isRunning: false,
+          totalBranchesCreated: 0,
+          totalCommits: 0,
+          totalReverts: 0,
+          currentInterval: 3,
+          errors: []
+        });
+      }
+    };
+
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Update auto-commit agent status
+export const updateAutoCommitAgentStatus = async (status: AutoCommitAgentStatus): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['autoCommitAgentStatus'], 'readwrite');
+    const statusStore = transaction.objectStore('autoCommitAgentStatus');
+
+    const sanitizedStatus = {
+      ...status,
+      id: 'global',
+      lastRunAt: status.lastRunAt?.toISOString(),
+      nextRunAt: status.nextRunAt?.toISOString(),
+      lastUpdated: new Date().toISOString()
+    };
+
+    statusStore.put(sanitizedStatus);
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('AUTO_COMMIT_AGENT_STATUS_UPDATED', { 
+        isRunning: status.isRunning,
+        totalBranchesCreated: status.totalBranchesCreated
+      });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Save conversation branch history
+export const saveConversationBranchHistory = async (history: ConversationBranchHistory): Promise<void> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['branchHistory'], 'readwrite');
+    const historyStore = transaction.objectStore('branchHistory');
+
+    const sanitizedHistory = {
+      ...history,
+      branches: history.branches.map(branch => ({
+        ...branch,
+        createdAt: branch.createdAt.toISOString(),
+        workspaceSnapshot: branch.workspaceSnapshot ? {
+          ...branch.workspaceSnapshot,
+          lastModified: branch.workspaceSnapshot.lastModified.toISOString()
+        } : undefined
+      })),
+      oldestBranch: history.oldestBranch?.toISOString(),
+      newestBranch: history.newestBranch?.toISOString()
+    };
+
+    historyStore.put(sanitizedHistory);
+
+    transaction.oncomplete = () => {
+      logWorkspaceOperation('CONVERSATION_BRANCH_HISTORY_SAVED', { 
+        conversationId: history.conversationId,
+        totalBranches: history.totalBranches
+      });
+      resolve();
+    };
+    transaction.onerror = () => reject(transaction.error);
+  });
+};
+
+// Load conversation branch history
+export const loadConversationBranchHistory = async (conversationId: string): Promise<ConversationBranchHistory | null> => {
+  const db = await initDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(['branchHistory'], 'readonly');
+    const historyStore = transaction.objectStore('branchHistory');
+
+    historyStore.get(conversationId).onsuccess = (event) => {
+      const result = (event.target as IDBRequest).result;
+      if (result) {
+        // Convert date strings back to Date objects
+        result.branches = result.branches.map((branch: any) => ({
+          ...branch,
+          createdAt: new Date(branch.createdAt),
+          workspaceSnapshot: branch.workspaceSnapshot ? {
+            ...branch.workspaceSnapshot,
+            lastModified: new Date(branch.workspaceSnapshot.lastModified)
+          } : undefined
+        }));
+        if (result.oldestBranch) {
+          result.oldestBranch = new Date(result.oldestBranch);
+        }
+        if (result.newestBranch) {
+          result.newestBranch = new Date(result.newestBranch);
+        }
+        resolve(result);
+      } else {
+        resolve(null);
+      }
     };
 
     transaction.onerror = () => reject(transaction.error);

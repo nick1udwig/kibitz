@@ -208,41 +208,70 @@ export const detectToolSuccess = (toolName: string, toolOutput: string): boolean
   const toolNameLower = toolName.toLowerCase();
   const outputLower = toolOutput.toLowerCase();
   
-  // File creation/modification tools
-  if (toolNameLower.includes('write') || toolNameLower.includes('create') || toolNameLower.includes('edit')) {
-    return !outputLower.includes('error') && 
-           !outputLower.includes('failed') && 
-           !outputLower.includes('permission denied');
+  // 🔧 DEBUG: Log all tool executions for debugging
+  console.log(`🔍 detectToolSuccess: Checking tool "${toolName}" with output length: ${toolOutput.length}`);
+  console.log(`🔍 detectToolSuccess: Tool name lowercase: "${toolNameLower}"`);
+  console.log(`🔍 detectToolSuccess: Output preview: "${toolOutput.substring(0, 200)}..."`);
+  
+  // File creation/modification tools (expanded patterns)
+  if (toolNameLower.includes('write') || 
+      toolNameLower.includes('create') || 
+      toolNameLower.includes('edit') ||
+      toolNameLower.includes('file') ||
+      toolNameLower.includes('bash') ||
+      toolNameLower.includes('command')) {
+    
+    const hasError = outputLower.includes('error') || 
+                     outputLower.includes('failed') || 
+                     outputLower.includes('permission denied') ||
+                     outputLower.includes('cannot') ||
+                     outputLower.includes('fatal');
+    
+    const isSuccess = !hasError;
+    console.log(`🔍 detectToolSuccess: File/Command tool "${toolName}" -> Success: ${isSuccess} (hasError: ${hasError})`);
+    return isSuccess;
   }
   
   // Build tools
   if (toolNameLower.includes('build') || toolNameLower.includes('compile') || toolNameLower.includes('npm') || toolNameLower.includes('yarn')) {
-    return outputLower.includes('success') || 
+    const isSuccess = (outputLower.includes('success') || 
            outputLower.includes('built') || 
            outputLower.includes('completed successfully') ||
            outputLower.includes('✓') ||
-           (outputLower.includes('completed') && !outputLower.includes('error'));
+           (outputLower.includes('completed') && !outputLower.includes('error'))) &&
+           !outputLower.includes('error') && !outputLower.includes('failed');
+    console.log(`🔍 detectToolSuccess: Build tool "${toolName}" -> Success: ${isSuccess}`);
+    return isSuccess;
   }
   
   // Test tools
   if (toolNameLower.includes('test') || toolNameLower.includes('jest') || toolNameLower.includes('pytest')) {
-    return (outputLower.includes('passed') || outputLower.includes('ok') || outputLower.includes('✓')) && 
+    const isSuccess = (outputLower.includes('passed') || outputLower.includes('ok') || outputLower.includes('✓')) && 
            !outputLower.includes('failed') && 
            !outputLower.includes('error');
+    console.log(`🔍 detectToolSuccess: Test tool "${toolName}" -> Success: ${isSuccess}`);
+    return isSuccess;
   }
   
   // Git operations
   if (toolNameLower.includes('git')) {
-    return !outputLower.includes('error') && 
+    const isSuccess = !outputLower.includes('error') && 
            !outputLower.includes('failed') && 
            !outputLower.includes('fatal');
+    console.log(`🔍 detectToolSuccess: Git tool "${toolName}" -> Success: ${isSuccess}`);
+    return isSuccess;
   }
   
-  // Default: assume success if no error indicators
-  return !outputLower.includes('error') && 
+  // Default: assume success if no error indicators (more permissive)
+  const isSuccess = !outputLower.includes('error') && 
          !outputLower.includes('failed') && 
          !outputLower.includes('fatal') &&
-         !outputLower.includes('exception');
+         !outputLower.includes('exception') &&
+         !outputLower.includes('cannot') &&
+         !outputLower.includes('permission denied');
+  
+  console.log(`🔍 detectToolSuccess: Default tool "${toolName}" -> Success: ${isSuccess}`);
+  return isSuccess;
 };
 
 // 🔧 MISSING FUNCTION: Detect build success specifically
@@ -310,25 +339,74 @@ export const detectFileChanges = (toolName: string, toolOutput: string): string[
   const toolNameLower = toolName.toLowerCase();
   const outputLower = toolOutput.toLowerCase();
   
+  // 🔧 DEBUG: Log file detection attempts
+  console.log(`🔍 detectFileChanges: Analyzing tool "${toolName}" for file changes`);
+  console.log(`🔍 detectFileChanges: Output preview: "${toolOutput.substring(0, 300)}..."`);
+  
   // For file creation/modification tools, extract file names
-  if (toolNameLower.includes('write') || toolNameLower.includes('create') || toolNameLower.includes('edit')) {
+  if (toolNameLower.includes('write') || 
+      toolNameLower.includes('create') || 
+      toolNameLower.includes('edit') || 
+      toolNameLower.includes('file') ||
+      toolNameLower.includes('bash') ||
+      toolNameLower.includes('command')) {
+    
     const filePatterns = [
+      // Standard success messages
       /created?\s+(?:file\s+)?['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
       /wrote\s+(?:to\s+)?['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
       /modified\s+['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
       /updated\s+['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
-      /saved\s+(?:to\s+)?['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi
+      /saved\s+(?:to\s+)?['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
+      // FileWriteOrEdit specific patterns
+      /successfully\s+(?:created|wrote|saved)\s+['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?/gi,
+      /file\s+['"`]?([^'"`\s]+\.[a-zA-Z0-9]+)['"`]?\s+(?:has been|was)\s+(?:created|written|saved)/gi,
+      // Path-based patterns (more aggressive)
+      /(?:^|\s)([a-zA-Z0-9_/-]*[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)(?:\s|$|:)/g,
+      // Tool argument patterns (capture file_path arguments)
+      /"file_path":\s*"([^"]+)"/g,
+      /file_path.*?['"`]([^'"`]+)['"`]/gi,
+      // BashCommand file creation patterns
+      /echo.*?>\s*([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)/gi,
+      /cat\s*>\s*([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)/gi,
+      /touch\s+([a-zA-Z0-9_.-]+)/gi,
+      // Python file patterns (since user created .py files)
+      /([a-zA-Z0-9_-]+\.py)(?:\s|$|'|")/gi,
+      /([a-zA-Z0-9_-]+\.js)(?:\s|$|'|")/gi,
+      /([a-zA-Z0-9_-]+\.md)(?:\s|$|'|")/gi,
+      /([a-zA-Z0-9_-]+\.txt)(?:\s|$|'|")/gi
     ];
     
     const files: string[] = [];
-    filePatterns.forEach(pattern => {
+    filePatterns.forEach((pattern, index) => {
       let match;
+      let patternMatches = 0;
       while ((match = pattern.exec(toolOutput)) !== null) {
-        files.push(match[1]);
+        const filename = match[1];
+        // Filter out obviously non-file matches
+        if (filename && 
+            !filename.includes('http') && 
+            !filename.includes('://') &&
+            filename.includes('.') &&
+            filename.length < 100 &&
+            filename.length > 2) {
+          files.push(filename);
+          patternMatches++;
+        }
+      }
+      if (patternMatches > 0) {
+        console.log(`🔍 detectFileChanges: Pattern ${index} matched ${patternMatches} files`);
       }
     });
     
-    return [...new Set(files)]; // Remove duplicates
+    // Remove duplicates and clean up paths
+    const uniqueFiles = [...new Set(files)].map(file => {
+      // Remove any path prefixes, just keep the filename
+      return file.split('/').pop() || file;
+    });
+    
+    console.log(`🔍 detectFileChanges: Detected ${uniqueFiles.length} files from ${toolName}:`, uniqueFiles);
+    return uniqueFiles;
   }
   
   // For git tools, extract changed files
@@ -346,8 +424,11 @@ export const detectFileChanges = (toolName: string, toolOutput: string): string[
       }
     });
     
-    return [...new Set(files)];
+    const uniqueFiles = [...new Set(files)];
+    console.log(`🔍 detectFileChanges: Git detected ${uniqueFiles.length} files:`, uniqueFiles);
+    return uniqueFiles;
   }
-  
+
+  console.log(`🔍 detectFileChanges: No files detected for tool "${toolName}"`);
   return [];
 }; 

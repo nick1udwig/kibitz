@@ -135,8 +135,9 @@ export class ProjectCheckpointAPI {
         // Verify it's a git repository
         try {
           const gitCheck = await executeTool(serverId, 'BashCommand', {
-            command: `test -d "${projectPath}/.git" && echo "is_git" || echo "not_git"`,
-            type: 'command',
+            action_json: {
+              command: `test -d "${projectPath}/.git" && echo "is_git" || echo "not_git"`
+            },
             thread_id: requestId
           });
           isGitRepo = gitCheck.includes('is_git');

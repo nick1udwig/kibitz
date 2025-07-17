@@ -105,7 +105,8 @@ export const executeGitCommand = async (
       
       const result = await executeTool(serverId, 'BashCommand', {
         action_json: {
-          command: fullCommand
+          command: fullCommand,
+          type: 'command'
         },
         thread_id: threadId
       });

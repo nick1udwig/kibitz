@@ -8,6 +8,7 @@ import { pushToRemote, autoSetupGitHub, executeGitCommand } from '../lib/gitServ
 import { persistentStorage } from '../lib/persistentStorageService';
 import { getProjectPath } from '../lib/projectPathService';
 import { Checkpoint } from '../types/Checkpoint';
+import { logDebug, logAutoCommit, logFileChange } from '../lib/debugStorageService';
 
 export interface AutoCommitConfig {
   enabled: boolean;
@@ -76,14 +77,14 @@ const DEFAULT_CONFIG: AutoCommitConfig = {
   },
   conditions: {
     minimumChanges: 1, // Keep at 1 for responsiveness
-    delayAfterLastChange: 2000, // 2 seconds delay for debouncing
+    delayAfterLastChange: 3000, // 3 seconds delay for better batching of multiple files
     skipConsecutiveCommits: true,
     requiredKeywords: [], // No keyword filtering by default
   },
   commitMessageTemplate: 'Auto-commit: {trigger} - {summary}',
   autoInitGit: true,
   autoPushToRemote: false,
-  // 🌿 NEW: Enable auto-branch creation with lower thresholds
+  // 🌿 NEW: Enable auto-branch creation with 2-file threshold
   branchManagement: {
     enabled: true,
     fileThreshold: 2, // Create branch when 2+ files change (as requested by user)
@@ -156,8 +157,20 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
     console.log('📋 Last commit timestamp:', lastCommitTimestamp);
     console.log('📋 Pending changes:', pendingChanges.size);
     
+    // 🔍 Debug logging
+    logDebug('info', 'auto-commit', 'Auto-commit check starting', {
+      config,
+      context,
+      lastCommitTimestamp,
+      pendingChangesCount: pendingChanges.size,
+      pendingChangesList: Array.from(pendingChanges),
+      isProcessing,
+      activeOperationsCount: activeOperations.size
+    }, context.projectId);
+    
     if (!config.enabled) {
       console.log('❌ shouldAutoCommit: config.enabled is false');
+      logDebug('warn', 'auto-commit', 'Auto-commit disabled in config', { config }, context.projectId);
       return false;
     }
     
@@ -215,9 +228,18 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
     console.log(`🔍 Checking minimum changes: ${pendingChanges.size} >= ${config.conditions.minimumChanges}`);
     if (pendingChanges.size < config.conditions.minimumChanges) {
       console.log('❌ shouldAutoCommit: not enough pending changes');
+      logDebug('warn', 'auto-commit', 'Not enough pending changes for auto-commit', {
+        pendingChangesCount: pendingChanges.size,
+        requiredMinimum: config.conditions.minimumChanges,
+        pendingChangesList: Array.from(pendingChanges)
+      }, context.projectId);
       return false;
     }
     console.log('✅ shouldAutoCommit: minimum changes satisfied');
+    logDebug('info', 'auto-commit', 'Minimum changes satisfied', {
+      pendingChangesCount: pendingChanges.size,
+      requiredMinimum: config.conditions.minimumChanges
+    }, context.projectId);
     
     // Check consecutive commits
     if (config.conditions.skipConsecutiveCommits && lastCommitTimestamp) {
@@ -236,7 +258,15 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
 
   executeAutoCommit: async (context: AutoCommitContext) => {
     console.log('🚀 executeAutoCommit starting with context:', context);
-    const { config, activeOperations } = get();
+    const { config, activeOperations, pendingChanges } = get();
+    
+    // 🔍 Debug logging
+    logDebug('info', 'auto-commit', 'Starting auto-commit execution', {
+      context,
+      pendingChangesCount: pendingChanges.size,
+      pendingChangesList: Array.from(pendingChanges),
+      config: config
+    }, context.projectId);
     
     // 🔒 IMPROVED: Check if operation already active for this project
     if (activeOperations.has(context.projectId)) {
@@ -333,54 +363,72 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
         if (config.branchManagement?.enabled) {
           try {
             console.log('🔍 executeAutoCommit: Checking if auto-branch should be created post-commit...');
+            console.log(`🔍 executeAutoCommit: Pending changes count: ${pendingChanges.size}`);
             
-            // Get the commit details to count files
-            const commitStatsResult = await executeGitCommand(
-              mcpServerId,
-              `git show --stat --format="" ${commitHash}`,
-              context.projectPath,
-              rootStore.executeTool
-            );
+            // Check threshold based on pending changes first (for immediate tool executions)
+            const pendingFileCount = pendingChanges.size;
+            const threshold = config.branchManagement?.fileThreshold || 2;
             
-            if (commitStatsResult.success) {
-              const statsLines = commitStatsResult.output.trim().split('\n').filter(line => 
-                line.trim() && !line.includes('changed,') && !line.includes('insertion') && !line.includes('deletion')
+            let shouldCreateBranch = false;
+            let fileCount = 0;
+            
+            // Method 1: Check pending changes count (for multiple files in single tool execution)
+            if (pendingFileCount >= threshold) {
+              console.log(`✅ executeAutoCommit: Pending changes threshold met (${pendingFileCount} >= ${threshold})`);
+              shouldCreateBranch = true;
+              fileCount = pendingFileCount;
+            } else {
+              // Method 2: Check actual commit stats (fallback for git-detected changes)
+              const commitStatsResult = await executeGitCommand(
+                mcpServerId,
+                `git show --stat --format="" ${commitHash}`,
+                context.projectPath,
+                rootStore.executeTool
               );
-              const changedFileCount = statsLines.length;
-              const threshold = config.branchManagement?.fileThreshold || 3;
               
-              console.log(`🔍 executeAutoCommit: Commit shows ${changedFileCount} files changed, threshold: ${threshold}`);
-              console.log(`🔍 executeAutoCommit: Changed files:`, statsLines);
-              
-              if (changedFileCount >= threshold) {
-                console.log(`✅ executeAutoCommit: File threshold met (${changedFileCount} >= ${threshold}), creating post-commit auto-branch`);
-                
-                // Generate auto-branch name with timestamp
-                const timestamp = new Date();
-                const dateStr = timestamp.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
-                actualBranchName = `auto/${dateStr}`;
-                
-                console.log('🌿 executeAutoCommit: Creating post-commit auto-branch:', actualBranchName);
-                
-                // Create branch from current commit
-                const createBranchResult = await executeGitCommand(
-                  mcpServerId,
-                  `git checkout -b "${actualBranchName}"`,
-                  context.projectPath,
-                  rootStore.executeTool
+              if (commitStatsResult.success) {
+                const statsLines = commitStatsResult.output.trim().split('\n').filter(line => 
+                  line.trim() && !line.includes('changed,') && !line.includes('insertion') && !line.includes('deletion')
                 );
+                const changedFileCount = statsLines.length;
+                fileCount = changedFileCount;
                 
-                if (!createBranchResult.success) {
-                  console.warn('⚠️ executeAutoCommit: Failed to create post-commit auto-branch:', createBranchResult.error || createBranchResult.output);
-                  actualBranchName = null;
-                } else {
-                  console.log('✅ executeAutoCommit: Successfully created post-commit auto-branch:', actualBranchName);
+                console.log(`🔍 executeAutoCommit: Commit shows ${changedFileCount} files changed, threshold: ${threshold}`);
+                console.log(`🔍 executeAutoCommit: Changed files:`, statsLines);
+                
+                if (changedFileCount >= threshold) {
+                  console.log(`✅ executeAutoCommit: Commit file threshold met (${changedFileCount} >= ${threshold})`);
+                  shouldCreateBranch = true;
                 }
               } else {
-                console.log(`❌ executeAutoCommit: File threshold not met (${changedFileCount} < ${threshold}), no auto-branch needed`);
+                console.warn('⚠️ executeAutoCommit: Could not get commit stats for branch decision:', commitStatsResult.error);
+              }
+            }
+            
+            if (shouldCreateBranch) {
+              // Generate auto-branch name with timestamp
+              const timestamp = new Date();
+              const dateStr = timestamp.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+              actualBranchName = `auto/${dateStr}`;
+              
+              console.log(`🌿 executeAutoCommit: Creating auto-branch ${actualBranchName} for ${fileCount} files`);
+              
+              // Create branch from current commit
+              const createBranchResult = await executeGitCommand(
+                mcpServerId,
+                `git checkout -b "${actualBranchName}"`,
+                context.projectPath,
+                rootStore.executeTool
+              );
+              
+              if (!createBranchResult.success) {
+                console.warn('⚠️ executeAutoCommit: Failed to create post-commit auto-branch:', createBranchResult.error || createBranchResult.output);
+                actualBranchName = null;
+              } else {
+                console.log('✅ executeAutoCommit: Successfully created post-commit auto-branch:', actualBranchName);
               }
             } else {
-              console.warn('⚠️ executeAutoCommit: Could not get commit stats for branch decision:', commitStatsResult.error);
+              console.log(`❌ executeAutoCommit: File threshold not met (pending: ${pendingFileCount}, commit: ${fileCount}, threshold: ${threshold}), no auto-branch needed`);
             }
           } catch (branchError) {
             console.warn('⚠️ executeAutoCommit: Error in post-commit branch creation:', branchError);
@@ -451,6 +499,24 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
         });
         
         console.log(`✅ executeAutoCommit: Auto-commit successful: ${finalCommitMessage} (${commitHash})`);
+        
+        // 🔍 Debug logging success
+        logAutoCommit(
+          context.projectId,
+          context.projectPath,
+          context.trigger,
+          context.toolName || 'unknown',
+          Array.from(pendingChanges),
+          true,
+          undefined,
+          commitHash,
+          actualBranchName || undefined
+        );
+        
+        // 🧹 Clear pending changes after successful commit
+        const { clearPendingChanges } = get();
+        clearPendingChanges();
+        console.log('🧹 Cleared pending changes after successful auto-commit');
         
         // 🔗 NEW: Trigger commit tracking integration for revert buttons
         try {
@@ -533,6 +599,24 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
         if (typeof error === 'object' && error !== null) {
           console.error('❌ executeAutoCommit: Error details:', error);
         }
+        
+        // 🔍 Debug logging failure
+        logAutoCommit(
+          context.projectId,
+          context.projectPath,
+          context.trigger,
+          context.toolName || 'unknown',
+          Array.from(pendingChanges),
+          false,
+          error instanceof Error ? error.message : String(error)
+        );
+        
+        logDebug('error', 'auto-commit', 'Auto-commit execution failed', {
+          context,
+          error: error instanceof Error ? error.message : String(error),
+          pendingChangesCount: pendingChanges.size
+        }, context.projectId);
+        
         return false;
       } finally {
         // Always clear the timeout and reset processing state
@@ -566,9 +650,28 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
 
   trackFileChange: (filePath: string) => {
     console.log('📁 trackFileChange: Adding file to pending changes:', filePath);
+    
+    // 🔍 Debug logging
+    const { activeProjectId } = useStore.getState();
+    logFileChange(
+      activeProjectId || 'unknown',
+      filePath,
+      'created',
+      'FileWriteOrEdit',
+      true
+    );
+    
     set(state => {
       const newPendingChanges = new Set([...state.pendingChanges, filePath]);
       console.log('📁 trackFileChange: Total pending changes:', newPendingChanges.size);
+      
+      // 🔍 Debug logging
+      logDebug('info', 'auto-commit', `File change tracked: ${filePath} (total: ${newPendingChanges.size})`, {
+        filePath,
+        totalPendingChanges: newPendingChanges.size,
+        allPendingChanges: Array.from(newPendingChanges)
+      }, activeProjectId || 'unknown');
+      
       return { pendingChanges: newPendingChanges };
     });
   },

@@ -66,26 +66,37 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
     projectNameType: typeof projectName
   });
   
+  // 🔧 CRITICAL FIX: Remove quotes from input parameters
+  const cleanProjectId = projectId?.replace(/"/g, '') || '';
+  const cleanProjectName = projectName?.replace(/"/g, '') || '';
+  const cleanCustomPath = customPath?.replace(/"/g, '') || '';
+  
+  console.log(`🔧 getProjectPath: Cleaned values:`, { 
+    cleanProjectId, 
+    cleanProjectName, 
+    cleanCustomPath 
+  });
+  
   // If custom path is provided (for cloned repos), use that
-  if (customPath) {
-    console.log(`🔧 getProjectPath: Using custom path: ${customPath}`);
-    return customPath;
+  if (cleanCustomPath && cleanCustomPath !== 'undefined' && cleanCustomPath.trim() !== '') {
+    console.log(`🔧 getProjectPath: Using custom path: ${cleanCustomPath}`);
+    return cleanCustomPath;
   }
   
   // 🚨 VALIDATION: Ensure project data is valid
-  if (!projectId || projectId.trim() === '') {
-    console.error(`❌ getProjectPath: Invalid projectId: "${projectId}"`);
-    throw new Error(`Invalid projectId: "${projectId}" - cannot generate project path`);
+  if (!cleanProjectId || cleanProjectId.trim() === '') {
+    console.error(`❌ getProjectPath: Invalid projectId: "${cleanProjectId}"`);
+    throw new Error(`Invalid projectId: "${cleanProjectId}" - cannot generate project path`);
   }
   
-  // Create project-specific subdirectories in the base projects directory
+  // Create project-specific subdirectories in the base projects directory  
   const baseDir = getCurrentWorkingDirectory();
-  const sanitizedName = projectName ? sanitizeProjectName(projectName) : 'project';
-  const fullPath = `${baseDir}/${projectId}_${sanitizedName}`;
+  const sanitizedName = cleanProjectName ? sanitizeProjectName(cleanProjectName) : 'project';
+  const fullPath = `${baseDir}/${cleanProjectId}_${sanitizedName}`;
   
   console.log(`🔧 getProjectPath: Generated path components:`, {
     baseDir,
-    projectId,
+    projectId: cleanProjectId,
     sanitizedName,
     fullPath
   });
@@ -93,7 +104,8 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
   // 🚨 VALIDATION: Ensure generated path is correct
   if (fullPath === baseDir || fullPath === `${baseDir}/`) {
     console.error(`❌ getProjectPath: Generated invalid path: "${fullPath}"`);
-    console.error(`❌ This indicates projectId or sanitizedName is empty`);
+    console.error(`❌ This indicates cleanProjectId or sanitizedName is empty`);
+    console.error(`❌ cleanProjectId: "${cleanProjectId}", sanitizedName: "${sanitizedName}"`);
     throw new Error(`Generated invalid project path: "${fullPath}" - check projectId and projectName`);
   }
   
@@ -127,7 +139,9 @@ export const detectClonedRepository = async (
   try {
     // Check if this is a Git repository with proper thread_id
     const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-      command: `test -d "${directoryPath}/.git" && echo "is_git_repo" || echo "not_git_repo"`,
+      action_json: {
+        command: `test -d "${directoryPath}/.git" && echo "is_git_repo" || echo "not_git_repo"`
+      },
       thread_id: `git-check-${Date.now()}`
     });
 
@@ -208,7 +222,9 @@ export const projectDirectoryExists = async (
     console.log(`🔍 projectDirectoryExists: Checking ${projectPath}`);
     
     const checkResult = await executeTool(mcpServerId, 'BashCommand', {
-      command: `test -d "${projectPath}" && echo "exists" || echo "not_exists"`,
+      action_json: {
+        command: `test -d "${projectPath}" && echo "exists" || echo "not_exists"`
+      },
       thread_id: `dir-check-${Date.now()}`
     });
 

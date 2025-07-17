@@ -88,8 +88,9 @@ export default class GitSessionService {
 
       // Perform the rollback using git checkout
       const rollbackResult = await this.executeTool(this.serverId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git checkout ${commitHash}`,
-        type: 'command',
+        action_json: {
+          command: `cd "${this.projectPath}" && git checkout ${commitHash}`
+        },
         thread_id: `session-rollback-${Date.now()}`
       });
 
@@ -125,8 +126,9 @@ export default class GitSessionService {
   async getSessionCommits(limit: number = 20): Promise<SessionCommit[]> {
     try {
       const result = await this.executeTool(this.serverId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git log --oneline -${limit} --format="%H|%s|%ct"`,
-        type: 'command',
+        action_json: {
+          command: `cd "${this.projectPath}" && git log --oneline -${limit} --format="%H|%s|%ct"`
+        },
         thread_id: `session-commits-${Date.now()}`
       });
 
@@ -195,8 +197,9 @@ export default class GitSessionService {
   private async getCurrentCommit(): Promise<string> {
     try {
       const result = await this.executeTool(this.serverId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git rev-parse HEAD`,
-        type: 'command',
+        action_json: {
+          command: `cd "${this.projectPath}" && git rev-parse HEAD`
+        },
         thread_id: `current-commit-${Date.now()}`
       });
       return result.trim();

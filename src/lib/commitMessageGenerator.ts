@@ -43,8 +43,9 @@ export class CommitMessageGenerator {
       
       // Use MCP server to generate message with user's configured LLM
       const response = await this.executeTool(this.serverId, 'BashCommand', {
-        command: `echo '${prompt}' | head -1`, // Simple fallback if no LLM available
-        type: 'command',
+        action_json: {
+          command: `echo '${prompt}' | head -1` // Simple fallback if no LLM available
+        },
         thread_id: `commit-msg-${Date.now()}`
       });
       
@@ -145,8 +146,9 @@ Generate only the commit message, no explanation:`;
     // replaced with actual LLM calls when MCP supports it
     try {
       const result = await this.executeTool(this.serverId, 'BashCommand', {
-        command: `echo "auto: prepare for execution"`, // Fallback
-        type: 'command',
+        action_json: {
+          command: `echo "auto: prepare for execution"` // Fallback
+        },
         thread_id: `llm-prompt-${Date.now()}`
       });
       

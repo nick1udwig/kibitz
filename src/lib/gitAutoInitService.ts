@@ -118,8 +118,9 @@ export const checkGitAvailability = async (
   try {
     // Check if git is available
     const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-      command: 'git --version',
-      type: 'command',
+      action_json: {
+        command: 'git --version'
+      },
       thread_id: `git-version-check-${Date.now()}`
     });
 
@@ -132,8 +133,9 @@ export const checkGitAvailability = async (
     // Check if there are any commits
     try {
       const logResult = await executeTool(mcpServerId, 'BashCommand', {
-        command: 'git log --oneline -1',
-        type: 'command',
+        action_json: {
+          command: 'git log --oneline -1'
+        },
         thread_id: `git-log-check-${Date.now()}`
       });
 

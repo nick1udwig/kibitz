@@ -163,8 +163,8 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
       
       // 🔧 IMPROVED: Get all branches with proper thread_id
       const branchResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${projectPath}" && git branch -a` 
+        action_json: {
+          command: `cd "${projectPath}" && git branch -a`
         },
         thread_id: threadId
       });
@@ -202,8 +202,8 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
             // Get commit details for this branch using the same thread_id
             try {
               const commitInfoResult = await executeTool(mcpServerId, 'BashCommand', {
-                action_json: { 
-                  command: `cd "${projectPath}" && git log -1 --format='%H|%ci|%s' "${cleanLine}" 2>/dev/null || echo "unknown|unknown|Auto-created branch"` 
+                action_json: {
+                  command: `cd "${projectPath}" && git log -1 --format='%H|%ci|%s' "${cleanLine}" 2>/dev/null || echo "unknown|unknown|Auto-created branch"`
                 },
                 thread_id: threadId
               });
@@ -371,8 +371,8 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
       
       // 🔧 SIMPLIFIED: Direct git checkout with proper thread_id
       const revertResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${projectPath}" && git checkout "${branchName}"` 
+        action_json: {
+          command: `cd "${projectPath}" && git checkout "${branchName}"`
         },
         thread_id: threadId
       });
@@ -740,8 +740,8 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
                 }
                 
                 const testResult = await executeTool(mcpServerId, 'BashCommand', {
-                  action_json: { 
-                    command: `cd "${projectPath}" && echo "=== ALL BRANCHES ===" && git branch -a && echo "=== AUTO BRANCHES ===" && git branch -a | grep -E "(auto|checkpoint|backup)" || echo "No auto branches found"` 
+                  action_json: {
+                    command: `cd "${projectPath}" && echo "=== ALL BRANCHES ===" && git branch -a && echo "=== AUTO BRANCHES ===" && git branch -a | grep -E "(auto|checkpoint|backup)" || echo "No auto branches found"`
                   },
                   thread_id: threadId
                 });
