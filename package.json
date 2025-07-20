@@ -2,6 +2,7 @@
   "name": "llm-chat",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -9,7 +10,14 @@
     "lint": "next lint",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test-auto-commit-1752623555": "echo \"Test script added at 2025-07-15T19:52:35.473489\""
+    "test-auto-commit-1752623555": "echo \"Test script added at 2025-07-15T19:52:35.473489\"",
+    "sync:demo": "node demo-background-service.js",
+    "sync:test": "node test-background-service.js",
+    "sync:test:all": "node test-background-service.js --all",
+    "sync:test:performance": "node test-background-service.js --performance",
+    "sync:setup": "node setup-github-sync.js",
+    "sync:setup:discover": "node setup-github-sync.js discover",
+    "sync:check": "node test-project-creation-v2.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",

@@ -4,8 +4,12 @@
 
 import React from 'react';
 import { useConversationMetadata } from '../hooks/useConversationMetadata';
+import { useBranchStore } from '../../../stores/branchStore';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { RotateCcw } from 'lucide-react';
+import { formatBranchName } from '../../../lib/branchNaming';
+import { useStore } from '../../../stores/rootStore';
 
 export function ConversationMetadataPanel() {
   const {
@@ -17,6 +21,43 @@ export function ConversationMetadataPanel() {
     canRevert,
     recentCommits
   } = useConversationMetadata();
+
+  const { switchToBranch, isProcessing: isSwitchingBranch } = useBranchStore();
+  const { activeProjectId } = useStore();
+
+  // Handle revert by switching to the branch instead of checking out the commit
+  const handleRevert = async (commit: any) => {
+    if (!activeProjectId) {
+      console.warn('No active project ID');
+      return;
+    }
+
+    if (!commit.branchName) {
+      console.warn('No branch name available for commit:', commit);
+      // Fallback to original commit-based revert
+      try {
+        const success = await revertToCommit(commit.commitHash);
+        if (success) {
+          console.log(`✅ Successfully reverted to commit ${commit.commitHash}`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to revert:', error);
+      }
+      return;
+    }
+
+    try {
+      console.log(`🔄 Switching to branch: ${commit.branchName}`);
+      const success = await switchToBranch(activeProjectId, commit.branchName);
+      if (success) {
+        console.log(`✅ Successfully switched to branch: ${commit.branchName}`);
+      } else {
+        console.error(`❌ Failed to switch to branch: ${commit.branchName}`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to switch branch:', error);
+    }
+  };
 
   if (!conversationMetadata && !projectMetadata) {
     return null;
@@ -78,15 +119,22 @@ export function ConversationMetadataPanel() {
                     <div className="truncate text-gray-600 dark:text-gray-400">
                       {commit.commitMessage}
                     </div>
+                    {commit.branchName && (
+                      <div className="truncate text-blue-600 dark:text-blue-400 text-xs">
+                        {formatBranchName(commit.branchName)}
+                      </div>
+                    )}
                   </div>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => revertToCommit(commit.commitHash)}
-                    disabled={isLoading}
+                    onClick={() => handleRevert(commit)}
+                    disabled={isLoading || isSwitchingBranch}
                     className="ml-2 text-xs"
+                    title={commit.branchName ? `Switch to branch: ${formatBranchName(commit.branchName)}` : 'Revert to this commit'}
                   >
-                    Revert
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    {commit.branchName ? 'Switch' : 'Revert'}
                   </Button>
                 </div>
               ))}
@@ -103,9 +151,8 @@ export function ConversationMetadataPanel() {
 
         {/* Loading State */}
         {isLoading && (
-          <div className="text-sm text-gray-500 flex items-center">
-            <div className="animate-spin w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full mr-2" />
-            Processing...
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            Loading...
           </div>
         )}
       </div>

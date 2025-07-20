@@ -4,10 +4,12 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { GitBranch, GitCommit, RotateCcw, Zap, CheckCircle } from 'lucide-react';
 import { useConversationMetadata } from '../LlmChat/hooks/useConversationMetadata';
-import { Button } from '../ui/button';
-import { Card } from '../ui/card';
-import { GitBranch, GitCommit, RotateCcw, Zap } from 'lucide-react';
+import { useBranchStore } from '../../stores/branchStore';
+import { formatBranchName } from '../../lib/branchNaming';
 
 interface ConversationCheckpointManagerProps {
   projectId: string;
@@ -26,17 +28,56 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
     recentCommits
   } = useConversationMetadata();
 
+  const { 
+    switchToBranch, 
+    isProcessing: isSwitchingBranch, 
+    currentBranch,
+    listProjectBranches 
+  } = useBranchStore();
   const [isReverting, setIsReverting] = useState(false);
 
-  const handleRevert = async (commitHash: string) => {
+  // Get current branch for this project
+  const currentProjectBranch = currentBranch[projectId] || 'main';
+
+  // Refresh branches when component mounts to get current branch
+  useEffect(() => {
+    if (projectId) {
+      listProjectBranches(projectId).catch(console.error);
+    }
+  }, [projectId, listProjectBranches]);
+
+  // Handle revert by switching to the branch instead of checking out the commit
+  const handleRevert = async (commit: any) => {
+    if (!commit.branchName) {
+      console.warn('No branch name available for commit:', commit);
+      // Fallback to original commit-based revert
+      setIsReverting(true);
+      try {
+        const success = await revertToCommit(commit.commitHash);
+        if (success) {
+          console.log(`✅ Successfully reverted to commit ${commit.commitHash}`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to revert:', error);
+      } finally {
+        setIsReverting(false);
+      }
+      return;
+    }
+
     setIsReverting(true);
     try {
-      const success = await revertToCommit(commitHash);
+      console.log(`🔄 Switching to branch: ${commit.branchName}`);
+      const success = await switchToBranch(projectId, commit.branchName);
       if (success) {
-        console.log(`✅ Successfully reverted to commit ${commitHash}`);
+        console.log(`✅ Successfully switched to branch: ${commit.branchName}`);
+        // Refresh branches to update current branch display
+        await listProjectBranches(projectId);
+      } else {
+        console.error(`❌ Failed to switch to branch: ${commit.branchName}`);
       }
     } catch (error) {
-      console.error('❌ Failed to revert:', error);
+      console.error('❌ Failed to switch branch:', error);
     } finally {
       setIsReverting(false);
     }
@@ -82,6 +123,28 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
                 <GitCommit className="w-4 h-4" />
                 <span>{projectMetadata.totalCommits} commits</span>
               </div>
+            </div>
+          </div>
+          
+          {/* Current Branch Indicator */}
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <GitBranch className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-gray-700">Current Branch:</span>
+                <span className="text-sm font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                  {formatBranchName(currentProjectBranch)}
+                </span>
+              </div>
+              {isSwitchingBranch && (
+                <div className="flex items-center space-x-2 text-blue-600">
+                  <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                  <span className="text-sm">Switching...</span>
+                </div>
+              )}
+              {!isSwitchingBranch && (
+                <CheckCircle className="w-4 h-4 text-green-600" />
+              )}
             </div>
           </div>
           
@@ -150,6 +213,14 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
                   <div className="mt-1 text-sm font-medium truncate">
                     {commit.commitMessage}
                   </div>
+                  {commit.branchName && (
+                    <div className="mt-1 text-xs text-blue-600">
+                      Branch: {formatBranchName(commit.branchName)}
+                      {commit.branchName === currentProjectBranch && (
+                        <span className="ml-2 text-green-600 font-medium">(current)</span>
+                      )}
+                    </div>
+                  )}
                   {commit.filesChanged && (
                     <div className="mt-1 text-xs text-gray-500">
                       {commit.filesChanged.length} file(s) changed
@@ -159,12 +230,24 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => handleRevert(commit.commitHash)}
-                  disabled={isReverting || isLoading}
+                  onClick={() => handleRevert(commit)}
+                  disabled={isReverting || isLoading || isSwitchingBranch || commit.branchName === currentProjectBranch}
                   className="ml-4"
+                  title={
+                    commit.branchName === currentProjectBranch 
+                      ? 'Already on this branch'
+                      : commit.branchName 
+                        ? `Switch to branch: ${formatBranchName(commit.branchName)}` 
+                        : 'Revert to this commit'
+                  }
                 >
                   <RotateCcw className="w-3 h-3 mr-1" />
-                  Revert
+                  {commit.branchName === currentProjectBranch 
+                    ? 'Current' 
+                    : commit.branchName 
+                      ? 'Switch' 
+                      : 'Revert'
+                  }
                 </Button>
               </div>
             ))}

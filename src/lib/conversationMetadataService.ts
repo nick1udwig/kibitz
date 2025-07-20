@@ -280,7 +280,7 @@ export async function saveConversationMetadata(
       throw new Error('Failed to save conversation metadata');
     }
 
-    // Update/create project metadata with branches and conversations
+    // Update/create project metadata with branches and conversations (v2 schema)
     const projectData = {
       projectId,
       projectName,
@@ -303,7 +303,44 @@ export async function saveConversationMetadata(
         size: 1024, // Placeholder
         languages: { "py": 1 } // Placeholder - could be enhanced to detect actual languages
       },
-      branches: gitBranches
+      branches: gitBranches.map(branch => ({
+        ...branch,
+        sync: {
+          lastPushed: null,
+          pushedHash: null,
+          needsSync: false,
+          syncError: null
+        }
+      })),
+      
+      // GitHub sync configuration (v2 schema)
+      github: {
+        enabled: false,
+        remoteUrl: null,
+        syncInterval: 300000, // 5 minutes
+        syncBranches: ['main', 'auto/*'],
+        lastSync: null,
+        syncStatus: 'idle',
+        authentication: {
+          type: 'token',
+          configured: false,
+          lastValidated: null
+        }
+      },
+      
+      // Global sync state (v2 schema)
+      sync: {
+        lastAttempt: null,
+        nextScheduled: null,
+        consecutiveFailures: 0,
+        pendingChanges: []
+      },
+      
+      metadata: {
+        generated: metadata.timestamp,
+        version: '2.0',
+        source: 'conversation-metadata-service'
+      }
     };
 
     // Save updated project metadata

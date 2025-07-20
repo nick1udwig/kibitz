@@ -500,6 +500,59 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
         
         console.log(`✅ executeAutoCommit: Auto-commit successful: ${finalCommitMessage} (${commitHash})`);
         
+        // 🚀 AUTO-TRIGGER GITHUB SYNC AFTER SUCCESSFUL COMMIT
+        setTimeout(async () => {
+          try {
+            console.log('🔄 Starting GitHub sync process after auto-commit...');
+            
+            // Step 1: Ensure JSON file exists by generating it first
+            console.log('📋 Generating project JSON file before sync...');
+            const generateResponse = await fetch(`/api/projects/${context.projectId}/generate`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              }
+            });
+            
+            if (generateResponse.ok) {
+              console.log('✅ Project JSON file generated successfully');
+              
+              // Step 2: Wait a bit more for file system to sync
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // Step 3: Now trigger GitHub sync with JSON file guaranteed to exist
+              console.log('🚀 Triggering GitHub sync with JSON file ready...');
+              const syncResponse = await fetch('/api/github-sync/trigger', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  projectId: context.projectId,
+                  immediate: true
+                }),
+              });
+              
+              if (syncResponse.ok) {
+                const result = await syncResponse.json();
+                console.log('✅ Auto GitHub sync completed:', result.message);
+                if (result.remoteUrl) {
+                  console.log('🔗 Pushed to repository:', result.remoteUrl);
+                }
+              } else {
+                const errorText = await syncResponse.text();
+                console.log('⚠️ GitHub sync failed:', errorText);
+              }
+              
+            } else {
+              console.log('⚠️ Failed to generate project JSON, skipping GitHub sync');
+            }
+            
+          } catch (error) {
+            console.log('⚠️ Could not complete GitHub sync process:', error);
+          }
+        }, 3000); // 3 second delay + JSON generation ensures proper timing
+        
         // 🔍 Debug logging success
         logAutoCommit(
           context.projectId,

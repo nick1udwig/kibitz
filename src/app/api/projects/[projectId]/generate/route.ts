@@ -153,7 +153,13 @@ export async function POST(
               linesAdded,
               linesRemoved,
               isMainBranch: branchName.trim() === currentBranch,
-              tags: branchName.trim() === currentBranch ? ['main'] : []
+              tags: branchName.trim() === currentBranch ? ['main'] : [],
+              sync: {
+                lastPushed: null,
+                pushedHash: null,
+                needsSync: false,
+                syncError: null
+              }
             });
           }
         }
@@ -191,7 +197,7 @@ export async function POST(
       author: mainBranch?.author || 'Unknown',
       date: mainBranch?.timestamp ? new Date(mainBranch.timestamp).toISOString() : new Date().toISOString(),
       message: mainBranch?.commitMessage || 'No commit message',
-      remote_url: null, // Placeholder as requested
+      remote_url: `https://github.com/malikrohail/${projectId}-project.git`, // Set GitHub remote URL
       is_dirty: false,
       
       // Extended project metadata
@@ -203,9 +209,33 @@ export async function POST(
       repository: repositoryData,
       branches: branchesData,
       conversations: [],
+      
+      // GitHub sync configuration (v2 schema)
+      github: {
+        enabled: true, // Default to enabled as requested
+        remoteUrl: `https://github.com/malikrohail/${projectId}-project.git`,
+        syncInterval: 300000, // 5 minutes
+        syncBranches: ['main', 'auto/*'],
+        lastSync: null,
+        syncStatus: 'idle',
+        authentication: {
+          type: 'token',
+          configured: true,
+          lastValidated: null
+        }
+      },
+      
+      // Global sync state (v2 schema)
+      sync: {
+        lastAttempt: null,
+        nextScheduled: null,
+        consecutiveFailures: 0,
+        pendingChanges: []
+      },
+      
       metadata: {
         generated: Date.now(),
-        version: '1.0',
+        version: '2.0',
         source: 'api-server'
       }
     };
