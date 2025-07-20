@@ -14,11 +14,11 @@ export const getDefaultModelForProvider = (provider?: string): string => {
       return 'openai/gpt-4-turbo-preview';
     case 'anthropic':
     default:
-      return 'claude-3-7-sonnet-20250219';
+      return 'claude-sonnet-4-20250514';
   }
 };
 
-const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
+const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   providerConfig: {
