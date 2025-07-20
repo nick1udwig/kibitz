@@ -97,16 +97,13 @@ export class LocalPersistenceService {
     try {
       console.log(`🔧 Initializing persistence for project: ${projectPath}`);
       
-      // Create .kibitz directory
-      const createDirResult = await executeGitCommand(
-        serverId,
-        'mkdir -p .kibitz',
-        projectPath,
-        executeTool
-      );
+      // First, ensure we're in the right directory and initialize MCP
+      await this.ensureProjectDirectory(projectPath, serverId, executeTool);
       
+      // Create .kibitz directory using proper MCP tools
+      const createDirResult = await this.createKibitzDirectory(projectPath, serverId, executeTool);
       if (!createDirResult.success) {
-        return { success: false, error: 'Failed to create .kibitz directory' };
+        return { success: false, error: createDirResult.error };
       }
       
       // Initialize metadata files
@@ -129,10 +126,21 @@ export class LocalPersistenceService {
       const initialCheckpoints: CheckpointMetadata[] = [];
       const initialBranches: BranchMetadata[] = [];
       
-      // Write initial files
-      await this.writeMetadataFile(projectPath, 'config.json', initialMetadata, serverId, executeTool);
-      await this.writeMetadataFile(projectPath, 'checkpoints.json', initialCheckpoints, serverId, executeTool);
-      await this.writeMetadataFile(projectPath, 'branches.json', initialBranches, serverId, executeTool);
+      // Write initial files using robust method
+      const configResult = await this.writeMetadataFileRobust(projectPath, 'config.json', initialMetadata, serverId, executeTool);
+      if (!configResult.success) {
+        return { success: false, error: `Failed to create config.json: ${configResult.error}` };
+      }
+      
+      const checkpointsResult = await this.writeMetadataFileRobust(projectPath, 'checkpoints.json', initialCheckpoints, serverId, executeTool);
+      if (!checkpointsResult.success) {
+        return { success: false, error: `Failed to create checkpoints.json: ${checkpointsResult.error}` };
+      }
+      
+      const branchesResult = await this.writeMetadataFileRobust(projectPath, 'branches.json', initialBranches, serverId, executeTool);
+      if (!branchesResult.success) {
+        return { success: false, error: `Failed to create branches.json: ${branchesResult.error}` };
+      }
       
       console.log(`✅ Initialized persistence for project: ${projectName}`);
       return { success: true };
@@ -143,6 +151,185 @@ export class LocalPersistenceService {
         success: false, 
         error: error instanceof Error ? error.message : String(error) 
       };
+    }
+  }
+
+  /**
+   * Ensure project directory exists and MCP is initialized
+   */
+  private static async ensureProjectDirectory(
+    projectPath: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<void> {
+    try {
+      // Initialize MCP with the project directory
+      await executeTool(serverId, 'Initialize', {
+        type: "first_call",
+        any_workspace_path: projectPath,
+        initial_files_to_read: [],
+        task_id_to_resume: "",
+        mode_name: "wcgw",
+        thread_id: "kibitz-persistence"
+      });
+      
+      // Ensure the project directory exists
+      await executeTool(serverId, 'BashCommand', {
+        action_json: {
+          command: `mkdir -p "${projectPath}"`,
+          type: 'command'
+        },
+        thread_id: "kibitz-persistence"
+      });
+      
+    } catch (error) {
+      console.error('Failed to ensure project directory:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create .kibitz directory using proper MCP tools
+   */
+  private static async createKibitzDirectory(
+    projectPath: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Create .kibitz directory
+      const result = await executeTool(serverId, 'BashCommand', {
+        action_json: {
+          command: `cd "${projectPath}" && mkdir -p .kibitz`,
+          type: 'command'
+        },
+        thread_id: "kibitz-persistence"
+      });
+      
+      if (result.includes('Error:') || result.includes('error')) {
+        return { success: false, error: result };
+      }
+      
+      // Verify directory was created
+      const verifyResult = await executeTool(serverId, 'BashCommand', {
+        action_json: {
+          command: `cd "${projectPath}" && ls -la .kibitz`,
+          type: 'command'
+        },
+        thread_id: "kibitz-persistence"
+      });
+      
+      if (verifyResult.includes('No such file or directory')) {
+        return { success: false, error: 'Failed to create .kibitz directory' };
+      }
+      
+      return { success: true };
+      
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+
+  /**
+   * Robust file writing using MCP FileWriteOrEdit tool
+   */
+  private static async writeMetadataFileRobust(
+    projectPath: string,
+    filename: string,
+    data: any,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const content = JSON.stringify(data, null, 2);
+      const filePath = `.kibitz/${filename}`;
+      
+      // Use FileWriteOrEdit tool for robust file writing
+      const result = await executeTool(serverId, 'FileWriteOrEdit', {
+        file_path: filePath,
+        content: content,
+        thread_id: "kibitz-persistence"
+      });
+      
+      if (result.includes('Error:') || result.includes('error')) {
+        return { success: false, error: result };
+      }
+      
+      // Verify file was written correctly
+      const verifyResult = await executeTool(serverId, 'BashCommand', {
+        action_json: {
+          command: `cd "${projectPath}" && cat "${filePath}" 2>/dev/null || echo "FILE_NOT_FOUND"`,
+          type: 'command'
+        },
+        thread_id: "kibitz-persistence"
+      });
+      
+      if (verifyResult.includes('FILE_NOT_FOUND') || verifyResult.includes('No such file')) {
+        return { success: false, error: 'File verification failed' };
+      }
+      
+      // Parse to verify JSON is valid
+      try {
+        JSON.parse(verifyResult);
+      } catch (parseError) {
+        return { success: false, error: 'Written file contains invalid JSON' };
+      }
+      
+      return { success: true };
+      
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+
+  /**
+   * Robust file reading using MCP BashCommand tool
+   */
+  private static async readMetadataFileRobust<T>(
+    projectPath: string,
+    filename: string,
+    serverId: string,
+    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+  ): Promise<T | null> {
+    try {
+      const filePath = `.kibitz/${filename}`;
+      
+      // Use BashCommand cat for robust file reading
+      const result = await executeTool(serverId, 'BashCommand', {
+        action_json: {
+          command: `cd "${projectPath}" && cat "${filePath}" 2>/dev/null || echo "FILE_NOT_FOUND"`,
+          type: 'command'
+        },
+        thread_id: "kibitz-persistence"
+      });
+      
+      if (result.includes('FILE_NOT_FOUND') || result.includes('No such file')) {
+        console.warn(`File ${filename} not found, returning null`);
+        return null;
+      }
+      
+      const content = result.trim();
+      if (!content) {
+        console.warn(`File ${filename} is empty, returning null`);
+        return null;
+      }
+      
+      try {
+        return JSON.parse(content);
+      } catch (parseError) {
+        console.error(`Failed to parse JSON from ${filename}:`, parseError);
+        return null;
+      }
+      
+    } catch (error) {
+      console.error(`Failed to read ${filename}:`, error);
+      return null;
     }
   }
   
@@ -157,7 +344,7 @@ export class LocalPersistenceService {
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // Read existing checkpoints
-      const existingCheckpoints = await this.readMetadataFile<CheckpointMetadata[]>(
+      const existingCheckpoints = await this.readMetadataFileRobust<CheckpointMetadata[]>(
         projectPath, 'checkpoints.json', serverId, executeTool
       ) || [];
       
@@ -171,13 +358,19 @@ export class LocalPersistenceService {
       const trimmedCheckpoints = updatedCheckpoints.slice(0, maxCheckpoints);
       
       // Write back to file
-      await this.writeMetadataFile(projectPath, 'checkpoints.json', trimmedCheckpoints, serverId, executeTool);
+      const writeResult = await this.writeMetadataFileRobust(projectPath, 'checkpoints.json', trimmedCheckpoints, serverId, executeTool);
+      if (!writeResult.success) {
+        return writeResult;
+      }
       
       // Update project metadata
       if (metadata) {
         metadata.totalCheckpoints = trimmedCheckpoints.length;
         metadata.lastUpdated = new Date();
-        await this.writeMetadataFile(projectPath, 'config.json', metadata, serverId, executeTool);
+        const metadataResult = await this.writeMetadataFileRobust(projectPath, 'config.json', metadata, serverId, executeTool);
+        if (!metadataResult.success) {
+          return metadataResult;
+        }
       }
       
       console.log(`✅ Saved checkpoint: ${checkpoint.description}`);
@@ -203,7 +396,7 @@ export class LocalPersistenceService {
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // Read existing branches
-      const existingBranches = await this.readMetadataFile<BranchMetadata[]>(
+      const existingBranches = await this.readMetadataFileRobust<BranchMetadata[]>(
         projectPath, 'branches.json', serverId, executeTool
       ) || [];
       
@@ -225,14 +418,20 @@ export class LocalPersistenceService {
       }
       
       // Write back to file
-      await this.writeMetadataFile(projectPath, 'branches.json', existingBranches, serverId, executeTool);
+      const writeResult = await this.writeMetadataFileRobust(projectPath, 'branches.json', existingBranches, serverId, executeTool);
+      if (!writeResult.success) {
+        return writeResult;
+      }
       
       // Update project metadata
       const metadata = await this.getProjectMetadata(projectPath, serverId, executeTool);
       if (metadata) {
         metadata.totalBranches = existingBranches.length;
         metadata.lastUpdated = new Date();
-        await this.writeMetadataFile(projectPath, 'config.json', metadata, serverId, executeTool);
+        const metadataResult = await this.writeMetadataFileRobust(projectPath, 'config.json', metadata, serverId, executeTool);
+        if (!metadataResult.success) {
+          return metadataResult;
+        }
       }
       
       console.log(`✅ Saved branch: ${branch.name}`);
@@ -255,7 +454,7 @@ export class LocalPersistenceService {
     serverId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<CheckpointMetadata[]> {
-    const checkpoints = await this.readMetadataFile<CheckpointMetadata[]>(
+    const checkpoints = await this.readMetadataFileRobust<CheckpointMetadata[]>(
       projectPath, 'checkpoints.json', serverId, executeTool
     );
     
@@ -274,7 +473,7 @@ export class LocalPersistenceService {
     serverId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<BranchMetadata[]> {
-    const branches = await this.readMetadataFile<BranchMetadata[]>(
+    const branches = await this.readMetadataFileRobust<BranchMetadata[]>(
       projectPath, 'branches.json', serverId, executeTool
     );
     
@@ -293,7 +492,7 @@ export class LocalPersistenceService {
     serverId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<ProjectMetadata | null> {
-    const metadata = await this.readMetadataFile<ProjectMetadata>(
+    const metadata = await this.readMetadataFileRobust<ProjectMetadata>(
       projectPath, 'config.json', serverId, executeTool
     );
     
@@ -390,7 +589,7 @@ export class LocalPersistenceService {
       }
       
       // Save rebuilt checkpoints
-      await this.writeMetadataFile(projectPath, 'checkpoints.json', checkpoints, serverId, executeTool);
+      await this.writeMetadataFileRobust(projectPath, 'checkpoints.json', checkpoints, serverId, executeTool);
       
       console.log(`✅ Rebuilt ${checkpoints.length} checkpoints from Git history`);
       return { success: true, checkpoints };
@@ -502,7 +701,7 @@ export class LocalPersistenceService {
       }
       
       // Save rebuilt branches
-      await this.writeMetadataFile(projectPath, 'branches.json', branches, serverId, executeTool);
+      await this.writeMetadataFileRobust(projectPath, 'branches.json', branches, serverId, executeTool);
       
       console.log(`✅ Rebuilt ${branches.length} branches from Git`);
       return { success: true, branches };
@@ -651,7 +850,7 @@ export class LocalPersistenceService {
   }
   
   /**
-   * Helper: Write metadata file
+   * Helper: Write metadata file using old method (deprecated)
    */
   private static async writeMetadataFile(
     projectPath: string,
@@ -660,24 +859,15 @@ export class LocalPersistenceService {
     serverId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<void> {
-    const content = JSON.stringify(data, null, 2);
-    const filePath = `.kibitz/${filename}`;
-    
-    // Write using echo command (handles JSON escaping)
-    const writeResult = await executeGitCommand(
-      serverId,
-      `echo '${content.replace(/'/g, "'\\''")}' > ${filePath}`,
-      projectPath,
-      executeTool
-    );
-    
-    if (!writeResult.success) {
-      throw new Error(`Failed to write ${filename}: ${writeResult.error}`);
+    console.warn('writeMetadataFile is deprecated, use writeMetadataFileRobust instead');
+    const result = await this.writeMetadataFileRobust(projectPath, filename, data, serverId, executeTool);
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to write metadata file');
     }
   }
   
   /**
-   * Helper: Read metadata file
+   * Helper: Read metadata file using old method (deprecated)
    */
   private static async readMetadataFile<T>(
     projectPath: string,
@@ -685,25 +875,7 @@ export class LocalPersistenceService {
     serverId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<T | null> {
-    try {
-      const filePath = `.kibitz/${filename}`;
-      
-      const readResult = await executeGitCommand(
-        serverId,
-        `cat ${filePath}`,
-        projectPath,
-        executeTool
-      );
-      
-      if (!readResult.success || !readResult.output.trim()) {
-        return null;
-      }
-      
-      return JSON.parse(readResult.output);
-      
-    } catch (error) {
-      console.warn(`Failed to read ${filename}:`, error);
-      return null;
-    }
+    console.warn('readMetadataFile is deprecated, use readMetadataFileRobust instead');
+    return await this.readMetadataFileRobust<T>(projectPath, filename, serverId, executeTool);
   }
 } 

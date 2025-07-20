@@ -166,88 +166,11 @@ export class AutoCommitAgent {
       return;
     }
 
-    console.log(`🔧 [${timestamp}] AutoCommitAgent: Context:`, {
-      projectId: this.context.projectId,
-      projectName: this.context.projectName,
-      mcpServerId: this.context.mcpServerId,
-      activeConversationId: this.context.activeConversationId,
-      hasExecuteTool: typeof this.context.executeTool === 'function'
-    });
-
-    const startTime = Date.now();
-    this.log('Starting auto-commit cycle...');
-
-    try {
-      // Check rate limiting
-      console.log(`🔧 [${timestamp}] AutoCommitAgent: Checking rate limit...`);
-      if (!this.checkRateLimit()) {
-        console.log(`⚠️ [${timestamp}] AutoCommitAgent: Rate limit exceeded, skipping cycle`);
-        this.log('Rate limit exceeded, skipping cycle');
-        return;
-      }
-      console.log(`✅ [${timestamp}] AutoCommitAgent: Rate limit check passed`);
-
-      // Create GitService instance
-      console.log(`🔧 [${timestamp}] AutoCommitAgent: Creating GitService...`);
-      const gitService = createGitService(
-        this.context.projectId,
-        this.context.projectName,
-        this.context.mcpServerId,
-        this.context.executeTool
-      );
-      console.log(`✅ [${timestamp}] AutoCommitAgent: GitService created successfully`);
-
-      // Use active conversation or default
-      const conversationId = this.context.activeConversationId || 'default';
-      console.log(`🔧 [${timestamp}] AutoCommitAgent: Using conversation ID: ${conversationId}`);
-
-      // Attempt to create auto-commit branch
-      console.log(`🔧 [${timestamp}] AutoCommitAgent: Calling gitService.createAutoCommitBranch...`);
-      const result = await gitService.createAutoCommitBranch(conversationId);
-      console.log(`🔧 [${timestamp}] AutoCommitAgent: Git service result:`, {
-        success: result.success,
-        branchName: result.branchName,
-        error: result.error,
-        filesChanged: result.filesChanged?.length || 0
-      });
-      
-      if (result.success) {
-        console.log(`✅ [${timestamp}] AutoCommitAgent: Branch created successfully: ${result.branchName}`);
-        this.log(`✅ Auto-commit branch created successfully: ${result.branchName}`);
-        
-        // Track this branch creation for rate limiting
-        this.recentBranches.push(new Date());
-        
-        // Update agent status
-        await this.updateAgentStatus({
-          totalBranchesCreated: (await this.getStatus()).totalBranchesCreated + 1,
-          totalCommits: (await this.getStatus()).totalCommits + 1
-        });
-      } else {
-        console.log(`⚠️ [${timestamp}] AutoCommitAgent: Auto-commit skipped: ${result.error}`);
-        this.log(`⚠️ Auto-commit skipped: ${result.error}`);
-      }
-
-      this.lastRunTime = new Date();
-      
-      // Update agent status
-      await this.updateAgentStatus({
-        lastRunAt: this.lastRunTime || undefined
-      });
-
-      console.log(`🔧 [${timestamp}] AutoCommitAgent: === AUTO-COMMIT CYCLE COMPLETED ===`);
-
-    } catch (error) {
-      console.log(`❌ [${timestamp}] AutoCommitAgent: ERROR in auto-commit cycle:`, error);
-      this.log('❌ Error in auto-commit cycle:', error);
-      
-      // Update agent status with error
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.updateAgentStatus({
-        lastRunAt: new Date(),
-        errors: [...(await this.getStatus()).errors, `${new Date().toISOString()}: ${errorMessage}`]
-      });
-    }
+    // 🔧 NEW: Temporarily disable auto-commit to avoid conflicts with conversation git handler
+    console.log(`ℹ️ [${timestamp}] AutoCommitAgent: Auto-commit temporarily disabled - using conversation git handler instead`);
+    this.log('AutoCommitAgent cycle skipped - using conversation git handler');
+    // TODO: Re-enable auto-commit once conversation git handler is stable
+    return;
   }
 
   /**
@@ -319,6 +242,150 @@ export class AutoCommitAgent {
     } else {
       this.log(`❌ Manual branch creation failed: ${result.error}`);
       throw new Error(`Failed to create manual branch: ${result.error}`);
+    }
+  }
+
+  /**
+   * Execute basic git commit operations without optimization loops
+   */
+  private async executeBasicGitCommit(
+    projectPath: string, 
+    conversationId: string
+  ): Promise<{
+    success: boolean;
+    branchName?: string;
+    commitSha?: string;
+    filesChanged?: string[];
+    error?: string;
+  }> {
+    try {
+      console.log(`🔧 AutoCommitAgent: Starting basic git commit for ${projectPath}`);
+
+      // Step 1: Initialize MCP thread first
+      let threadId = `auto-commit-${Date.now()}`;
+      
+      try {
+        console.log(`🔧 AutoCommitAgent: Initializing MCP thread: ${threadId}`);
+        await this.context!.executeTool(this.context!.mcpServerId, 'Initialize', {
+          type: "first_call",
+          any_workspace_path: projectPath,
+          initial_files_to_read: [],
+          task_id_to_resume: "",
+          mode_name: "wcgw",
+          thread_id: threadId
+        });
+        console.log(`✅ AutoCommitAgent: MCP thread initialized: ${threadId}`);
+      } catch (initError) {
+        console.warn(`⚠️ AutoCommitAgent: Failed to initialize MCP thread, using default:`, initError);
+        threadId = "git-operations"; // Fallback to default
+      }
+
+      // Step 2: Initialize git repository if needed
+      const initResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
+        action_json: {
+          command: `cd "${projectPath}" && git init`,
+          type: 'command'
+        },
+        thread_id: threadId
+      });
+
+      console.log(`🔧 AutoCommitAgent: Git init result:`, initResult.includes('Initialized empty Git repository') || initResult.includes('Reinitialized existing Git repository'));
+
+      // Step 3: Check status
+      const statusResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
+        action_json: {
+          command: `cd "${projectPath}" && git status --porcelain`,
+          type: 'command'
+        },
+        thread_id: threadId
+      });
+
+      const statusOutput = this.extractCommandOutput(statusResult);
+      const hasChanges = statusOutput.trim().length > 0;
+
+      if (!hasChanges) {
+        console.log(`ℹ️ AutoCommitAgent: No changes to commit`);
+        return {
+          success: false,
+          error: 'No changes to commit'
+        };
+      }
+
+      // Step 4: Add all changes
+      const addResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
+        action_json: {
+          command: `cd "${projectPath}" && git add .`,
+          type: 'command'
+        },
+        thread_id: threadId
+      });
+
+      console.log(`🔧 AutoCommitAgent: Git add completed`);
+
+      // Step 5: Commit changes
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const commitMessage = `Auto-commit: Changes detected ${timestamp}`;
+      
+      const commitResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
+        action_json: {
+          command: `cd "${projectPath}" && git commit -m "${commitMessage}"`,
+          type: 'command'
+        },
+        thread_id: threadId
+      });
+
+      const commitOutput = this.extractCommandOutput(commitResult);
+      const commitSuccess = !commitOutput.includes('Error:') && !commitOutput.includes('fatal:');
+
+      if (commitSuccess) {
+        // Get commit SHA
+        const shaResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
+          action_json: {
+            command: `cd "${projectPath}" && git rev-parse HEAD`,
+            type: 'command'
+          },
+          thread_id: threadId
+        });
+
+        const commitSha = this.extractCommandOutput(shaResult).trim();
+
+        console.log(`✅ AutoCommitAgent: Commit successful with SHA: ${commitSha}`);
+        return {
+          success: true,
+          commitSha,
+          filesChanged: statusOutput.split('\n').filter(line => line.trim()).map(line => line.slice(3))
+        };
+      } else {
+        console.error(`❌ AutoCommitAgent: Commit failed:`, commitOutput);
+        return {
+          success: false,
+          error: `Commit failed: ${commitOutput}`
+        };
+      }
+
+    } catch (error) {
+      console.error('❌ AutoCommitAgent: Basic git commit failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
+   * Extract command output from MCP result
+   */
+  private extractCommandOutput(result: string): string {
+    try {
+      // Extract output from structured result
+      const lines = result.split('\n');
+      const outputStart = lines.findIndex(line => line.includes('status = process exited') || line.includes('---'));
+      if (outputStart > 0) {
+        return lines.slice(0, outputStart).join('\n');
+      }
+      return result;
+    } catch {
+      return result;
     }
   }
 }

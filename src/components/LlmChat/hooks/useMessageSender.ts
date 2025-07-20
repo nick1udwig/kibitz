@@ -8,6 +8,7 @@ import { wakeLock } from '@/lib/wakeLock';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '../types/genericMessage';
 import { useAutoCommit, detectToolSuccess, detectFileChanges, detectBuildSuccess, detectTestSuccess } from './useAutoCommit';
 import { getProjectPath } from '../../../lib/projectPathService';
+import { useDelayedJSONGeneration } from './useDelayedJSONGeneration';
 
 const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
 
@@ -35,6 +36,9 @@ export const useMessageSender = () => {
     onTestSuccess, 
     trackFileChange 
   } = useAutoCommit();
+
+  // 🚀 NEW: Add delayed JSON generation hook
+  const { scheduleJSONGeneration } = useDelayedJSONGeneration();
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -837,6 +841,11 @@ Format: Only output the title, no quotes or explanation`
       shouldCancelRef.current = false;
       setIsLoading(false);
       streamRef.current = null;
+      
+      // 🚀 TRIGGER JSON GENERATION 1 MINUTE AFTER ASSISTANT FINISHES
+      console.log('✅ Assistant finished responding, scheduling JSON generation for 1 minute...');
+      scheduleJSONGeneration();
+      
       await wakeLock.release();
     }
   };

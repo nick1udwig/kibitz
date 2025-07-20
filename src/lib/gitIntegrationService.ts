@@ -389,6 +389,29 @@ export class GitService {
       const commitHash = commitHashResult.trim();
 
       console.log(`✅ GitService: Successfully committed changes. Hash: ${commitHash}`);
+      
+      // 🚀 NEW: Generate JSON files for API after successful commit
+      try {
+        console.log('📋 GitService.commitChanges: Generating project JSON files for API...');
+        const { extractAndSaveProjectData } = await import('./projectDataExtractor');
+        
+        // Extract project name from path (format: projectId_projectName)
+        const pathParts = this.projectPath.split('/');
+        const dirName = pathParts[pathParts.length - 1];
+        const projectName = dirName.replace(/^[a-zA-Z0-9]+_/, '').replace(/-/g, ' ');
+        
+        await extractAndSaveProjectData(
+          this.projectId,
+          projectName || 'New Project',
+          this.mcpServerId,
+          this.executeTool
+        );
+        
+        console.log('✅ GitService.commitChanges: JSON files generated successfully');
+      } catch (jsonError) {
+        console.warn('⚠️ GitService.commitChanges: Failed to generate JSON files, but commit was successful:', jsonError);
+      }
+      
       return {
         success: true,
         commitHash,

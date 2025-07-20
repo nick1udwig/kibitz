@@ -22,6 +22,9 @@ import { ensureProjectDirectory } from '../../lib/projectPathService';
 import { autoInitializeGitForProject } from '../../lib/gitAutoInitService';
 import { getProjectPath } from '../../lib/projectPathService';
 import { useAutoCommit } from './hooks/useAutoCommit';
+import { useConversationGitHandler } from './hooks/useConversationGitHandler';
+import { ConversationMetadataPanel } from './components/ConversationMetadataPanel';
+import { useConversationMetadata } from './hooks/useConversationMetadata';
 
 // Default message window size if not configured
 const DEFAULT_MESSAGE_WINDOW = 30;
@@ -80,9 +83,18 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall, clearError: clearSendError } = useMessageSender();
   const { error, showError, clearError } = useErrorDisplay();
   const { getConversationCommits, hasAutoCommit, manuallyAssociateLastCommit, lastCommitHash } = useCommitTracking();
+  const { scheduleGitOperations, triggerImmediateGitOperations } = useConversationGitHandler();
   
   // 🚨 CRITICAL FIX: Add auto-commit hook
   const { triggerAutoCommit } = useAutoCommit();
+  
+  // 🔄 NEW: Conversation metadata tracking
+  const { 
+    startConversation, 
+    incrementMessageCount, 
+    completeConversation,
+    conversationMetadata 
+  } = useConversationMetadata();
 
   // Listen for auto-commit events to associate commits with messages
   useEffect(() => {
@@ -124,19 +136,21 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
           if (activeMcpServers.length > 0) {
             console.log('📂 initProjectPath: Starting optimized Git initialization...');
             
-            // �� OPTIMIZED: Use the simplified Git auto-initialization system
+            // 🚀 OPTIMIZED: Use the simplified Git auto-initialization system
+            const projectPath = getProjectPath(activeProject.id, activeProject.name);
             const gitResult = await autoInitializeGitForProject(
               activeProject.id,
               activeProject.name,
-              activeMcpServers[0].id
+              projectPath,
+              activeMcpServers[0].id,
+              executeTool
             );
             
             if (gitResult.success) {
               console.log('✅ initProjectPath: Git initialization successful');
-              const projectPath = getProjectPath(activeProject.id, activeProject.name);
               setProjectPath(projectPath);
             } else {
-              console.error('❌ initProjectPath: Git initialization failed:', gitResult.error);
+              console.error('❌ initProjectPath: Git initialization failed:', gitResult.message);
               // Still set the project path for basic functionality
               const projectPath = getProjectPath(activeProject.id, activeProject.name);
               setProjectPath(projectPath);
@@ -334,9 +348,26 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   const handleSubmit = async () => {
     try {
+      // 🔄 Start conversation tracking if not already started
+      const isNewConversation = !conversationMetadata;
+      if (isNewConversation) {
+        startConversation();
+      }
+      
       await handleSendMessage(inputMessage, currentFileContent);
       setInputMessage('');
       setCurrentFileContent([]);
+      
+      // 🔄 Increment message count
+      incrementMessageCount();
+      
+      // Schedule git operations after conversation activity
+      // Use immediate trigger for new conversations to generate JSON files quickly
+      if (isNewConversation) {
+        triggerImmediateGitOperations();
+      } else {
+        scheduleGitOperations();
+      }
     } catch (err) {
       showError(err instanceof Error ? err.message : 'An error occurred');
     }
@@ -353,6 +384,9 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   return (
     <div id="chat-view" className="flex flex-col h-full relative">
       {activeProjectId && <ChatHeader projectId={activeProjectId} />}
+      
+      {/* 🔄 NEW: Conversation metadata panel */}
+      <ConversationMetadataPanel />
       
       {/* File Change Counter */}
       <div className="px-4 pt-2">

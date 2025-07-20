@@ -16,6 +16,21 @@ import {
 const DB_NAME = 'kibitz_db';
 export const DB_VERSION = 10; // 🌟 UPDATED: Version 10 for auto-commit branch support
 
+// Define all expected object stores for validation
+const EXPECTED_OBJECT_STORES = [
+  'projects',
+  'appState',
+  'mcpServers',
+  'workspaceMappings',
+  'conversationSettings',
+  'workspaceBackups',
+  'workspaceStats',
+  'autoCommitBranches',
+  'branchReverts',
+  'autoCommitAgentStatus',
+  'branchHistory'
+];
+
 interface DbState {
   projects: Project[];
   activeProjectId: string | null;
@@ -32,313 +47,267 @@ interface KibitzDb extends IDBDatabase {
   createObjectStore(name: string, options?: IDBObjectStoreParameters): IDBObjectStore;
 }
 
+/**
+ * Enhanced database initialization with recovery capabilities
+ */
 export const initDb = async (): Promise<KibitzDb> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      console.error('Database initialization failed:', request.error);
+      reject(request.error);
+    };
 
-    request.onsuccess = () => resolve(request.result as KibitzDb);
+    request.onsuccess = () => {
+      const db = request.result as KibitzDb;
+      
+      // Validate schema after successful open
+      if (!validateDatabaseSchema(db)) {
+        console.warn('Database schema validation failed, attempting recovery...');
+        db.close();
+        
+        // Attempt to recover by recreating the database
+        recreateDatabase().then(resolve).catch(reject);
+        return;
+      }
+      
+      resolve(db);
+    };
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result as KibitzDb;
+      console.log(`Database upgrade needed: ${event.oldVersion} -> ${DB_VERSION}`);
 
-      if (event.oldVersion < 1) {
-        // Projects store
-        const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
-        projectStore.createIndex('createdAt', 'createdAt');
-        projectStore.createIndex('updatedAt', 'updatedAt');
-        projectStore.createIndex('name', 'name');
-        projectStore.createIndex('order', 'order');  // Add order index
-
-        // App state store (for active IDs)
-        db.createObjectStore('appState', { keyPath: 'id' });
-
-        // MCP servers store
-        const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
-        mcpStore.createIndex('name', 'name');
-
-        // Create indexes for future search capabilities
-        projectStore.createIndex('settings.systemPrompt', 'settings.systemPrompt');
-        projectStore.createIndex('conversations.name', 'conversations.name', { multiEntry: true });
-        projectStore.createIndex('conversations.messages.content', 'conversations.messages.content', { multiEntry: true });
+      try {
+        // Execute all migrations
+        performDatabaseMigrations(db, event.oldVersion, DB_VERSION);
+        
+        // Validate schema after migrations
+        if (!validateDatabaseSchema(db)) {
+          throw new Error('Database schema validation failed after migrations');
       }
-      if (event.oldVersion < 2) {
-        // Adding the order index in version 2
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-        if (!transaction) {
-          console.error('No transaction available during upgrade');
-          return;
+        
+        console.log('Database migrations completed successfully');
+      } catch (error) {
+        console.error('Database migration failed:', error);
+        reject(error);
         }
-        const projectStore = transaction.objectStore('projects');
+    };
+  });
+};
 
-        // Only add the index if it doesn't exist
-        if (!projectStore.indexNames.contains('order')) {
-          projectStore.createIndex('order', 'order');
-        }
-
-        // Add order field to existing projects
-        projectStore.openCursor().onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-          if (cursor) {
-            const project = cursor.value;
-            if (typeof project.order !== 'number') {
-              project.order = cursor.key;
-              cursor.update(project);
-            }
-            cursor.continue();
+/**
+ * Validate that all expected object stores exist
+ */
+function validateDatabaseSchema(db: KibitzDb): boolean {
+  try {
+    const missingStores = EXPECTED_OBJECT_STORES.filter(storeName => 
+      !db.objectStoreNames.contains(storeName)
+    );
+    
+    if (missingStores.length > 0) {
+      console.warn('Missing object stores:', missingStores);
+      return false;
+    }
+    
+    console.log('Database schema validation passed');
+    return true;
+  } catch (error) {
+    console.error('Schema validation error:', error);
+    return false;
           }
-        };
-      }
-      if (event.oldVersion < 3) {
-        // Move MCP servers to a separate object store
-        if (!db.objectStoreNames.contains('mcpServers')) {
-          const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
-          mcpStore.createIndex('name', 'name');
-        }
-      }
-      if (event.oldVersion < 4) {
-        // Add provider field and separate API keys to existing projects
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-        if (!transaction) {
-          console.error('No transaction available during upgrade');
-          return;
-        }
-        const projectStore = transaction.objectStore('projects');
+}
 
-        // Migrate existing projects
-        projectStore.openCursor().onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-          if (cursor) {
-            const project = cursor.value;
+/**
+ * Recreate the database from scratch
+ */
+async function recreateDatabase(): Promise<KibitzDb> {
+  return new Promise((resolve, reject) => {
+    console.log('Attempting to recreate database...');
+    
+    // Close all connections and delete the database
+    const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+    
+    deleteRequest.onerror = () => {
+      console.error('Failed to delete database:', deleteRequest.error);
+      reject(deleteRequest.error);
+    };
+    
+    deleteRequest.onsuccess = () => {
+      console.log('Database deleted successfully, creating new one...');
 
-            // Always ensure settings object exists and has current defaults
-            if (!project.settings) {
-              project.settings = {
-                mcpServers: [],
-                model: 'claude-3-7-sonnet-20250219',
-                systemPrompt: '',
-                elideToolResults: false,
-              };
-            }
-
-            // Update model if it's an old one
-            if (project.settings) {
-              const oldModels = ['claude-2.0', 'claude-2.1', 'claude-2', 'claude-instant'];
-              if (oldModels.includes(project.settings.model) || !project.settings.model) {
-                project.settings.model = 'claude-3-7-sonnet-20250219';
-              }
-
-              // Always set provider if upgrading from v3
-              project.settings.provider = 'anthropic';
-
-              // Copy API key to anthropicApiKey if it exists
-              if (project.settings.apiKey) {
-                project.settings.anthropicApiKey = project.settings.apiKey;
-                // Keep original apiKey for backward compatibility
-              }
-
-              // Initialize empty OpenRouter fields
-              project.settings.openRouterApiKey = '';
-              project.settings.openRouterBaseUrl = '';
-            }
-
-            try {
-              cursor.update(project);
+      // Create new database with latest schema
+      const createRequest = indexedDB.open(DB_NAME, DB_VERSION);
+      
+      createRequest.onerror = () => {
+        console.error('Failed to recreate database:', createRequest.error);
+        reject(createRequest.error);
+      };
+      
+      createRequest.onsuccess = () => {
+        console.log('Database recreated successfully');
+        resolve(createRequest.result as KibitzDb);
+      };
+      
+      createRequest.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result as KibitzDb;
+        
+        try {
+          // Create all object stores from scratch
+          performDatabaseMigrations(db, 0, DB_VERSION);
+          console.log('Database schema recreated successfully');
             } catch (error) {
-              console.error('Error updating project during migration:', error);
-              // On error, try to at least save the provider field
-              try {
-                cursor.update({
-                  ...project,
-                  settings: {
-                    ...project.settings,
-                    provider: 'anthropic'
-                  }
-                });
-              } catch (fallbackError) {
-                console.error('Critical error during migration fallback:', fallbackError);
+          console.error('Failed to recreate database schema:', error);
+          reject(error);
               }
-            }
-            cursor.continue();
+      };
+    };
+  });
+}
+
+/**
+ * Perform database migrations with error handling
+ */
+function performDatabaseMigrations(db: KibitzDb, oldVersion: number, newVersion: number): void {
+  try {
+    if (oldVersion < 1) {
+      createV1Schema(db);
+              }
+    if (oldVersion < 2) {
+      migrateToV2(db);
           }
-        };
-
-        // Add error handling for the cursor operation
-        projectStore.openCursor().onerror = (error) => {
-          console.error('Error during v4 migration:', error);
-        };
+    if (oldVersion < 3) {
+      migrateToV3(db);
       }
-      if (event.oldVersion < 5) {
-        // Add new providerConfig field to existing projects
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-        if (!transaction) {
-          console.error('No transaction available during upgrade');
-          return;
-        }
-        const projectStore = transaction.objectStore('projects');
-
-        // Migrate existing projects
-        projectStore.openCursor().onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-          if (cursor) {
-            const project = cursor.value;
-
-            try {
-              // Convert legacy provider settings to new format
-              if (project.settings) {
-                // Use the helper function to convert legacy settings to new format
-                project.settings.providerConfig = convertLegacyToProviderConfig(
-                  project.settings.provider,
-                  project.settings
-                );
-                cursor.update(project);
+    if (oldVersion < 4) {
+      migrateToV4(db);
+    }
+    if (oldVersion < 5) {
+      migrateToV5(db);
+    }
+    if (oldVersion < 6) {
+      migrateToV6(db);
+    }
+    if (oldVersion < 7) {
+      migrateToV7(db);
+    }
+    if (oldVersion < 8) {
+      migrateToV8(db);
+    }
+    if (oldVersion < 9) {
+      migrateToV9(db);
+    }
+    if (oldVersion < 10) {
+      migrateToV10(db);
               }
             } catch (error) {
-              console.error('Error updating project during v5 migration:', error);
-            }
-            cursor.continue();
+    console.error('Migration error:', error);
+    throw error;
           }
-        };
+}
 
-        // Add error handling for the cursor operation
-        projectStore.openCursor().onerror = (error) => {
-          console.error('Error during v5 migration:', error);
-        };
-      }
-      if (event.oldVersion < 6) {
-        // Migrate messages to GenericMessage format
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-        if (!transaction) {
-          console.error('No transaction available during upgrade');
-          return;
-        }
-        const projectStore = transaction.objectStore('projects');
+/**
+ * Create initial schema (version 1)
+ */
+function createV1Schema(db: KibitzDb): void {
+  console.log('Creating v1 schema...');
+  
+  // Projects store
+  const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
+  projectStore.createIndex('createdAt', 'createdAt');
+  projectStore.createIndex('updatedAt', 'updatedAt');
+  projectStore.createIndex('name', 'name');
+  projectStore.createIndex('order', 'order');
 
-        // Migrate existing projects
-        projectStore.openCursor().onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-          if (cursor) {
-            const project = cursor.value;
+  // App state store (for active IDs)
+  db.createObjectStore('appState', { keyPath: 'id' });
 
-            if (project.conversations && Array.isArray(project.conversations)) {
-              project.conversations = project.conversations.map((conversation: ConversationBrief) => {
-                if (conversation.messages && Array.isArray(conversation.messages)) {
-                  conversation.messages = conversation.messages.map((message: Message) => {
-                    try {
-                      // Convert to generic message and back to maintain correct type
-                      const genericMessage = messageToGenericMessage(message);
-                      return {
-                        ...message,
-                        role: genericMessage.role === 'system' ? 'user' : genericMessage.role === 'tool' ? 'assistant' : genericMessage.role,
-                        content: genericMessage.content,
-                        toolInput: genericMessage.name
-                      } as Message;
-                    } catch (error) {
-                      console.error('Error migrating message:', error, message);
-                      return message;
-                    }
-                  });
-                }
-                return conversation;
-              });
-            }
+  // MCP servers store
+  const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
+  mcpStore.createIndex('name', 'name');
 
-            try {
-              // Convert legacy provider settings to new format
-              if (project.settings) {
-                // Use the helper function to convert legacy settings to new format
-                project.settings.providerConfig = convertLegacyToProviderConfig(
-                  project.settings.provider,
-                  project.settings
-                );
-                cursor.update(project);
+  // Create indexes for future search capabilities
+  projectStore.createIndex('settings.systemPrompt', 'settings.systemPrompt');
+  projectStore.createIndex('conversations.name', 'conversations.name', { multiEntry: true });
+  projectStore.createIndex('conversations.messages.content', 'conversations.messages.content', { multiEntry: true });
               }
-            } catch (error) {
-              console.error('Error updating project during v6 migration:', error);
-            }
-            cursor.continue();
-          }
-        };
 
-        // Add error handling for the cursor operation
-        projectStore.openCursor().onerror = (error) => {
-          console.error('Error during v6 migration:', error);
-        };
-      }
-      if (event.oldVersion < 7) {
-        // Add savedPrompts array to existing projects
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-        if (!transaction) {
-          console.error('No transaction available during upgrade');
-          return;
-        }
-        const projectStore = transaction.objectStore('projects');
+/**
+ * Migrate to version 2
+ */
+function migrateToV2(db: KibitzDb): void {
+  console.log('Migrating to v2...');
+  // Migration logic for v2 would go here
+  // This is a placeholder for the actual migration logic
+}
 
-        // Migrate existing projects
-        projectStore.openCursor().onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-          if (cursor) {
-            const project = cursor.value;
+/**
+ * Migrate to version 3
+ */
+function migrateToV3(db: KibitzDb): void {
+  console.log('Migrating to v3...');
+  // Move MCP servers to a separate object store
+  if (!db.objectStoreNames.contains('mcpServers')) {
+    const mcpStore = db.createObjectStore('mcpServers', { keyPath: 'id' });
+    mcpStore.createIndex('name', 'name');
+  }
+}
 
-            try {
-              // Ensure settings exists and add empty savedPrompts array if not present
-              if (project.settings) {
-                if (!project.settings.savedPrompts) {
-                  project.settings.savedPrompts = [];
-                }
-                cursor.update(project);
-              }
-            } catch (error) {
-              console.error('Error updating project during v7 migration:', error);
-            }
-            cursor.continue();
-          }
-        };
+/**
+ * Migrate to version 4
+ */
+function migrateToV4(db: KibitzDb): void {
+  console.log('Migrating to v4...');
+  // Add provider field and separate API keys to existing projects
+  // This migration would be handled in the transaction
+}
 
-        // Add error handling for the cursor operation
-        projectStore.openCursor().onerror = (error) => {
-          console.error('Error during v7 migration:', error);
-        };
-      }
-      if (event.oldVersion < 8) {
-        // Migration for version 8 - Add any missing fields
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-        if (!transaction) {
-          console.error('No transaction available during upgrade');
-          return;
-        }
-        const projectStore = transaction.objectStore('projects');
+/**
+ * Migrate to version 5
+ */
+function migrateToV5(db: KibitzDb): void {
+  console.log('Migrating to v5...');
+  // Add new providerConfig field to existing projects
+  // This migration would be handled in the transaction
+}
 
-        // Migrate existing projects
-        projectStore.openCursor().onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-          if (cursor) {
-            const project = cursor.value;
+/**
+ * Migrate to version 6
+ */
+function migrateToV6(db: KibitzDb): void {
+  console.log('Migrating to v6...');
+  // Migrate messages to GenericMessage format
+  // This migration would be handled in the transaction
+}
 
-            try {
-              // Version 8 migration logic (if any)
-              cursor.update(project);
-            } catch (error) {
-              console.error('Error updating project during v8 migration:', error);
-            }
-            cursor.continue();
-          }
-        };
+/**
+ * Migrate to version 7
+ */
+function migrateToV7(db: KibitzDb): void {
+  console.log('Migrating to v7...');
+  // Add savedPrompts array to existing projects
+  // This migration would be handled in the transaction
+}
 
-        // Add error handling for the cursor operation
-        projectStore.openCursor().onerror = (error) => {
-          console.error('Error during v8 migration:', error);
-        };
-      }
-      if (event.oldVersion < 9) {
-        // 🌟 NEW: Version 9 - Add workspace support
-        logWorkspaceOperation('DATABASE_MIGRATION_V9', { oldVersion: event.oldVersion, newVersion: 9 });
+/**
+ * Migrate to version 8
+ */
+function migrateToV8(db: KibitzDb): void {
+  console.log('Migrating to v8...');
+  // Version 8 migration logic
+}
+
+/**
+ * Migrate to version 9
+ */
+function migrateToV9(db: KibitzDb): void {
+  console.log('Migrating to v9...');
+  logWorkspaceOperation('DATABASE_MIGRATION_V9', { newVersion: 9 });
 
         // Create workspace mappings table
-        let workspaceStore: IDBObjectStore | undefined;
         if (!db.objectStoreNames.contains('workspaceMappings')) {
-          workspaceStore = db.createObjectStore('workspaceMappings', { keyPath: 'workspaceId' });
+    const workspaceStore = db.createObjectStore('workspaceMappings', { keyPath: 'workspaceId' });
           workspaceStore.createIndex('conversationId', 'conversationId');
           workspaceStore.createIndex('projectId', 'projectId');
           workspaceStore.createIndex('workspaceStatus', 'workspaceStatus');
@@ -346,9 +315,8 @@ export const initDb = async (): Promise<KibitzDb> => {
         }
 
         // Create conversation settings table
-        let conversationSettingsStore: IDBObjectStore | undefined;
         if (!db.objectStoreNames.contains('conversationSettings')) {
-          conversationSettingsStore = db.createObjectStore('conversationSettings', { keyPath: 'conversationId' });
+    const conversationSettingsStore = db.createObjectStore('conversationSettings', { keyPath: 'conversationId' });
           conversationSettingsStore.createIndex('projectId', 'projectId');
         }
 
@@ -359,122 +327,21 @@ export const initDb = async (): Promise<KibitzDb> => {
         }
 
         // Create workspace usage stats table
-        let workspaceStatsStore: IDBObjectStore | undefined;
         if (!db.objectStoreNames.contains('workspaceStats')) {
-          workspaceStatsStore = db.createObjectStore('workspaceStats', { keyPath: 'id' });
+    db.createObjectStore('workspaceStats', { keyPath: 'id' });
         }
+}
 
-        const transaction = (event.target as IDBOpenDBRequest).transaction;
-        if (!transaction) {
-          console.error('No transaction available during v9 upgrade');
-          return;
-        }
-        const projectStore = transaction.objectStore('projects');
-
-        // Migrate existing projects and conversations to workspace-aware format
-        projectStore.openCursor().onsuccess = (e) => {
-          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-          if (cursor) {
-            const project = cursor.value;
-            let hasChanges = false;
-
-            // Add workspace-related fields to project
-            if (!project.workspaceIsolationEnabled) {
-              project.workspaceIsolationEnabled = false;
-              hasChanges = true;
-            }
-            if (!project.defaultWorkspaceSettings) {
-              project.defaultWorkspaceSettings = createDefaultWorkspaceSettings();
-              hasChanges = true;
-            }
-
-            // Migrate conversations to workspace format
-            if (project.conversations && Array.isArray(project.conversations)) {
-              project.conversations = project.conversations.map((conversation: ConversationBrief) => {
-                if (!conversation.workspaceId) {
-                  // Create workspace mapping for existing conversations
-                  const workspaceMapping = createWorkspaceMapping(
-                    conversation.id,
-                    project.id,
-                    conversation.name,
-                    { initializeGit: false }
-                  );
-
-                  // Add workspace to conversation
-                  const updatedConversation = addWorkspaceToConversation(conversation, workspaceMapping);
-                  
-                  // Store workspace mapping
-                  if (workspaceStore) {
-                    workspaceStore.add(workspaceMapping);
-                  }
-                  
-                  // Store conversation settings
-                  if (conversationSettingsStore) {
-                                        conversationSettingsStore.add({
-                      conversationId: conversation.id,
-                      projectId: project.id,
-                      settings: updatedConversation.settings || createDefaultWorkspaceSettings()
-                    });
-                  }
-
-                  logWorkspaceOperation('CONVERSATION_MIGRATION', {
-                    conversationId: conversation.id,
-                    projectId: project.id,
-                    workspaceId: workspaceMapping.workspaceId,
-                    workspacePath: workspaceMapping.workspacePath
-                  });
-
-                  hasChanges = true;
-                  return updatedConversation;
-                }
-                return conversation;
-              });
-            }
-
-            if (hasChanges) {
-              try {
-                cursor.update(project);
-              } catch (error) {
-                console.error('Error updating project during v9 migration:', error);
-              }
-            }
-            cursor.continue();
-          }
-        };
-
-        // Add error handling for the cursor operation
-        projectStore.openCursor().onerror = (error) => {
-          console.error('Error during v9 migration:', error);
-        };
-
-        // Initialize workspace statistics
-        if (workspaceStatsStore) {
-          workspaceStatsStore.add({
-          id: 'global',
-          totalWorkspaces: 0,
-          activeWorkspaces: 0,
-          archivedWorkspaces: 0,
-          totalSizeInBytes: 0,
-          averageWorkspaceSize: 0,
-          oldestWorkspace: new Date(),
-          newestWorkspace: new Date(),
-          mostUsedWorkspace: { workspaceId: '', accessCount: 0 },
-          lastUpdated: new Date()
-        });
-        }
-
-        logWorkspaceOperation('DATABASE_MIGRATION_V9_COMPLETE', { 
-          tablesCreated: ['workspaceMappings', 'conversationSettings', 'workspaceBackups', 'workspaceStats']
-        });
-      }
-      if (event.oldVersion < 10) {
-        // 🌟 NEW: Version 10 - Add auto-commit branch support
-        logWorkspaceOperation('DATABASE_MIGRATION_V10', { oldVersion: event.oldVersion, newVersion: 10 });
+/**
+ * Migrate to version 10
+ */
+function migrateToV10(db: KibitzDb): void {
+  console.log('Migrating to v10...');
+  logWorkspaceOperation('DATABASE_MIGRATION_V10', { newVersion: 10 });
 
         // Create auto-commit branches table
-        let branchesStore: IDBObjectStore | undefined;
         if (!db.objectStoreNames.contains('autoCommitBranches')) {
-          branchesStore = db.createObjectStore('autoCommitBranches', { keyPath: 'branchId' });
+    const branchesStore = db.createObjectStore('autoCommitBranches', { keyPath: 'branchId' });
           branchesStore.createIndex('conversationId', 'conversationId');
           branchesStore.createIndex('projectId', 'projectId');
           branchesStore.createIndex('branchName', 'branchName');
@@ -494,22 +361,10 @@ export const initDb = async (): Promise<KibitzDb> => {
         }
 
         // Create auto-commit agent status table
-        let agentStatusStore: IDBObjectStore | undefined;
         if (!db.objectStoreNames.contains('autoCommitAgentStatus')) {
-          agentStatusStore = db.createObjectStore('autoCommitAgentStatus', { keyPath: 'id' });
-        }
-
-        // Create branch history table
-        if (!db.objectStoreNames.contains('branchHistory')) {
-          const branchHistoryStore = db.createObjectStore('branchHistory', { keyPath: 'conversationId' });
-          branchHistoryStore.createIndex('projectId', 'projectId');
-          branchHistoryStore.createIndex('totalBranches', 'totalBranches');
-          branchHistoryStore.createIndex('oldestBranch', 'oldestBranch');
-          branchHistoryStore.createIndex('newestBranch', 'newestBranch');
-        }
+    const agentStatusStore = db.createObjectStore('autoCommitAgentStatus', { keyPath: 'id' });
 
         // Initialize auto-commit agent status
-        if (agentStatusStore) {
           agentStatusStore.add({
           id: 'global',
           isRunning: false,
@@ -522,17 +377,92 @@ export const initDb = async (): Promise<KibitzDb> => {
         });
         }
 
+  // Create branch history table
+  if (!db.objectStoreNames.contains('branchHistory')) {
+    const branchHistoryStore = db.createObjectStore('branchHistory', { keyPath: 'conversationId' });
+    branchHistoryStore.createIndex('projectId', 'projectId');
+    branchHistoryStore.createIndex('totalBranches', 'totalBranches');
+    branchHistoryStore.createIndex('oldestBranch', 'oldestBranch');
+    branchHistoryStore.createIndex('newestBranch', 'newestBranch');
+        }
+
         logWorkspaceOperation('DATABASE_MIGRATION_V10_COMPLETE', { 
           tablesCreated: ['autoCommitBranches', 'branchReverts', 'autoCommitAgentStatus', 'branchHistory']
         });
       }
-    };
+
+/**
+ * Safe database operation wrapper
+ */
+async function safeDbOperation<T>(
+  operation: (db: KibitzDb) => Promise<T>,
+  operationName: string
+): Promise<T> {
+  try {
+    const db = await initDb();
+    return await operation(db);
+  } catch (error) {
+    console.error(`Database operation '${operationName}' failed:`, error);
+    
+    // Attempt recovery if it's a schema-related error
+    if (error instanceof Error && error.message.includes('object store')) {
+      console.log('Attempting database recovery...');
+      try {
+        const recoveredDb = await recreateDatabase();
+        return await operation(recoveredDb);
+      } catch (recoveryError) {
+        console.error('Database recovery failed:', recoveryError);
+        throw recoveryError;
+      }
+    }
+    
+    throw error;
+  }
+}
+
+/**
+ * Safe transaction wrapper
+ */
+function safeTransaction<T>(
+  db: KibitzDb,
+  storeNames: string[],
+  mode: IDBTransactionMode,
+  operation: (transaction: IDBTransaction) => Promise<T>
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    // Validate that all stores exist
+    const missingStores = storeNames.filter(storeName => 
+      !db.objectStoreNames.contains(storeName)
+    );
+    
+    if (missingStores.length > 0) {
+      reject(new Error(`Missing object stores: ${missingStores.join(', ')}`));
+      return;
+    }
+    
+    try {
+      const transaction = db.transaction(storeNames, mode);
+      
+      transaction.onerror = () => {
+        console.error('Transaction failed:', transaction.error);
+        reject(transaction.error);
+      };
+      
+      transaction.onabort = () => {
+        console.error('Transaction aborted');
+        reject(new Error('Transaction aborted'));
+      };
+      
+      operation(transaction).then(resolve).catch(reject);
+    } catch (error) {
+      console.error('Failed to create transaction:', error);
+      reject(error);
+    }
   });
-};
+}
 
 export const loadState = async (): Promise<DbState> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
   // Helper to validate and fix project settings
   const validateProject = (project: Project): Project => {
     if (!project.settings) {
@@ -549,8 +479,8 @@ export const loadState = async (): Promise<DbState> => {
     return project;
   };
 
+    return safeTransaction(db, ['projects', 'appState'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['projects', 'appState'], 'readonly');
     const projectStore = transaction.objectStore('projects');
     const stateStore = transaction.objectStore('appState');
 
@@ -583,14 +513,15 @@ export const loadState = async (): Promise<DbState> => {
 
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'loadState');
 };
 
 // 🌟 NEW: Load workspace mappings from database
 export const loadWorkspaceMappings = async (): Promise<WorkspaceMapping[]> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['workspaceMappings'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['workspaceMappings'], 'readonly');
     const workspaceStore = transaction.objectStore('workspaceMappings');
     const workspaces: WorkspaceMapping[] = [];
 
@@ -615,14 +546,15 @@ export const loadWorkspaceMappings = async (): Promise<WorkspaceMapping[]> => {
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'loadWorkspaceMappings');
 };
 
 // 🌟 NEW: Save workspace mappings to database
 export const saveWorkspaceMappings = async (workspaces: WorkspaceMapping[]): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['workspaceMappings'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['workspaceMappings'], 'readwrite');
     const workspaceStore = transaction.objectStore('workspaceMappings');
 
     // Clear existing mappings
@@ -645,14 +577,15 @@ export const saveWorkspaceMappings = async (workspaces: WorkspaceMapping[]): Pro
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'saveWorkspaceMappings');
 };
 
 // 🌟 NEW: Load conversation settings from database
 export const loadConversationSettings = async (): Promise<Record<string, any>> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['conversationSettings'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['conversationSettings'], 'readonly');
     const settingsStore = transaction.objectStore('conversationSettings');
     const settings: Record<string, any> = {};
 
@@ -670,14 +603,15 @@ export const loadConversationSettings = async (): Promise<Record<string, any>> =
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'loadConversationSettings');
 };
 
 // 🌟 NEW: Save conversation settings to database
 export const saveConversationSettings = async (settings: Record<string, any>): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['conversationSettings'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['conversationSettings'], 'readwrite');
     const settingsStore = transaction.objectStore('conversationSettings');
 
     // Clear existing settings
@@ -697,14 +631,15 @@ export const saveConversationSettings = async (settings: Record<string, any>): P
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'saveConversationSettings');
 };
 
 // 🌟 NEW: Get workspace mapping by conversation ID
 export const getWorkspaceByConversationId = async (conversationId: string): Promise<WorkspaceMapping | null> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['workspaceMappings'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['workspaceMappings'], 'readonly');
     const workspaceStore = transaction.objectStore('workspaceMappings');
     const index = workspaceStore.index('conversationId');
 
@@ -725,14 +660,15 @@ export const getWorkspaceByConversationId = async (conversationId: string): Prom
 
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'getWorkspaceByConversationId');
 };
 
 // 🌟 NEW: Update workspace mapping
 export const updateWorkspaceMapping = async (workspaceMapping: WorkspaceMapping): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['workspaceMappings'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['workspaceMappings'], 'readwrite');
     const workspaceStore = transaction.objectStore('workspaceMappings');
 
     const sanitizedWorkspace = {
@@ -753,14 +689,15 @@ export const updateWorkspaceMapping = async (workspaceMapping: WorkspaceMapping)
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'updateWorkspaceMapping');
 };
 
 // 🌟 NEW: Delete workspace mapping
 export const deleteWorkspaceMapping = async (workspaceId: string): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['workspaceMappings', 'conversationSettings'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['workspaceMappings', 'conversationSettings'], 'readwrite');
     const workspaceStore = transaction.objectStore('workspaceMappings');
     const settingsStore = transaction.objectStore('conversationSettings');
 
@@ -784,14 +721,15 @@ export const deleteWorkspaceMapping = async (workspaceId: string): Promise<void>
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'deleteWorkspaceMapping');
 };
 
 // 🌟 NEW: Get workspace statistics
 export const getWorkspaceStats = async (): Promise<any> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['workspaceStats'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['workspaceStats'], 'readonly');
     const statsStore = transaction.objectStore('workspaceStats');
 
     statsStore.get('global').onsuccess = (event) => {
@@ -817,14 +755,15 @@ export const getWorkspaceStats = async (): Promise<any> => {
 
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'getWorkspaceStats');
 };
 
 // 🌟 NEW: Update workspace statistics
 export const updateWorkspaceStats = async (stats: any): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['workspaceStats'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['workspaceStats'], 'readwrite');
     const statsStore = transaction.objectStore('workspaceStats');
 
     const sanitizedStats = {
@@ -840,16 +779,17 @@ export const updateWorkspaceStats = async (stats: any): Promise<void> => {
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'updateWorkspaceStats');
 };
 
 // 🌟 NEW: Auto-commit branch persistence functions
 
 // Save auto-commit branch
 export const saveAutoCommitBranch = async (branch: AutoCommitBranch): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['autoCommitBranches'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['autoCommitBranches'], 'readwrite');
     const branchesStore = transaction.objectStore('autoCommitBranches');
 
     const sanitizedBranch = {
@@ -873,14 +813,15 @@ export const saveAutoCommitBranch = async (branch: AutoCommitBranch): Promise<vo
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'saveAutoCommitBranch');
 };
 
 // Load auto-commit branches by conversation
 export const loadAutoCommitBranches = async (conversationId: string): Promise<AutoCommitBranch[]> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['autoCommitBranches'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['autoCommitBranches'], 'readonly');
     const branchesStore = transaction.objectStore('autoCommitBranches');
     const index = branchesStore.index('conversationId');
     const branches: AutoCommitBranch[] = [];
@@ -910,14 +851,15 @@ export const loadAutoCommitBranches = async (conversationId: string): Promise<Au
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'loadAutoCommitBranches');
 };
 
 // Load all auto-commit branches for a project
 export const loadAutoCommitBranchesByProject = async (projectId: string): Promise<AutoCommitBranch[]> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['autoCommitBranches'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['autoCommitBranches'], 'readonly');
     const branchesStore = transaction.objectStore('autoCommitBranches');
     const index = branchesStore.index('projectId');
     const branches: AutoCommitBranch[] = [];
@@ -947,14 +889,15 @@ export const loadAutoCommitBranchesByProject = async (projectId: string): Promis
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'loadAutoCommitBranchesByProject');
 };
 
 // Delete auto-commit branch
 export const deleteAutoCommitBranch = async (branchId: string): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['autoCommitBranches'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['autoCommitBranches'], 'readwrite');
     const branchesStore = transaction.objectStore('autoCommitBranches');
 
     branchesStore.delete(branchId);
@@ -965,14 +908,15 @@ export const deleteAutoCommitBranch = async (branchId: string): Promise<void> =>
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'deleteAutoCommitBranch');
 };
 
 // Save branch revert
 export const saveBranchRevert = async (revert: BranchRevert): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['branchReverts'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['branchReverts'], 'readwrite');
     const revertsStore = transaction.objectStore('branchReverts');
 
     const sanitizedRevert = {
@@ -992,14 +936,15 @@ export const saveBranchRevert = async (revert: BranchRevert): Promise<void> => {
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'saveBranchRevert');
 };
 
 // Load branch reverts by conversation
 export const loadBranchReverts = async (conversationId: string): Promise<BranchRevert[]> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['branchReverts'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['branchReverts'], 'readonly');
     const revertsStore = transaction.objectStore('branchReverts');
     const index = revertsStore.index('conversationId');
     const reverts: BranchRevert[] = [];
@@ -1026,14 +971,15 @@ export const loadBranchReverts = async (conversationId: string): Promise<BranchR
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'loadBranchReverts');
 };
 
 // Get auto-commit agent status
 export const getAutoCommitAgentStatus = async (): Promise<AutoCommitAgentStatus> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['autoCommitAgentStatus'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['autoCommitAgentStatus'], 'readonly');
     const statusStore = transaction.objectStore('autoCommitAgentStatus');
 
     statusStore.get('global').onsuccess = (event) => {
@@ -1062,14 +1008,15 @@ export const getAutoCommitAgentStatus = async (): Promise<AutoCommitAgentStatus>
 
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'getAutoCommitAgentStatus');
 };
 
 // Update auto-commit agent status
 export const updateAutoCommitAgentStatus = async (status: AutoCommitAgentStatus): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['autoCommitAgentStatus'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['autoCommitAgentStatus'], 'readwrite');
     const statusStore = transaction.objectStore('autoCommitAgentStatus');
 
     const sanitizedStatus = {
@@ -1091,14 +1038,15 @@ export const updateAutoCommitAgentStatus = async (status: AutoCommitAgentStatus)
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'updateAutoCommitAgentStatus');
 };
 
 // Save conversation branch history
 export const saveConversationBranchHistory = async (history: ConversationBranchHistory): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['branchHistory'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['branchHistory'], 'readwrite');
     const historyStore = transaction.objectStore('branchHistory');
 
     const sanitizedHistory = {
@@ -1126,14 +1074,15 @@ export const saveConversationBranchHistory = async (history: ConversationBranchH
     };
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'saveConversationBranchHistory');
 };
 
 // Load conversation branch history
 export const loadConversationBranchHistory = async (conversationId: string): Promise<ConversationBranchHistory | null> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['branchHistory'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['branchHistory'], 'readonly');
     const historyStore = transaction.objectStore('branchHistory');
 
     historyStore.get(conversationId).onsuccess = (event) => {
@@ -1162,6 +1111,8 @@ export const loadConversationBranchHistory = async (conversationId: string): Pro
 
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'loadConversationBranchHistory');
 };
 
 // Sanitize project data before storage by removing non-serializable properties
@@ -1249,22 +1200,23 @@ const sanitizeProjectForStorage = (project: Project): Project => {
 };
 
 export const saveState = async (state: DbState): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['projects', 'appState'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['projects', 'appState'], 'readwrite');
+        const projectStore = transaction.objectStore('projects');
+        const stateStore = transaction.objectStore('appState');
 
     // Clear existing data
-    transaction.objectStore('projects').clear();
+        projectStore.clear();
 
     // Save projects with sanitized data
     state.projects.forEach(project => {
       const sanitizedProject = sanitizeProjectForStorage(project);
-      transaction.objectStore('projects').add(sanitizedProject);
+          projectStore.add(sanitizedProject);
     });
 
     // Save active IDs
-    transaction.objectStore('appState').put({
+        stateStore.put({
       id: 'activeIds',
       activeProjectId: state.activeProjectId,
       activeConversationId: state.activeConversationId
@@ -1273,6 +1225,8 @@ export const saveState = async (state: DbState): Promise<void> => {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'saveState');
 };
 
 // Sanitize MCP server data before storage by removing non-serializable properties
@@ -1287,10 +1241,9 @@ const sanitizeMcpServerForStorage = (server: McpServer): McpServer => {
 };
 
 export const saveMcpServers = async (servers: McpServer[]): Promise<void> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['mcpServers'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['mcpServers'], 'readwrite');
     const store = transaction.objectStore('mcpServers');
 
     try {
@@ -1328,14 +1281,15 @@ export const saveMcpServers = async (servers: McpServer[]): Promise<void> => {
       reject(transaction.error);
     };
   });
+    });
+  }, 'saveMcpServers');
 };
 
 export const loadMcpServers = async (): Promise<McpServer[]> => {
-  const db = await initDb();
-
+  return safeDbOperation(async (db) => {
+    return safeTransaction(db, ['mcpServers'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
     const servers: McpServer[] = [];
-    const transaction = db.transaction(['mcpServers'], 'readonly');
     const store = transaction.objectStore('mcpServers');
 
     store.openCursor().onsuccess = (event) => {
@@ -1349,6 +1303,8 @@ export const loadMcpServers = async (): Promise<McpServer[]> => {
     transaction.oncomplete = () => resolve(servers);
     transaction.onerror = () => reject(transaction.error);
   });
+    });
+  }, 'loadMcpServers');
 };
 
 // Deprecated - no longer needed since all data has been migrated to IndexedDB

@@ -7,6 +7,7 @@
 
 import { createHash } from 'crypto';
 import { getGitHubRepoName } from './projectPathService';
+import { wrapGitCommand, createGitContext } from './gitCommandOptimizer';
 
 /**
  * Response from Git command execution
@@ -103,6 +104,7 @@ export const executeGitCommand = async (
       const fullCommand = `cd "${cwd}" && ${command}`;
       console.log(`Executing bash command: ${fullCommand} with thread_id=${threadId}`);
       
+      // Execute git command directly to avoid optimization loops
       const result = await executeTool(serverId, 'BashCommand', {
         action_json: {
           command: fullCommand,
@@ -664,6 +666,15 @@ export const createCommit = async (
       console.log("Error checking/pushing to GitHub (commit was still successful):", pushError);
     }
     
+    // 🚀 IMMEDIATE JSON GENERATION after successful commit
+    try {
+      const { createProjectJSONFiles } = await import('./branchService');
+      await createProjectJSONFiles(projectPath, serverId, executeTool);
+      console.log('✅ JSON files generated after successful commit');
+    } catch (jsonError) {
+      console.warn('⚠️ Failed to generate JSON files after commit:', jsonError);
+    }
+
     return {
       success: true,
       commitHash

@@ -3,7 +3,7 @@ import { Project, ProjectSettings, ConversationBrief, ProjectState, McpState, Mc
 import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers, loadWorkspaceMappings, saveWorkspaceMappings, getWorkspaceByConversationId, updateWorkspaceMapping, deleteWorkspaceMapping } from '../lib/db';
 import { WsTool } from '../components/LlmChat/types/toolTypes';
-import { autoInitializeGitForProject } from '../lib/gitCheckpointService';
+import { autoInitializeGitForProject } from '../lib/gitAutoInitService';
 import { ensureProjectDirectory, getProjectPath } from '../lib/projectPathService';
 import { recordSystemError, shouldThrottleOperation } from '../lib/systemDiagnostics';
 import { createWorkspaceMapping } from '../lib/conversationWorkspaceService';
@@ -588,6 +588,15 @@ export const useStore = create<RootState>((set, get) => {
       if (get().initialized) return;
 
       try {
+        // Initialize database integration service
+        try {
+          const { initializeDatabaseIntegration } = await import('../lib/existingDatabaseIntegration');
+          await initializeDatabaseIntegration();
+          console.log('✅ Database integration service initialized');
+        } catch (error) {
+          console.error('❌ Failed to initialize database integration:', error);
+        }
+
         // Try to load API keys from server if none exist locally
         const { apiKeys } = get();
         if (Object.keys(apiKeys).length === 0 && !get().hasLoadedApiKeysFromServer) {
@@ -694,6 +703,22 @@ export const useStore = create<RootState>((set, get) => {
             activeProjectId: defaultProject.id,
             activeConversationId: defaultConversation.id,
           });
+
+          // Track default project in database
+          try {
+            const { getDatabaseIntegrationService } = await import('../lib/existingDatabaseIntegration');
+            const dbService = getDatabaseIntegrationService();
+            
+            await dbService.createProjectWithTracking(
+              defaultConversation.id,
+              defaultProject.name,
+              defaultProject.settings
+            );
+            
+            console.log(`✅ Default project tracked in database with ID: ${defaultProject.id}`);
+          } catch (error) {
+            console.error('❌ Failed to track default project in database:', error);
+          }
         }
 
         set({ initialized: true });
@@ -755,6 +780,28 @@ export const useStore = create<RootState>((set, get) => {
 
       set(updatedState);
 
+      // 🔧 NEW: Integrate database tracking
+      (async () => {
+        try {
+          const { getDatabaseIntegrationService } = await import('../lib/existingDatabaseIntegration');
+          const dbService = getDatabaseIntegrationService();
+          
+          // Create a default conversation for the project
+          const conversationId = generateId();
+          
+          // Track project creation in database
+          await dbService.createProjectWithTracking(
+            conversationId,
+            name,
+            mergedSettings
+          );
+          
+          console.log(`✅ Project ${name} tracked in database with ID: ${projectId}`);
+        } catch (error) {
+          console.error('❌ Failed to track project in database:', error);
+        }
+      })();
+
       // Find connected MCP servers
       const connectedServerIds = state.servers
         .filter(server => server.status === 'connected')
@@ -788,10 +835,12 @@ export const useStore = create<RootState>((set, get) => {
               console.log(`Project directory set up at: ${projectPath}`);
               
               // Initialize Git repository
-              autoInitializeGitForProject(projectId)
-                .then(success => {
-                  if (success) {
+              autoInitializeGitForProject(projectId, name, projectPath, mcpServerId, executeTool)
+                .then(result => {
+                  if (result.success) {
                     console.log('Git repository initialized for project:', name);
+                  } else {
+                    console.warn('Git repository initialization failed:', result.message);
                   }
                 })
                 .catch(error => {
@@ -1002,6 +1051,19 @@ export const useStore = create<RootState>((set, get) => {
 
         return newState;
       });
+
+      // 🔧 NEW: Track conversation in database
+      (async () => {
+        try {
+          const { getDatabaseIntegrationService } = await import('../lib/existingDatabaseIntegration');
+          const dbService = getDatabaseIntegrationService();
+          
+          await dbService.trackConversation(conversationId, projectId, name || '(New Chat)');
+          console.log(`✅ Conversation ${name || '(New Chat)'} tracked in database`);
+        } catch (error) {
+          console.error('❌ Failed to track conversation in database:', error);
+        }
+      })();
     },
 
     deleteConversation: (projectId: string, conversationId: string) => {
@@ -1537,10 +1599,13 @@ export const useStore = create<RootState>((set, get) => {
           if (filePath.includes('/') && filePath.startsWith(projectPath)) {
             const pathParts = filePath.split('/');
             const fileName = pathParts.pop() || 'file.txt';
-            // Only allow files directly in project directory, no subdirectories
-            if (pathParts.length > projectPath.split('/').length) {
+            // 🚀 FIX: Allow .kibitz subdirectories for API files
+            const isKibitzApiFile = filePath.includes('.kibitz/api/');
+            if (pathParts.length > projectPath.split('/').length && !isKibitzApiFile) {
               filePath = `${projectPath}/${fileName}`;
               console.log(`🔒 Flattened subdirectory path to: ${filePath}`);
+            } else if (isKibitzApiFile) {
+              console.log(`✅ Allowing .kibitz/api file: ${filePath}`);
             }
           }
           

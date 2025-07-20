@@ -10,101 +10,114 @@
 import { executeGitCommand } from './gitService';
 import { getProjectPath } from './projectPathService';
 
-/**
- * Simplified wrapper for executeGitCommand that automatically provides executeTool
- */
-const executeGitCommandSimple = async (
-  command: string,
-  projectPath: string,
-  mcpServerId: string
-): Promise<{ success: boolean; output: string; error?: string }> => {
-  // Get executeTool from the root store
-  const { useStore } = await import('../stores/rootStore');
-  const { executeTool } = useStore.getState();
-  
-  return executeGitCommand(mcpServerId, command, projectPath, executeTool);
-};
+// 🚀 PREVENT REPETITIVE OPERATIONS - Cache initialization results
+const initializationCache = new Map<string, Promise<{ success: boolean; message?: string }>>();
 
 /**
- * Ensures a Git repository is initialized in the current workspace.
- * If a .git directory already exists, it does nothing.
- *
- * @param projectId The project ID for logging purposes
- * @param projectName The name of the project, used for the initial commit message.
- * @param mcpServerId The ID of the MCP server to execute commands on.
- * @returns Promise resolving to success status and any error message
+ * Auto-initializes Git for a project if needed
+ * 🚀 OPTIMIZED: Prevents duplicate operations with caching
  */
 export const autoInitializeGitForProject = async (
   projectId: string,
   projectName: string,
-  mcpServerId: string
-): Promise<{ success: boolean; error?: string }> => {
+  projectPath: string,
+  mcpServerId: string = 'localhost-mcp',
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<{ success: boolean; message?: string }> => {
+  
+  // 🔧 PREVENT DUPLICATE OPERATIONS - Check cache first
+  const cacheKey = `${projectId}-${projectPath}`;
+  if (initializationCache.has(cacheKey)) {
+    console.log('🔄 autoInitializeGitForProject: Using cached initialization result');
+    return await initializationCache.get(cacheKey)!;
+  }
+
+  const initPromise = performGitInitialization(projectId, projectName, projectPath, mcpServerId, executeTool);
+  initializationCache.set(cacheKey, initPromise);
+  
+  // Clean up cache after completion (success or failure)
   try {
-    console.log(`🔧 autoInitializeGitForProject: Starting Git initialization for project ${projectId}`);
-    
-    // Get the current workspace path
-    const projectPath = getProjectPath(projectId, projectName);
-    console.log(`🔧 autoInitializeGitForProject: Working in directory: ${projectPath}`);
-    
-    // Step 1: Check if Git is already initialized
-    console.log('🔧 autoInitializeGitForProject: Step 1 - Check if Git is already initialized');
-    try {
-      const gitCheckResult = await executeGitCommandSimple('git rev-parse --git-dir', projectPath, mcpServerId);
-      if (gitCheckResult.success) {
-        console.log('✅ autoInitializeGitForProject: Git repository already exists, skipping initialization');
-        return { success: true };
-      }
-    } catch (error) {
-      console.log('🔧 autoInitializeGitForProject: No existing Git repository found, proceeding with initialization');
+    const result = await initPromise;
+    // Keep successful results in cache for 5 minutes, remove failed ones immediately
+    if (result.success) {
+      setTimeout(() => initializationCache.delete(cacheKey), 5 * 60 * 1000);
+    } else {
+      initializationCache.delete(cacheKey);
     }
-    
-    // Step 2: Initialize Git repository
-    console.log('🔧 autoInitializeGitForProject: Step 2 - Initialize Git repository');
-    const gitInitResult = await executeGitCommandSimple('git init', projectPath, mcpServerId);
-    console.log(`🔧 autoInitializeGitForProject: Git init result:`, gitInitResult);
-    
-    // Step 3: Configure Git user (required for commits)
-    console.log('🔧 autoInitializeGitForProject: Step 3 - Configure Git user');
-    await executeGitCommandSimple('git config user.name "Kibitz Auto-Commit"', projectPath, mcpServerId);
-    await executeGitCommandSimple('git config user.email "autocommit@kibitz.dev"', projectPath, mcpServerId);
-    
-    // Step 4: Create initial README if it doesn't exist
-    console.log('🔧 autoInitializeGitForProject: Step 4 - Create README if needed');
-    const readmeExists = await executeGitCommandSimple('test -f README.md && echo "exists" || echo "not_exists"', projectPath, mcpServerId);
-    if (!readmeExists.output?.includes('exists')) {
-      const readmeContent = `# ${projectName}\n\nThis project was initialized by Kibitz.\nChanges will be automatically committed as you work.\n`;
-      
-      // Use the MCP server's FileWriteOrEdit tool to create README
-      const { useStore } = await import('../stores/rootStore');
-      const { executeTool } = useStore.getState();
-      
-      try {
-        await executeTool(mcpServerId, 'FileWriteOrEdit', {
-          file_path: `${projectPath}/README.md`,
-          content: readmeContent
-        });
-        console.log('✅ autoInitializeGitForProject: README created successfully');
-      } catch (error) {
-        console.log('⚠️ autoInitializeGitForProject: README creation failed, but continuing:', error);
-      }
-    }
-    
-    // Step 5: Add files and create initial commit
-    console.log('🔧 autoInitializeGitForProject: Step 5 - Create initial commit');
-    await executeGitCommandSimple('git add .', projectPath, mcpServerId);
-    await executeGitCommandSimple('git commit -m "Initial commit - Kibitz project setup"', projectPath, mcpServerId);
-    
-    console.log('✅ autoInitializeGitForProject: Git initialization completed successfully');
-    return { success: true };
-    
+    return result;
   } catch (error) {
-    console.error('❌ autoInitializeGitForProject: Git initialization failed:', error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error during Git initialization' 
-    };
+    initializationCache.delete(cacheKey);
+    throw error;
   }
 };
+
+async function performGitInitialization(
+  projectId: string,
+  projectName: string,
+  projectPath: string,
+  mcpServerId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    console.log(`🔧 autoInitializeGitForProject: Starting Git initialization for project ${projectId}`);
+    console.log(`🔧 autoInitializeGitForProject: Working in directory: ${projectPath}`);
+    
+    console.log('🔧 autoInitializeGitForProject: Step 1 - Check if Git is already initialized');
+    const gitCheckResult = await executeGitCommand(mcpServerId, 'git rev-parse --git-dir', projectPath, executeTool);
+    
+    if (gitCheckResult.success) {
+      console.log('✅ autoInitializeGitForProject: Git repository already exists, skipping initialization');
+      
+      // 🚀 IMPORTANT: Generate JSON files for existing projects that don't have them  
+      console.log('📋 autoInitializeGitForProject: Checking for JSON files...');
+      const jsonCheckResult = await executeGitCommand(mcpServerId, 'ls -la .kibitz/api/project.json', projectPath, executeTool);
+      
+      if (!jsonCheckResult.success) {
+        console.log('📋 autoInitializeGitForProject: No JSON files found, generating them now...');
+        
+        try {
+          const { extractAndSaveProjectData } = await import('./projectDataExtractor');
+          await extractAndSaveProjectData(projectId, projectName, mcpServerId, executeTool);
+          console.log('✅ autoInitializeGitForProject: JSON files generated successfully');
+        } catch (jsonError) {
+          console.warn('⚠️ autoInitializeGitForProject: Failed to generate JSON files:', jsonError);
+          // Don't fail the whole operation if JSON generation fails
+        }
+      } else {
+        console.log('✅ autoInitializeGitForProject: JSON files already exist');
+      }
+      
+      return { success: true, message: 'Git repository already initialized with JSON files' };
+    }
+
+    // Git doesn't exist, so initialize it
+    console.log('🔧 autoInitializeGitForProject: Step 2 - Initialize Git repository');
+    const gitInitResult = await executeGitCommand(mcpServerId, 'git init', projectPath, executeTool);
+    
+    if (!gitInitResult.success) {
+      console.error('❌ autoInitializeGitForProject: Failed to initialize Git repository:', gitInitResult.output);
+      return { success: false, message: `Failed to initialize Git: ${gitInitResult.output}` };
+    }
+
+    console.log('✅ autoInitializeGitForProject: Git repository initialized successfully');
+    
+    // 🚀 AUTO-GENERATE JSON FILES for new repos
+    console.log('📋 autoInitializeGitForProject: Generating JSON files for new repository...');
+    try {
+      const { extractAndSaveProjectData } = await import('./projectDataExtractor');
+      await extractAndSaveProjectData(projectId, projectName, mcpServerId, executeTool);
+      console.log('✅ autoInitializeGitForProject: JSON files generated for new repository');
+    } catch (jsonError) {
+      console.warn('⚠️ autoInitializeGitForProject: Failed to generate JSON files for new repo:', jsonError);
+    }
+
+    return { success: true, message: 'Git repository initialized and JSON files created' };
+
+  } catch (error) {
+    console.error('❌ autoInitializeGitForProject: Unexpected error:', error);
+    return { success: false, message: `Unexpected error: ${error}` };
+  }
+}
 
 /**
  * Checks if Git is available and properly configured

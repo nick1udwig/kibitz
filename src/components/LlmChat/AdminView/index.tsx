@@ -18,7 +18,7 @@ import ToolsView from './ToolsView';
 import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
 import { getDefaultModelForProvider } from '@/stores/rootStore';
-import { CheckpointManager } from '@/components/CheckpointManager';
+import { ConversationCheckpointManager } from '@/components/CheckpointManager/ConversationCheckpointManager';
 import { ProjectAnalysisTestButton } from '../../ProjectAnalysisTestButton';
 import { RepoTestInstructions } from '../../RepoTestInstructions';
 import { RecoveryPanel } from '../../RecoveryPanel';
@@ -120,7 +120,7 @@ export const AdminView = () => {
       {activeTab === 'tools' ? (
         <ToolsView />
       ) : activeTab === 'checkpoints' ? (
-        <CheckpointManager projectId={activeProjectId || ''} />
+                      <ConversationCheckpointManager projectId={activeProjectId || ''} />
       ) : activeTab === 'recovery' ? (
         <RecoveryPanel />
       ) : activeTab === 'repo-test' ? (
