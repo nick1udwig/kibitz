@@ -1,215 +1,353 @@
 /**
- * Conversation Branch Switching Service
- * Handles switching between conversation branches and syncing frontend with git state
- * 🚀 CORE FEATURE: Maps conversations to branches and switches repos accordingly
+ * Conversation Branch Service
+ * 
+ * Manages conversation-specific branching to prevent hash ID conflicts
+ * and maintain separate commit histories for each conversation.
  */
 
 import { executeGitCommand } from './gitService';
-import { getProjectPath } from './projectPathService';
 
-export interface ConversationBranch {
+export interface ConversationBranchInfo {
   branchName: string;
   conversationId: string;
-  commitHash: string;
-  timestamp: number;
-  messageCount: number;
-  filesChanged: string[];
-  isActive: boolean;
+  interactionCount: number;
+  baseBranch: string;
+  startingHash: string;
+  createdAt: number;
+  commitHash?: string;
 }
 
-export interface BranchSwitchResult {
+export interface ConversationBranchResult {
   success: boolean;
-  currentBranch: string;
-  files: string[];
+  branchInfo?: ConversationBranchInfo;
   error?: string;
 }
 
 /**
- * Get all conversation branches for a project
+ * Get all branches for a specific conversation
  */
-export const getConversationBranches = async (
-  projectId: string,
-  projectName: string,
-  mcpServerId: string,
+export async function getConversationBranches(
+  projectPath: string,
+  conversationId: string,
+  serverId: string,
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
-): Promise<ConversationBranch[]> => {
+): Promise<string[]> {
   try {
-    const projectPath = getProjectPath(projectId, projectName);
-    
-    // Get all branches that start with "conversation/"
     const branchResult = await executeGitCommand(
-      mcpServerId,
-      'git branch -a --format="%(refname:short),%(objectname),%(authordate:unix)"',
+      serverId,
+      'git branch -a',
       projectPath,
       executeTool
     );
-    
+
     if (!branchResult.success) {
-      console.warn('Failed to get branches:', branchResult.output);
+      console.warn('⚠️ Failed to get branch list:', branchResult.error);
       return [];
     }
-    
-    const branches: ConversationBranch[] = [];
-    const lines = branchResult.output.split('\n').filter(line => line.trim());
-    
-    for (const line of lines) {
-      const [branchName, commitHash, timestamp] = line.split(',');
-      
-      if (branchName && branchName.startsWith('conversation/')) {
-        // Extract conversation ID from branch name (format: conversation/YYYYMMDD-HHMM or conversation/conversationId)
-        const conversationId = branchName.replace('conversation/', '');
+
+    const branches = branchResult.output
+      .split('\n')
+      .map(branch => branch.trim().replace(/^\*\s*/, '').replace(/^remotes\/origin\//, ''))
+      .filter(branch => branch && branch.startsWith(`conv-${conversationId}-`))
+      .sort();
+
+    console.log(`🔍 Found ${branches.length} branches for conversation ${conversationId}:`, branches);
+    return branches;
+
+  } catch (error) {
+    console.error('❌ Error getting conversation branches:', error);
+    return [];
+  }
+}
+
+/**
+ * Get the latest branch for a conversation
+ */
+export async function getLatestConversationBranch(
+  projectPath: string,
+  conversationId: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<string | null> {
+  const branches = await getConversationBranches(projectPath, conversationId, serverId, executeTool);
+  return branches.length > 0 ? branches[branches.length - 1] : null;
+}
+
+/**
+ * Get the next interaction count for a conversation
+ */
+export async function getNextInteractionCount(
+  projectPath: string,
+  conversationId: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<number> {
+  const branches = await getConversationBranches(projectPath, conversationId, serverId, executeTool);
+  
+  if (branches.length === 0) {
+    return 1; // First interaction
+  }
+  
+  // Extract step numbers and find the highest
+  let maxStepNumber = 0;
+  branches.forEach(branchName => {
+    const stepMatch = branchName.match(/conv-.*-step-(\d+)$/);
+    if (stepMatch) {
+      const stepNumber = parseInt(stepMatch[1], 10);
+      if (stepNumber > maxStepNumber) {
+        maxStepNumber = stepNumber;
+      }
+    }
+  });
+  
+  console.log(`🔢 Found ${branches.length} conversation branches, highest step: ${maxStepNumber}, next step: ${maxStepNumber + 1}`);
+  return maxStepNumber + 1;
+}
+
+/**
+ * Get current commit hash
+ */
+export async function getCurrentCommitHash(
+  projectPath: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<string> {
+  try {
+    const hashResult = await executeGitCommand(
+      serverId,
+      'git rev-parse HEAD',
+      projectPath,
+      executeTool
+    );
+
+    return hashResult.success ? hashResult.output.trim() : '';
+  } catch (error) {
+    console.error('❌ Error getting commit hash:', error);
+    return '';
+  }
+}
+
+/**
+ * Create a conversation-specific branch following append-only strategy
+ */
+export async function createConversationBranch(
+  projectPath: string,
+  conversationId: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
+  options: {
+    interactionCount?: number;
+    baseBranch?: string;
+  } = {}
+): Promise<ConversationBranchResult> {
+  try {
+    console.log(`🌿 Creating conversation branch for ${conversationId}`);
+
+    // Get interaction count
+    const interactionCount = options.interactionCount || 
+      await getNextInteractionCount(projectPath, conversationId, serverId, executeTool);
+
+    // Determine base branch - CRITICAL: Find the EXACT previous step
+    let baseBranch = options.baseBranch;
+    if (!baseBranch) {
+      if (interactionCount === 1) {
+        // First interaction always starts from main
+        baseBranch = 'main';
+      } else {
+        // Find the immediate previous step (step-{interactionCount-1})
+        const previousStepBranch = `conv-${conversationId}-step-${interactionCount - 1}`;
         
-        // Get files changed in this branch compared to main
-        const filesResult = await executeGitCommand(
-          mcpServerId,
-          `git diff --name-only main..${branchName}`,
+        // Verify the previous step exists
+        const branchCheckResult = await executeGitCommand(
+          serverId,
+          `git show-ref --verify --quiet refs/heads/${previousStepBranch}`,
           projectPath,
           executeTool
         );
         
-        const filesChanged = filesResult.success ? 
-          filesResult.output.split('\n').filter(f => f.trim()) : [];
-        
-        branches.push({
-          branchName,
-          conversationId,
-          commitHash: commitHash?.substring(0, 8) || '',
-          timestamp: parseInt(timestamp) || Date.now(),
-          messageCount: 0, // TODO: Extract from commit messages
-          filesChanged,
-          isActive: false
-        });
+        if (branchCheckResult.success) {
+          baseBranch = previousStepBranch;
+          console.log(`✅ Found previous step: ${previousStepBranch}`);
+        } else {
+          // Previous step doesn't exist, find the latest existing step
+          const latestBranch = await getLatestConversationBranch(projectPath, conversationId, serverId, executeTool);
+          baseBranch = latestBranch || 'main';
+          console.log(`⚠️ Previous step ${previousStepBranch} not found, using latest: ${baseBranch}`);
+        }
       }
     }
-    
-    return branches.sort((a, b) => b.timestamp - a.timestamp);
-    
-  } catch (error) {
-    console.error('Error getting conversation branches:', error);
-    return [];
-  }
-};
 
-/**
- * Switch to a specific conversation branch
- */
-export const switchToConversationBranch = async (
-  projectId: string,
-  projectName: string,
-  branchName: string,
-  mcpServerId: string,
-  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
-): Promise<BranchSwitchResult> => {
-  try {
-    const projectPath = getProjectPath(projectId, projectName);
-    
-    // Switch to the branch
-    const switchResult = await executeGitCommand(
-      mcpServerId,
-      `git checkout ${branchName}`,
+    console.log(`📋 Using base branch: ${baseBranch} for interaction ${interactionCount}`);
+
+    // CRITICAL: Always checkout the base branch first to ensure proper incremental building
+    console.log(`🔄 Checking out base branch: ${baseBranch}`);
+    const checkoutResult = await executeGitCommand(
+      serverId,
+      `git checkout ${baseBranch}`,
       projectPath,
       executeTool
     );
-    
-    if (!switchResult.success) {
+
+    if (!checkoutResult.success) {
+      console.error(`❌ Failed to checkout ${baseBranch}:`, checkoutResult.error);
+      console.log(`🔄 Falling back to main branch`);
+      const mainCheckoutResult = await executeGitCommand(serverId, 'git checkout main', projectPath, executeTool);
+      if (!mainCheckoutResult.success) {
+        return {
+          success: false,
+          error: `Failed to checkout any base branch: ${mainCheckoutResult.error}`
+        };
+      }
+      baseBranch = 'main';
+    }
+
+    console.log(`✅ Successfully checked out base branch: ${baseBranch}`);
+
+    // Get starting hash (before any changes)
+    const startingHash = await getCurrentCommitHash(projectPath, serverId, executeTool);
+
+    // Create new branch name
+    const newBranchName = `conv-${conversationId}-step-${interactionCount}`;
+
+    console.log(`🌿 Creating new conversation branch: ${newBranchName}`);
+
+    // Create and checkout new branch
+    const createResult = await executeGitCommand(
+      serverId,
+      `git checkout -b ${newBranchName}`,
+      projectPath,
+      executeTool
+    );
+
+    if (!createResult.success) {
       return {
         success: false,
-        currentBranch: '',
-        files: [],
-        error: `Failed to switch to branch: ${switchResult.output}`
+        error: `Failed to create branch ${newBranchName}: ${createResult.error}`
       };
     }
-    
-    // Get current branch to confirm
-    const currentBranchResult = await executeGitCommand(
-      mcpServerId,
+
+    // Verify the new branch was created successfully and get its starting state
+    const verifyResult = await executeGitCommand(
+      serverId,
       'git branch --show-current',
       projectPath,
       executeTool
     );
-    
-    // Get list of files in current state
-    const filesResult = await executeGitCommand(
-      mcpServerId,
-      'git ls-files',
-      projectPath,
-      executeTool
-    );
-    
-    const files = filesResult.success ? 
-      filesResult.output.split('\n').filter(f => f.trim()) : [];
-    
-    console.log(`✅ Successfully switched to conversation branch: ${branchName}`);
-    
+
+    if (!verifyResult.success || verifyResult.output.trim() !== newBranchName) {
+      return {
+        success: false,
+        error: `Branch creation verification failed. Expected: ${newBranchName}, Got: ${verifyResult.output?.trim()}`
+      };
+    }
+
+    // Get the actual current hash after creating the branch
+    const actualHash = await getCurrentCommitHash(projectPath, serverId, executeTool);
+
+    const branchInfo: ConversationBranchInfo = {
+      branchName: newBranchName,
+      conversationId,
+      interactionCount,
+      baseBranch,
+      startingHash: actualHash, // Use actual hash after branch creation
+      createdAt: Date.now()
+    };
+
+    console.log(`✅ Created conversation branch: ${newBranchName} (step ${interactionCount})`);
+    console.log(`   - Base branch: ${baseBranch}`);
+    console.log(`   - Starting hash: ${actualHash.substring(0, 8)}`);
+    console.log(`   - This branch will build incrementally on: ${baseBranch}`);
+
     return {
       success: true,
-      currentBranch: currentBranchResult.output?.trim() || branchName,
-      files,
+      branchInfo
     };
-    
+
   } catch (error) {
-    console.error('Error switching conversation branch:', error);
+    console.error('❌ Error creating conversation branch:', error);
     return {
       success: false,
-      currentBranch: '',
-      files: [],
-      error: `Unexpected error: ${error}`
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
-};
+}
 
 /**
- * Get current active branch
+ * Update conversation branches in project JSON
  */
-export const getCurrentBranch = async (
-  projectId: string,
-  projectName: string,
-  mcpServerId: string,
-  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
-): Promise<string> => {
-  try {
-    const projectPath = getProjectPath(projectId, projectName);
-    
-    const result = await executeGitCommand(
-      mcpServerId,
-      'git branch --show-current',
-      projectPath,
-      executeTool
-    );
-    
-    return result.success ? result.output.trim() : 'main';
-    
-  } catch (error) {
-    console.error('Error getting current branch:', error);
-    return 'main';
+export function updateConversationJSON(
+  projectData: any,
+  conversationId: string,
+  branchInfo: ConversationBranchInfo
+): any {
+  // Initialize conversations structure if it doesn't exist
+  if (!projectData.conversations) {
+    projectData.conversations = [];
   }
-};
 
-/**
- * Get files for a specific branch without switching to it
- */
-export const getFilesForBranch = async (
-  projectId: string,
-  projectName: string,
-  branchName: string,
-  mcpServerId: string,
-  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
-): Promise<string[]> => {
-  try {
-    const projectPath = getProjectPath(projectId, projectName);
-    
-    const result = await executeGitCommand(
-      mcpServerId,
-      `git ls-tree -r --name-only ${branchName}`,
-      projectPath,
-      executeTool
-    );
-    
-    return result.success ? 
-      result.output.split('\n').filter(f => f.trim()) : [];
-    
-  } catch (error) {
-    console.error('Error getting files for branch:', error);
-    return [];
+  // Find or create conversation entry
+  let conversation = projectData.conversations.find((c: any) => c.conversationId === conversationId);
+  
+  if (!conversation) {
+    conversation = {
+      conversationId,
+      createdAt: Date.now(),
+      branches: [],
+      currentBranch: null
+    };
+    projectData.conversations.push(conversation);
   }
-}; 
+
+  // Add new branch info
+  conversation.branches.push({
+    branchName: branchInfo.branchName,
+    baseBranch: branchInfo.baseBranch,
+    startingHash: branchInfo.startingHash,
+    interactionIndex: branchInfo.interactionCount,
+    createdAt: branchInfo.createdAt,
+    commitHash: branchInfo.commitHash || null
+  });
+
+  // Update current branch
+  conversation.currentBranch = branchInfo.branchName;
+
+  // Also add to main branches array with conversation metadata
+  if (!projectData.branches) {
+    projectData.branches = [];
+  }
+
+  // Check if branch already exists in main branches array
+  const existingBranchIndex = projectData.branches.findIndex((b: any) => b.branchName === branchInfo.branchName);
+  
+  const branchEntry = {
+    branchName: branchInfo.branchName,
+    commitHash: branchInfo.commitHash || branchInfo.startingHash,
+    commitMessage: `Conversation ${conversationId} - Step ${branchInfo.interactionCount}`,
+    timestamp: branchInfo.createdAt,
+    author: 'Conversation System',
+    filesChanged: [],
+    linesAdded: 0,
+    linesRemoved: 0,
+    isMainBranch: false,
+    tags: [`conversation-${conversationId}`, `step-${branchInfo.interactionCount}`],
+    sync: {
+      lastPushed: null,
+      pushedHash: null,
+      needsSync: false,
+      syncError: null
+    },
+    conversation: {
+      conversationId,
+      interactionCount: branchInfo.interactionCount,
+      baseBranch: branchInfo.baseBranch
+    }
+  };
+
+  if (existingBranchIndex >= 0) {
+    projectData.branches[existingBranchIndex] = branchEntry;
+  } else {
+    projectData.branches.push(branchEntry);
+  }
+
+  return projectData;
+} 

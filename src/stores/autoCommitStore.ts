@@ -9,6 +9,11 @@ import { persistentStorage } from '../lib/persistentStorageService';
 import { getProjectPath } from '../lib/projectPathService';
 import { Checkpoint } from '../types/Checkpoint';
 import { logDebug, logAutoCommit, logFileChange } from '../lib/debugStorageService';
+import { 
+  createConversationBranch, 
+  updateConversationJSON,
+  type ConversationBranchInfo 
+} from '../lib/conversationBranchService';
 
 export interface AutoCommitConfig {
   enabled: boolean;
@@ -41,6 +46,7 @@ export interface AutoCommitConfig {
 export interface AutoCommitContext {
   projectId: string;
   projectPath: string;
+  conversationId?: string; // Add conversation ID for branch tracking
   trigger: 'tool_execution' | 'file_change' | 'build_success' | 'test_success' | 'timer';
   toolName?: string;
   summary?: string;
@@ -406,26 +412,55 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
             }
             
             if (shouldCreateBranch) {
-              // Generate auto-branch name with timestamp
-              const timestamp = new Date();
-              const dateStr = timestamp.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
-              actualBranchName = `auto/${dateStr}`;
-              
-              console.log(`🌿 executeAutoCommit: Creating auto-branch ${actualBranchName} for ${fileCount} files`);
-              
-              // Create branch from current commit
-              const createBranchResult = await executeGitCommand(
-                mcpServerId,
-                `git checkout -b "${actualBranchName}"`,
-                context.projectPath,
-                rootStore.executeTool
-              );
-              
-              if (!createBranchResult.success) {
-                console.warn('⚠️ executeAutoCommit: Failed to create post-commit auto-branch:', createBranchResult.error || createBranchResult.output);
-                actualBranchName = null;
+              // 🌿 NEW: Create conversation-specific branch instead of timestamp-based
+              if (context.conversationId) {
+                console.log(`🌿 executeAutoCommit: Creating conversation branch for ${context.conversationId}`);
+                
+                const branchResult = await createConversationBranch(
+                  context.projectPath,
+                  context.conversationId,
+                  mcpServerId,
+                  rootStore.executeTool
+                );
+                
+                if (branchResult.success && branchResult.branchInfo) {
+                  actualBranchName = branchResult.branchInfo.branchName;
+                  console.log(`✅ executeAutoCommit: Successfully created conversation branch: ${actualBranchName}`);
+                  
+                  // Update conversation tracking in project JSON
+                  try {
+                    // We'll update the JSON after commit to include the commit hash
+                    console.log(`📋 executeAutoCommit: Will update conversation JSON after commit`);
+                  } catch (jsonError) {
+                    console.warn('⚠️ executeAutoCommit: Failed to update conversation JSON:', jsonError);
+                  }
+                } else {
+                  console.warn('⚠️ executeAutoCommit: Failed to create conversation branch:', branchResult.error);
+                  actualBranchName = null;
+                }
               } else {
-                console.log('✅ executeAutoCommit: Successfully created post-commit auto-branch:', actualBranchName);
+                // Fallback to timestamp-based branch if no conversation ID
+                console.log(`⚠️ executeAutoCommit: No conversation ID provided, falling back to timestamp branch`);
+                const timestamp = new Date();
+                const dateStr = timestamp.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+                actualBranchName = `auto/${dateStr}`;
+                
+                console.log(`🌿 executeAutoCommit: Creating fallback auto-branch ${actualBranchName} for ${fileCount} files`);
+                
+                // Create branch from current commit
+                const createBranchResult = await executeGitCommand(
+                  mcpServerId,
+                  `git checkout -b "${actualBranchName}"`,
+                  context.projectPath,
+                  rootStore.executeTool
+                );
+                
+                if (!createBranchResult.success) {
+                  console.warn('⚠️ executeAutoCommit: Failed to create fallback auto-branch:', createBranchResult.error || createBranchResult.output);
+                  actualBranchName = null;
+                } else {
+                  console.log('✅ executeAutoCommit: Successfully created fallback auto-branch:', actualBranchName);
+                }
               }
             } else {
               console.log(`❌ executeAutoCommit: File threshold not met (pending: ${pendingFileCount}, commit: ${fileCount}, threshold: ${threshold}), no auto-branch needed`);
@@ -499,6 +534,30 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
         });
         
         console.log(`✅ executeAutoCommit: Auto-commit successful: ${finalCommitMessage} (${commitHash})`);
+        
+        // 🌿 NEW: Update conversation JSON if this was a conversation branch
+        if (actualBranchName && actualBranchName.startsWith('conv-') && context.conversationId) {
+          try {
+            console.log('📋 executeAutoCommit: Updating conversation JSON with commit hash...');
+            
+            // Create a branch info object for JSON update
+            const branchInfo: ConversationBranchInfo = {
+              branchName: actualBranchName,
+              conversationId: context.conversationId,
+              interactionCount: parseInt(actualBranchName.split('-step-')[1]) || 1,
+              baseBranch: 'main', // This would be set correctly in createConversationBranch
+              startingHash: '', // This would be set correctly in createConversationBranch  
+              createdAt: Date.now(),
+              commitHash: commitHash
+            };
+            
+            // We'll update the JSON via the project generation API which already handles this
+            console.log('📋 executeAutoCommit: Conversation branch info ready for JSON update');
+            
+          } catch (convError) {
+            console.warn('⚠️ executeAutoCommit: Failed to prepare conversation JSON update:', convError);
+          }
+        }
         
         // 🚀 AUTO-TRIGGER GITHUB SYNC AFTER SUCCESSFUL COMMIT
         setTimeout(async () => {

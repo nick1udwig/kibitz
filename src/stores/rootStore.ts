@@ -1707,13 +1707,14 @@ export const useStore = create<RootState>((set, get) => {
                       const cleanProjectId = activeProjectId.replace(/"/g, '');
                       const cleanProjectName = project.name.replace(/"/g, '');
                       
-                      const autoCommitContext = {
-                        trigger: 'tool_execution' as const,
-                        toolName,
-                        projectId: cleanProjectId,
-                        projectPath: getProjectPath(cleanProjectId, cleanProjectName),
-                        timestamp: Date.now()
-                      };
+                                          const autoCommitContext = {
+                      trigger: 'tool_execution' as const,
+                      toolName,
+                      projectId: cleanProjectId,
+                      projectPath: getProjectPath(cleanProjectId, cleanProjectName),
+                      conversationId: get().activeConversationId || undefined, // Add conversation ID for branch tracking
+                      timestamp: Date.now()
+                    };
                       
                       console.log(`🔧 executeTool: Background auto-commit context:`, autoCommitContext);
                       
