@@ -166,10 +166,24 @@ export const useConversationBranches = () => {
     }
   }, [getCurrentBranch, getAvailableBranches]);
 
-  // Auto-refresh when project changes
+  // Auto-refresh when project changes and every 30 seconds
   useEffect(() => {
     if (activeProjectId) {
+      // Initial refresh
       refreshBranches();
+      
+      // 🔄 NEW: Set up auto-refresh every 30 seconds
+      console.log(`🔄 Starting branch auto-refresh for project ${activeProjectId}`);
+      const interval = setInterval(() => {
+        console.log(`🔄 Auto-refreshing branches for project ${activeProjectId}`);
+        refreshBranches();
+      }, 30000); // 30 seconds
+      
+      // Cleanup interval when project changes or component unmounts
+      return () => {
+        console.log(`🛑 Stopping branch auto-refresh for project ${activeProjectId}`);
+        clearInterval(interval);
+      };
     }
   }, [activeProjectId, refreshBranches]);
 

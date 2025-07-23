@@ -84,14 +84,8 @@ async function repositoryCreationExamples() {
     const initialPush = await gitExecutor.setupInitialPush(projectPath, 'main');
     console.log('Initial push result:', initialPush);
 
-    // Example 3: Create public repository
-    console.log('\n3. Create Public Repository:');
-    const publicRepo = await gitExecutor.createRemoteRepo(projectPath, 'public-project', {
-      private: false,
-      description: 'Open source project',
-      addOrigin: false
-    });
-    console.log('Public repository result:', publicRepo);
+    // Note: All repositories are created as PRIVATE by default
+    // Public repositories are no longer supported for security
 
   } catch (error) {
     console.error('Repository creation examples failed:', error.message);

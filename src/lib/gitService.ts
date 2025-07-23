@@ -35,7 +35,7 @@ interface GitInitOptions {
 interface GitHubRepoOptions {
   repoName: string;
   description?: string;
-  isPrivate?: boolean;
+  // isPrivate option removed - all repositories are now ALWAYS private
 }
 
 /**
@@ -361,11 +361,11 @@ export const createGitHubRepository = async (
     }
     
     // Create GitHub repository
-    let createRepoCommand = `gh repo create ${options.repoName}`;
+    let createRepoCommand = `gh repo create ${options.repoName} --private`;
+
     if (options.description) {
       createRepoCommand += ` --description "${options.description}"`;
-    }
-    createRepoCommand += options.isPrivate ? ' --private' : ' --public';
+    } 
     
     const createRepoResult = await executeGitCommand(
       serverId,
@@ -953,7 +953,6 @@ export const autoSetupGitHub = async (
       {
         repoName,
         description: `Auto-created for Kibitz project: ${projectName}`,
-        isPrivate: false
       },
       serverId,
       executeTool

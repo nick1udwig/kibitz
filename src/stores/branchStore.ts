@@ -40,6 +40,9 @@ interface BranchState {
   isProcessing: boolean;
   lastOperation: string | null;
   
+  // Auto-refresh
+  _refreshInterval: NodeJS.Timeout | null;
+  
   // Operations
   updateConfig: (updates: Partial<BranchConfig>) => void;
   detectProjectChanges: (projectId: string) => Promise<ChangeDetectionResult>;
@@ -53,6 +56,13 @@ interface BranchState {
   // Integration with auto-commit
   handleToolExecution: (projectId: string, toolName: string) => Promise<void>;
   shouldCreateBranchForChanges: (projectId: string) => Promise<boolean>;
+  
+  // Current branch detection
+  refreshCurrentBranch: (projectId: string) => Promise<string>;
+  
+  // Auto-refresh management
+  startAutoRefresh: (projectId: string) => void;
+  stopAutoRefresh: () => void;
 }
 
 /**
@@ -75,6 +85,9 @@ export const useBranchStore = create<BranchState>((set, get) => ({
   pendingChanges: {},
   isProcessing: false,
   lastOperation: null,
+  
+  // Auto-refresh interval for current branch
+  _refreshInterval: null as NodeJS.Timeout | null,
   
   // Update configuration
   updateConfig: (updates: Partial<BranchConfig>) => {
@@ -585,6 +598,74 @@ export const useBranchStore = create<BranchState>((set, get) => ({
     } catch (error) {
       console.error('Failed to check if branch should be created:', error);
       return false;
+    }
+  },
+  
+  // Get and update current branch for a project
+  refreshCurrentBranch: async (projectId: string): Promise<string> => {
+    try {
+      console.log(`🔍 Refreshing current branch for project ${projectId}`);
+      
+      // Call the API endpoint to get the actual current branch
+      const response = await fetch(`/api/projects/${projectId}/branches/current`);
+      const data = await response.json();
+      
+      if (data.error) {
+        console.warn('Failed to get current branch from API:', data.error);
+        return 'main'; // Fallback
+      }
+      
+      const currentBranch = data.currentBranch || 'main';
+      console.log(`🔍 Current branch for project ${projectId}: ${currentBranch}`);
+      
+      // Update the store with the actual current branch
+      set(state => ({
+        currentBranch: {
+          ...state.currentBranch,
+          [projectId]: currentBranch
+        }
+      }));
+      
+      return currentBranch;
+    } catch (error) {
+      console.error('Error refreshing current branch:', error);
+      return 'main'; // Fallback
+    }
+  },
+  
+  // Start auto-refresh for a project (every 30 seconds)
+  startAutoRefresh: (projectId: string) => {
+    const { _refreshInterval } = get();
+    
+    // Clear existing interval if any
+    if (_refreshInterval) {
+      clearInterval(_refreshInterval);
+    }
+    
+    console.log(`🔄 Starting auto-refresh for project ${projectId} (every 30 seconds)`);
+    
+    const interval = setInterval(async () => {
+      try {
+        console.log(`🔄 Auto-refreshing branch status for project ${projectId}`);
+        await get().refreshCurrentBranch(projectId);
+        await get().listProjectBranches(projectId);
+        await get().detectProjectChanges(projectId);
+      } catch (error) {
+        console.error('Error during auto-refresh:', error);
+      }
+    }, 30000); // 30 seconds
+    
+    set({ _refreshInterval: interval });
+  },
+  
+  // Stop auto-refresh
+  stopAutoRefresh: () => {
+    const { _refreshInterval } = get();
+    
+    if (_refreshInterval) {
+      console.log('🛑 Stopping auto-refresh');
+      clearInterval(_refreshInterval);
+      set({ _refreshInterval: null });
     }
   }
 })); 

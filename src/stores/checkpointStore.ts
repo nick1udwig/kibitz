@@ -52,7 +52,6 @@ interface CheckpointState {
   createGitHubRepo: (
     repoName: string, 
     description: string | undefined, 
-    isPrivate: boolean, 
     mcpServerId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ) => Promise<boolean>;
@@ -280,7 +279,6 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
   createGitHubRepo: async (
     repoName: string, 
     description: string | undefined, 
-    isPrivate: boolean, 
     mcpServerId: string,
     executeTool
   ) => {
@@ -290,8 +288,7 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
       const result = await createGitHubRepository(
         {
           repoName,
-          description,
-          isPrivate
+          description
         },
         mcpServerId,
         executeTool

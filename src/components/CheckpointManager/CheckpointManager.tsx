@@ -326,7 +326,7 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
       const success = await createGitHubRepo(
         repoName,
         `Project created with Kibitz - ${project.name}`,
-        false, // public repository
+        // Removed public repository parameter - all repos are now ALWAYS private
         mcpServerId,
         executeTool
       );

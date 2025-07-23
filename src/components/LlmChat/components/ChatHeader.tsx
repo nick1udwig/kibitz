@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { useCheckpointStore } from '@/stores/checkpointStore';
 import { useStore } from '@/stores/rootStore';
 import { CreateCheckpointDialog } from '@/components/CheckpointManager';
-import { GitHubSyncToggle } from '@/components/GitHubSyncToggle';
 // import SessionRestoreButton from './SessionRestoreButton'; // Temporarily disabled
 
 interface ChatHeaderProps {
@@ -118,9 +117,6 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ projectId }) => {
             {statusMessage}
           </div>
         )}
-        
-        {/* GitHub Sync Toggle */}
-        <GitHubSyncToggle className="mr-2" />
         
         <Button
           variant="ghost"

@@ -48,19 +48,31 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
     listProjectBranches,
     switchToBranch,
     revertProject,
+    refreshCurrentBranch,
     autoCreateBranchForProject,
-    mergeProjectBranch
+    mergeProjectBranch,
+    startAutoRefresh,
+    stopAutoRefresh
   } = useBranchStore();
 
   const projectBranches = branches[projectId] || [];
   const currentProjectBranch = currentBranch[projectId] || 'main';
   const projectChanges = pendingChanges[projectId];
 
-  // Load branches on mount
+  // Load branches on mount and start auto-refresh
   useEffect(() => {
     listProjectBranches(projectId);
     detectProjectChanges(projectId);
-  }, [projectId]);
+    refreshCurrentBranch(projectId);
+    
+    // 🔄 NEW: Start auto-refresh for this project
+    startAutoRefresh(projectId);
+    
+    // Cleanup: stop auto-refresh when component unmounts or project changes
+    return () => {
+      stopAutoRefresh();
+    };
+  }, [projectId, listProjectBranches, detectProjectChanges, refreshCurrentBranch, startAutoRefresh, stopAutoRefresh]);
 
   // Generate branch name with current timestamp
   const generateCurrentBranchName = (type: BranchType): string => {

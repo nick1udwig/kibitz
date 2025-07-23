@@ -387,14 +387,9 @@ export class GitExecutor {
 
     try {
       // Build gh repo create arguments
-      const createArgs = ['repo', 'create', repoName];
-      
-      if (isPrivate) {
-        createArgs.push('--private');
-      } else {
-        createArgs.push('--public');
-      }
-      
+      const createArgs = ['repo', 'create', repoName, '--private'];
+
+
       if (description) {
         createArgs.push('--description', description);
       }

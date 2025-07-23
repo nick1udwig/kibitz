@@ -143,6 +143,27 @@ export async function POST(
               console.warn(`Could not get diff stats for branch ${branchName}`);
             }
             
+            // Check if this is a conversation branch to add conversation metadata
+            let conversationMetadata = null;
+            let commits: any[] = [];
+            let diffData = null;
+            
+            if (branchName.startsWith('conv-')) {
+              const conversationMatch = branchName.match(/conv-([^-]+)-step-(\d+)/);
+              if (conversationMatch) {
+                conversationMetadata = {
+                  conversationId: conversationMatch[1],
+                  interactionCount: parseInt(conversationMatch[2]),
+                  baseBranch: 'main'
+                };
+                
+                // Try to read any existing enhanced commit data for this branch
+                // This will be populated by the enhanced commit system
+                commits = []; // Will be populated by enhanced commit processing
+                diffData = null; // Will be populated by enhanced commit processing
+              }
+            }
+
             branchesData.push({
               branchName: branchName.trim(),
               commitHash: commitHash?.trim() || 'unknown',
@@ -159,7 +180,13 @@ export async function POST(
                 pushedHash: null,
                 needsSync: false,
                 syncError: null
-              }
+              },
+              // Enhanced fields for conversation branches
+              ...(conversationMetadata && {
+                conversation: conversationMetadata,
+                commits,
+                diffData
+              })
             });
           }
         }
@@ -208,7 +235,7 @@ export async function POST(
       lastActivity: Date.now(),
       repository: repositoryData,
       branches: branchesData,
-      conversations: [],
+      conversations: await extractConversationData(projectPath, branchesData),
       
       // GitHub sync configuration (v2 schema)
       github: {
@@ -280,6 +307,79 @@ export async function POST(
       },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * Extract conversation data from conversation branches
+ */
+async function extractConversationData(projectPath: string, branchesData: any[]): Promise<any[]> {
+  try {
+    console.log('🔍 Extracting conversation data from branches...');
+    const conversations: { [conversationId: string]: any } = {};
+    
+    // Process conversation branches
+    branchesData.forEach(branch => {
+      if (branch.branchName.startsWith('conv-')) {
+        const conversationMatch = branch.branchName.match(/conv-([^-]+)-step-(\d+)/);
+        if (conversationMatch) {
+          const conversationId = conversationMatch[1];
+          const stepNumber = parseInt(conversationMatch[2]);
+          
+          console.log(`🔍 Found conversation branch: ${branch.branchName} (${conversationId}, step ${stepNumber})`);
+          
+          if (!conversations[conversationId]) {
+            conversations[conversationId] = {
+              conversationId,
+              createdAt: branch.timestamp || Date.now(),
+              branches: [],
+              currentBranch: null
+            };
+          }
+          
+          // Determine correct base branch for incremental workflow
+          let baseBranch = 'main'; // Default for step 1
+          if (stepNumber > 1) {
+            // For step N, base should be step N-1
+            baseBranch = `conv-${conversationId}-step-${stepNumber - 1}`;
+          }
+
+          // Add branch to conversation
+          conversations[conversationId].branches.push({
+            branchName: branch.branchName,
+            baseBranch: baseBranch, // ← Now correctly calculated!
+            startingHash: branch.commitHash,
+            interactionIndex: stepNumber,
+            createdAt: branch.timestamp || Date.now(),
+            commitHash: branch.commitHash,
+            commits: branch.commits || [], // Enhanced commit data
+            lastLLMMessage: branch.commits && branch.commits.length > 0 
+              ? branch.commits[branch.commits.length - 1].llmGeneratedMessage 
+              : undefined
+          });
+
+          console.log(`🔍 Set baseBranch for ${branch.branchName}: ${baseBranch}`);
+          
+          // Set as current branch (latest step)
+          const currentStep = conversations[conversationId].currentBranch 
+            ? parseInt(conversations[conversationId].currentBranch.match(/step-(\d+)$/)?.[1] || '0')
+            : 0;
+          
+          if (stepNumber > currentStep) {
+            conversations[conversationId].currentBranch = branch.branchName;
+          }
+        }
+      }
+    });
+    
+    const conversationArray = Object.values(conversations);
+    console.log(`🔍 Extracted ${conversationArray.length} conversations from branches`);
+    
+    return conversationArray;
+    
+  } catch (error) {
+    console.error('❌ Error extracting conversation data:', error);
+    return [];
   }
 }
 

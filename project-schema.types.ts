@@ -66,9 +66,71 @@ export interface ProjectSchema {
       needsSync: boolean; // true if branch has unpushed changes
       syncError: string | null; // error message if last sync failed
     };
+
+    // Conversation-specific fields
+    conversation?: {
+      conversationId: string;
+      interactionCount: number;
+      baseBranch: string;
+    };
+
+    // Enhanced commit information with diffs and LLM data
+    commits?: Array<{
+      hash: string;
+      parentHash: string;
+      message: string;
+      llmGeneratedMessage?: string;
+      author: string;
+      timestamp: string; // ISO format
+      diff: string; // Git diff content
+      filesChanged: string[];
+      linesAdded: number;
+      linesRemoved: number;
+      llmProvider?: string;
+      llmModel?: string;
+      llmError?: string;
+    }>;
+
+    // Latest commit diff data for quick access
+    diffData?: {
+      gitDiff: string;
+      llmProvider?: string;
+      llmModel?: string;
+      llmGeneratedMessage?: string;
+      llmError?: string;
+    } | null;
   }>;
 
-  conversations: any[]; // Existing conversation data
+  // Conversation-specific branching data
+  conversations: Array<{
+    conversationId: string;
+    createdAt: number; // Unix timestamp
+    branches: Array<{
+      branchName: string;
+      baseBranch: string;
+      startingHash: string;
+      interactionIndex: number;
+      createdAt: number; // Unix timestamp
+      commitHash: string | null;
+      commits: Array<{
+        hash: string;
+        parentHash: string;
+        message: string;
+        llmGeneratedMessage?: string;
+        author: string;
+        timestamp: string; // ISO format
+        diff: string;
+        filesChanged: string[];
+        linesAdded: number;
+        linesRemoved: number;
+        llmProvider?: string;
+        llmModel?: string;
+        llmError?: string;
+      }>;
+      lastLLMMessage?: string;
+    }>;
+    currentBranch: string | null;
+  }>;
   
   metadata: {
     generated: number; // Unix timestamp
@@ -116,4 +178,58 @@ export const DEFAULT_BRANCH_SYNC: BranchSyncInfo = {
   pushedHash: null,
   needsSync: false,
   syncError: null
-}; 
+};
+
+// Enhanced commit types for conversation branches
+export interface ConversationCommit {
+  hash: string;
+  parentHash: string;
+  message: string;
+  llmGeneratedMessage?: string;
+  author: string;
+  timestamp: string; // ISO format
+  diff: string;
+  filesChanged: string[];
+  linesAdded: number;
+  linesRemoved: number;
+  llmProvider?: string;
+  llmModel?: string;
+  llmError?: string;
+}
+
+export interface ConversationBranch {
+  branchName: string;
+  baseBranch: string;
+  startingHash: string;
+  interactionIndex: number;
+  createdAt: number;
+  commitHash: string | null;
+  commits: ConversationCommit[];
+  lastLLMMessage?: string;
+}
+
+export interface ConversationData {
+  conversationId: string;
+  createdAt: number;
+  branches: ConversationBranch[];
+  currentBranch: string | null;
+}
+
+// LLM commit message generation configuration
+export interface LLMCommitConfig {
+  enabled: boolean;
+  provider: 'anthropic' | 'openai' | 'openrouter';
+  model: string;
+  apiKey: string;
+  generateForAllCommits: boolean;
+  fallbackToBasicMessage: boolean;
+}
+
+export const DEFAULT_LLM_COMMIT_CONFIG: LLMCommitConfig = {
+  enabled: true,
+  provider: 'anthropic',
+  model: 'claude-3-5-haiku-20241022',
+  apiKey: '',
+  generateForAllCommits: true,
+  fallbackToBasicMessage: true
+};

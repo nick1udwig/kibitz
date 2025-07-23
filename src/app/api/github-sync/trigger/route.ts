@@ -132,7 +132,7 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
       if (ghAvailable) {
         try {
           console.log(`🚀 Creating GitHub repository using CLI: ${ghPath} repo create ${repoName}`);
-          await execAsync(`${ghPath} repo create ${repoName} --public --source=. --remote=origin --push`, { cwd: projectPath, env });
+          await execAsync(`${ghPath} repo create ${repoName} --private --source=. --remote=origin --push`, { cwd: projectPath, env });
           console.log(`✅ Created GitHub repository and pushed: ${repoName}`);
           console.log(`🔗 Repository URL: ${remoteUrl}`);
           

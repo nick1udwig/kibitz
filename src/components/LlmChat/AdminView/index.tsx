@@ -22,6 +22,7 @@ import { ConversationCheckpointManager } from '@/components/CheckpointManager/Co
 import { ProjectAnalysisTestButton } from '../../ProjectAnalysisTestButton';
 import { RepoTestInstructions } from '../../RepoTestInstructions';
 import { RecoveryPanel } from '../../RecoveryPanel';
+import { GitHubSyncToggle } from '../../GitHubSyncToggle';
 
 export const AdminView = () => {
   const { projects, activeProjectId, updateProjectSettings, servers, apiKeys, saveApiKeysToServer } = useStore();
@@ -449,6 +450,24 @@ export const AdminView = () => {
               <label htmlFor="elideToolResults" className="text-sm font-medium">
                 Use Claude to elide tool results from previous messages
               </label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* GitHub Integration */}
+      <Card>
+        <CardContent className="p-6">
+          <h3 className="text-lg font-medium mb-4">GitHub Integration</h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div>
+                <h4 className="font-medium">GitHub Sync</h4>
+                <p className="text-sm text-muted-foreground">
+                  Automatically sync your project changes to GitHub
+                </p>
+              </div>
+              <GitHubSyncToggle />
             </div>
           </div>
         </CardContent>

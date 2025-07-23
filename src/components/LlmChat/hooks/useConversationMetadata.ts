@@ -62,7 +62,7 @@ export function useConversationMetadata() {
     const newMetadata: ConversationMetadata = {
       conversationId,
       projectId: activeProject.id,
-      branchName: 'main', // Default branch
+      branchName: 'main', // Default branch - will be updated by branch refresh
       startTime: Date.now(),
       messageCount: 0,
       status: 'active'
@@ -70,6 +70,29 @@ export function useConversationMetadata() {
 
     setMetadata(newMetadata);
     console.log('🔄 Started conversation tracking:', conversationId);
+    
+    // 🔄 NEW: Start auto-refresh of branch info every 30 seconds
+    const refreshInterval = setInterval(async () => {
+      if (activeProject?.id) {
+        try {
+          const response = await fetch(`/api/projects/${activeProject.id}/branches/current`);
+          const data = await response.json();
+          
+          if (!data.error && data.currentBranch) {
+            setMetadata(prev => prev ? {
+              ...prev,
+              branchName: data.currentBranch
+            } : null);
+          }
+        } catch (error) {
+          console.warn('Failed to auto-refresh branch in conversation metadata:', error);
+        }
+      }
+    }, 30000); // 30 seconds
+    
+    // Store interval for cleanup
+    (newMetadata as any)._refreshInterval = refreshInterval;
+    
     return conversationId;
   }, [activeProject, generateConversationId]);
 
@@ -90,35 +113,22 @@ export function useConversationMetadata() {
     } : null);
   }, []);
 
-  // Complete conversation and save metadata
-  const completeConversation = useCallback(async () => {
-    if (!metadata || !activeProject) return;
-
-    try {
-      setIsLoading(true);
+  // Complete conversation
+  const completeConversation = useCallback(() => {
+    setMetadata(prev => {
+      if (!prev) return null;
       
-      // Mark conversation as completed
-      const completedMetadata = {
-        ...metadata,
-        status: 'completed' as const,
-        endTime: Date.now()
+      // Clear auto-refresh interval
+      if ((prev as any)._refreshInterval) {
+        clearInterval((prev as any)._refreshInterval);
+      }
+      
+      return {
+        ...prev,
+        status: 'completed' as const
       };
-
-      // Trigger JSON file update through existing project data extractor
-      console.log('💾 Saving conversation metadata:', completedMetadata);
-      
-      // The llmAgentGitHandler already handles JSON file creation after commits
-      // We just need to ensure the conversation data is included
-      
-      setMetadata(completedMetadata);
-      
-    } catch (err) {
-      console.error('Failed to complete conversation:', err);
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [metadata, activeProject]);
+    });
+  }, []);
 
   // Load project metadata from API
   const loadProjectMetadata = useCallback(async (projectId: string) => {

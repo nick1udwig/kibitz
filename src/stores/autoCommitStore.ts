@@ -363,7 +363,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
           console.error('❌ executeAutoCommit: Auto-commit failed:', commitHash);
           return false;
         }
-        
+
         // 🔍 FIXED: Post-commit branch creation based on actual commit stats
         let actualBranchName = null;
         if (config.branchManagement?.enabled) {
@@ -443,7 +443,8 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
                 console.log(`⚠️ executeAutoCommit: No conversation ID provided, falling back to timestamp branch`);
                 const timestamp = new Date();
                 const dateStr = timestamp.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
-                actualBranchName = `auto/${dateStr}`;
+                const randomSuffix = Math.random().toString(36).substring(2, 8); // Add random suffix to prevent duplicates
+                actualBranchName = `auto/${dateStr}-${randomSuffix}`;
                 
                 console.log(`🌿 executeAutoCommit: Creating fallback auto-branch ${actualBranchName} for ${fileCount} files`);
                 
@@ -492,6 +493,156 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
           }
         } catch (branchCheckError) {
           console.warn('⚠️ executeAutoCommit: Could not verify final branch:', branchCheckError);
+        }
+
+        // 🚀 NEW: Process enhanced commit with git diff + LLM message generation
+        try {
+          console.log('🤖 executeAutoCommit: ===== STARTING ENHANCED COMMIT PROCESSING =====');
+          console.log('🤖 executeAutoCommit: Processing enhanced commit with diff and LLM...');
+          console.log('🤖 executeAutoCommit: Commit hash:', commitHash);
+          console.log('🤖 executeAutoCommit: Project path:', context.projectPath);
+          console.log('🤖 executeAutoCommit: Conversation ID:', context.conversationId);
+          console.log('🤖 executeAutoCommit: Branch name:', actualBranchName);
+          
+          const { processEnhancedCommit } = await import('../lib/enhancedConversationCommitService');
+          console.log('🤖 executeAutoCommit: Enhanced commit service imported successfully');
+          
+          const enhancedRequest = {
+            projectPath: context.projectPath,
+            conversationId: context.conversationId || 'auto-commit',
+            branchName: actualBranchName || 'main',
+            commitHash: commitHash,
+            originalMessage: commitMessage,
+            projectSettings: activeProject.settings,
+            serverId: mcpServerId,
+            executeTool: rootStore.executeTool
+          };
+
+          console.log('🤖 executeAutoCommit: Enhanced request object:', JSON.stringify({
+            ...enhancedRequest,
+            executeTool: '[FUNCTION]' // Don't log the function
+          }, null, 2));
+          
+          console.log('🤖 executeAutoCommit: Project settings for LLM:', JSON.stringify({
+            provider: activeProject.settings.provider,
+            hasAnthropicKey: !!activeProject.settings.anthropicApiKey,
+            hasOpenAIKey: !!activeProject.settings.openaiApiKey,
+            hasOpenRouterKey: !!activeProject.settings.openRouterApiKey,
+            hasLegacyKey: !!activeProject.settings.apiKey,
+            model: activeProject.settings.model,
+            model: 'claude-3-haiku-20241022',
+          }, null, 2));
+
+          console.log('🤖 executeAutoCommit: Calling processEnhancedCommit...');
+          const enhancedResult = await processEnhancedCommit(enhancedRequest);
+          console.log('🤖 executeAutoCommit: Enhanced commit result:', JSON.stringify(enhancedResult, null, 2));
+          
+          if (enhancedResult.success) {
+            console.log('✅ executeAutoCommit: Enhanced commit processed successfully');
+            console.log(`   LLM Message: "${enhancedResult.commitInfo?.llmGeneratedMessage}"`);
+            console.log(`   Files Changed: ${enhancedResult.commitInfo?.filesChanged.length}`);
+            console.log(`   Lines: +${enhancedResult.commitInfo?.linesAdded}/-${enhancedResult.commitInfo?.linesRemoved}`);
+            console.log(`   Processing Time: ${enhancedResult.metrics?.totalProcessingTime}ms`);
+
+            // 🚀 NEW: Update the actual git commit message with LLM-generated message
+            if (enhancedResult.commitInfo?.llmGeneratedMessage) {
+              try {
+                console.log('📝 executeAutoCommit: Updating git commit message with LLM-generated message...');
+                console.log(`📝 Original: "${commitMessage}"`);
+                console.log(`📝 Enhanced: "${enhancedResult.commitInfo.llmGeneratedMessage}"`);
+                
+                const amendResult = await executeGitCommand(
+                  mcpServerId,
+                  `git commit --amend -m "${enhancedResult.commitInfo.llmGeneratedMessage.replace(/"/g, '\\"')}"`,
+                  context.projectPath,
+                  rootStore.executeTool
+                );
+                
+                if (amendResult.success) {
+                  console.log('✅ executeAutoCommit: Successfully updated git commit message with LLM-generated message!');
+                } else {
+                  console.warn('⚠️ executeAutoCommit: Failed to amend commit message:', amendResult.error);
+                }
+              } catch (amendError) {
+                console.warn('⚠️ executeAutoCommit: Error amending commit message:', amendError);
+              }
+            }
+
+            // Force update of project JSON to include enhanced commit data
+            try {
+              console.log('📝 executeAutoCommit: Triggering project JSON update with enhanced data...');
+              
+              // Log enhanced commit data for verification
+              if (enhancedResult.commitInfo?.llmGeneratedMessage) {
+                console.log('📝 executeAutoCommit: Enhanced commit data available:');
+                console.log('📝 LLM Generated Message:', enhancedResult.commitInfo.llmGeneratedMessage);
+                console.log('📝 Files Changed:', enhancedResult.commitInfo.filesChanged.length);
+                console.log('📝 Lines Added/Removed:', `+${enhancedResult.commitInfo.linesAdded}/-${enhancedResult.commitInfo.linesRemoved}`);
+                console.log('📝 Git Diff Length:', enhancedResult.commitInfo.diff.length);
+              }
+              
+              // Add a small delay to ensure enhanced processing is complete
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
+              console.log('📝 executeAutoCommit: Calling project JSON generation API...');
+              const generateResponse = await fetch(`/api/projects/${context.projectId}/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              });
+              
+              if (generateResponse.ok) {
+                console.log('✅ executeAutoCommit: Project JSON regenerated successfully');
+                
+                // Verify the update by checking if enhanced data is present
+                try {
+                  const responseData = await generateResponse.json();
+                  console.log('📝 executeAutoCommit: Project JSON regeneration result:', {
+                    success: responseData.success,
+                    branchCount: responseData.data?.branches?.length || 0,
+                    conversationCount: responseData.data?.conversations?.length || 0,
+                    fileSize: responseData.fileSize
+                  });
+                  
+                  // Check if any branches have enhanced commit data
+                  const branchesWithCommits = responseData.data?.branches?.filter((b: any) => 
+                    b.commits && b.commits.length > 0
+                  ) || [];
+                  
+                  const branchesWithLLMMessages = branchesWithCommits.filter((b: any) => 
+                    b.commits.some((c: any) => c.llmGeneratedMessage)
+                  );
+                  
+                  console.log('📝 executeAutoCommit: Enhanced commit verification:', {
+                    branchesWithCommits: branchesWithCommits.length,
+                    branchesWithLLMMessages: branchesWithLLMMessages.length,
+                    hasConversations: (responseData.data?.conversations?.length || 0) > 0
+                  });
+                  
+                  if (branchesWithLLMMessages.length > 0) {
+                    console.log('✅ executeAutoCommit: Enhanced commit data successfully integrated into JSON!');
+                  } else {
+                    console.warn('⚠️ executeAutoCommit: No enhanced commit data found in regenerated JSON');
+                  }
+                  
+                } catch (readError) {
+                  console.log('✅ executeAutoCommit: Project JSON updated (couldn\'t verify enhanced data)');
+                }
+              } else {
+                console.warn('⚠️ executeAutoCommit: Project JSON regeneration failed:', await generateResponse.text());
+              }
+            } catch (jsonError) {
+              console.warn('⚠️ executeAutoCommit: Failed to trigger project JSON update:', jsonError);
+            }
+            
+          } else {
+            console.warn('⚠️ executeAutoCommit: Enhanced commit processing failed:', enhancedResult.error);
+            if (enhancedResult.warnings) {
+              enhancedResult.warnings.forEach(warning => console.warn(`   Warning: ${warning}`));
+            }
+          }
+        } catch (enhancedError) {
+          console.error('❌ executeAutoCommit: Enhanced commit processing threw error:', enhancedError);
+          // Continue with regular auto-commit even if enhanced processing fails
         }
 
         // 💾 NEW: Save auto-commit to persistent storage

@@ -150,11 +150,11 @@ export class LlmAgentGitHandler {
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
     mcpServerId: string
   ): Promise<string> {
-    const threadId = `llm-git-${Date.now()}`;
+    let threadId = `llm-git-${Date.now()}`;
     
     try {
       console.log(`🔧 LlmAgentGitHandler: Initializing MCP thread: ${threadId}`);
-      await executeTool(mcpServerId, 'Initialize', {
+      const initResult = await executeTool(mcpServerId, 'Initialize', {
         type: "first_call",
         any_workspace_path: projectPath,
         initial_files_to_read: [],
@@ -162,7 +162,16 @@ export class LlmAgentGitHandler {
         mode_name: "wcgw",
         thread_id: threadId
       });
-      console.log(`✅ LlmAgentGitHandler: MCP thread initialized: ${threadId}`);
+      
+      // Extract the actual thread_id from the response (like gitService.ts does)
+      const match = initResult.match(/thread_id=([a-z0-9]+)/i);
+      if (match && match[1]) {
+        threadId = match[1];
+        console.log(`✅ LlmAgentGitHandler: MCP thread initialized with extracted thread_id: ${threadId}`);
+      } else {
+        console.log(`✅ LlmAgentGitHandler: MCP thread initialized with original thread_id: ${threadId}`);
+      }
+      
       return threadId;
     } catch (error) {
       console.warn(`⚠️ LlmAgentGitHandler: Failed to initialize MCP thread, using default:`, error);

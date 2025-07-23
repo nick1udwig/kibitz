@@ -385,8 +385,8 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     <div id="chat-view" className="flex flex-col h-full relative">
       {activeProjectId && <ChatHeader projectId={activeProjectId} />}
       
-      {/* 🔄 NEW: Conversation metadata panel */}
-      <ConversationMetadataPanel />
+      {/* 🔄 HIDDEN: Conversation metadata panel - moved to dedicated Branches tab */}
+      {/* <ConversationMetadataPanel /> */}
       
       {/* File Change Counter */}
       <div className="px-4 pt-2">
