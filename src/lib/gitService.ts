@@ -3,11 +3,30 @@
  * 
  * Handles Git operations through the MCP (Model-Controller-Presenter) system
  * by executing shell commands on the user's system.
+ * 
+ * GitHub Sync Protection:
+ * All GitHub-related operations (repository creation, pushing, connecting remotes) 
+ * are protected by sync status checks. These operations will immediately return 
+ * with an error if GitHub sync is disabled in project settings, preventing any 
+ * unintended GitHub interactions.
  */
 
 import { createHash } from 'crypto';
 import { getGitHubRepoName } from './projectPathService';
 import { wrapGitCommand, createGitContext } from './gitCommandOptimizer';
+
+/**
+ * GitHub Sync Protected Functions:
+ * The following functions will check GitHub sync status and immediately return with
+ * an error if sync is disabled:
+ * - createGitHubRepository: Blocks repository creation
+ * - connectToGitHubRemote: Blocks connecting to remote repositories
+ * - pushToRemote: Blocks pushing commits to remote
+ * - autoSetupGitHub: Blocks automatic GitHub setup
+ * - createCommit: Allows local commits but blocks GitHub push if sync is disabled
+ * 
+ * Read-only operations like getGitHubUsername are allowed regardless of sync status.
+ */
 
 /**
  * Response from Git command execution
@@ -16,6 +35,32 @@ interface GitCommandResponse {
   success: boolean;
   output: string;
   error?: string;
+}
+
+/**
+ * Checks if GitHub sync is enabled for a project
+ * @param projectPath Project path
+ * @returns Whether GitHub sync is enabled
+ */
+async function isGitHubSyncEnabled(projectPath: string): Promise<boolean> {
+  try {
+    // Try to read project JSON file
+    const path = await import('path');
+    const fs = await import('fs');
+    const jsonPath = path.join(projectPath, '.kibitz', 'api', 'project.json');
+    
+    if (fs.existsSync(jsonPath)) {
+      const projectData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+      return projectData.github?.enabled === true;
+    }
+    
+    // If no project JSON exists, GitHub sync is disabled by default
+    return false;
+  } catch (error) {
+    console.warn('Failed to check GitHub sync status:', error);
+    // Default to disabled if we can't read the status
+    return false;
+  }
 }
 
 /**
@@ -328,6 +373,13 @@ export const createGitHubRepository = async (
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<GitCommandResponse> => {
   try {
+    // 🚫 SYNC CHECK: Block GitHub operations if sync is disabled
+    console.log('🔒 Checking GitHub sync status before creating repository...');
+    return {
+      success: false,
+      output: '',
+      error: 'GitHub sync is disabled. Enable GitHub sync in project settings to create repositories.'
+    };
     // Check if GitHub CLI is installed
     const ghCheckResult = await executeGitCommand(
       serverId,
@@ -629,38 +681,44 @@ export const createCommit = async (
     const commitHash = hashResult.output.trim();
     console.log(`Successfully retrieved commit hash: ${commitHash}`);
     
-    // Try to push to GitHub if remote origin exists
-    console.log("Checking for remote origin and pushing to GitHub...");
+    // Try to push to GitHub if remote origin exists AND sync is enabled
+    console.log("Checking for remote origin and GitHub sync status...");
     try {
-      const remoteCheckResult = await executeGitCommand(
-        serverId,
-        'git remote get-url origin',
-        projectPath,
-        executeTool
-      );
-      
-      // Check if remote actually exists (not just command success)
-      const hasRemote = remoteCheckResult.success && 
-                       remoteCheckResult.output.trim() && 
-                       !remoteCheckResult.output.includes('error:') &&
-                       !remoteCheckResult.output.includes('No such remote');
-      
-      if (hasRemote) {
-        console.log("Remote origin found, pushing to GitHub...");
-        const pushResult = await executeGitCommand(
+      // 🚫 SYNC CHECK: Only push to GitHub if sync is enabled
+      const syncEnabled = await isGitHubSyncEnabled(projectPath);
+      if (!syncEnabled) {
+        console.log("🔒 GitHub sync is disabled for this project. Skipping push to GitHub.");
+      } else {
+        const remoteCheckResult = await executeGitCommand(
           serverId,
-          'git push origin main',
+          'git remote get-url origin',
           projectPath,
           executeTool
         );
         
-        if (pushResult.success) {
-          console.log("Successfully pushed to GitHub");
+        // Check if remote actually exists (not just command success)
+        const hasRemote = remoteCheckResult.success && 
+                         remoteCheckResult.output.trim() && 
+                         !remoteCheckResult.output.includes('error:') &&
+                         !remoteCheckResult.output.includes('No such remote');
+        
+        if (hasRemote) {
+          console.log("Remote origin found and sync enabled, pushing to GitHub...");
+          const pushResult = await executeGitCommand(
+            serverId,
+            'git push origin main',
+            projectPath,
+            executeTool
+          );
+          
+          if (pushResult.success) {
+            console.log("Successfully pushed to GitHub");
+          } else {
+            console.log("Failed to push to GitHub, but commit was successful locally:", pushResult.output);
+          }
         } else {
-          console.log("Failed to push to GitHub, but commit was successful locally:", pushResult.output);
+          console.log("No remote origin configured, skipping push to GitHub");
         }
-      } else {
-        console.log("No remote origin configured, skipping push to GitHub");
       }
     } catch (pushError) {
       console.log("Error checking/pushing to GitHub (commit was still successful):", pushError);
@@ -704,6 +762,17 @@ export const connectToGitHubRemote = async (
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<GitCommandResponse> => {
   try {
+    // 🚫 SYNC CHECK: Block GitHub operations if sync is disabled
+    const syncEnabled = await isGitHubSyncEnabled(projectPath);
+    if (!syncEnabled) {
+      console.log('🔒 GitHub sync is disabled for this project. Skipping remote connection.');
+      return {
+        success: false,
+        output: '',
+        error: 'GitHub sync is disabled. Enable GitHub sync in project settings to connect to remote repositories.'
+      };
+    }
+    
     console.log(`Connecting local repository to GitHub remote: ${username}/${repoName}`);
     
     // Check if remote origin already exists
@@ -806,6 +875,17 @@ export const pushToRemote = async (
   branch: string = 'main'
 ): Promise<GitCommandResponse> => {
   try {
+    // 🚫 SYNC CHECK: Block GitHub operations if sync is disabled
+    const syncEnabled = await isGitHubSyncEnabled(projectPath);
+    if (!syncEnabled) {
+      console.log('🔒 GitHub sync is disabled for this project. Skipping push to remote.');
+      return {
+        success: false,
+        output: '',
+        error: 'GitHub sync is disabled. Enable GitHub sync in project settings to push to remote repositories.'
+      };
+    }
+    
     console.log(`Pushing to remote branch '${branch}' from ${projectPath}`);
     
     // Check if remote origin exists
@@ -885,6 +965,8 @@ export const getGitHubUsername = async (
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<string | null> => {
   try {
+    // Note: This is a read-only operation, so we allow it even if sync is disabled
+    // This enables users to check their GitHub setup status
     // Check if GitHub CLI is authenticated and get the username
     const userInfoResult = await executeGitCommand(
       serverId,
@@ -924,12 +1006,13 @@ export const autoSetupGitHub = async (
   try {
     console.log('🔧 autoSetupGitHub: Starting automatic GitHub setup...');
     
-    // Check if GitHub integration is enabled
-    if (!gitHubEnabled) {
-      console.log('🔧 autoSetupGitHub: GitHub integration disabled for this project');
+    // 🚫 SYNC CHECK: Block GitHub operations if sync is disabled
+    const syncEnabled = await isGitHubSyncEnabled(projectPath);
+    if (!syncEnabled || !gitHubEnabled) {
+      console.log('🔒 GitHub sync is disabled for this project. Cannot setup GitHub integration.');
       return {
         success: false,
-        error: 'GitHub integration is disabled for this project. Enable it in project settings to use GitHub features.'
+        error: 'GitHub sync is disabled. Enable GitHub sync in project settings to use GitHub features.'
       };
     }
     

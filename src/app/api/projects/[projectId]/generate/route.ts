@@ -37,6 +37,20 @@ export async function POST(
 
     console.log(`📋 Generate API: Found project at ${projectPath}`);
     
+    // 🔧 READ EXISTING PROJECT SETTINGS TO GET GITHUB TOGGLE STATE
+    let gitHubEnabled = false; // Default to disabled
+    try {
+      // Try to read existing project.json if it exists
+      const existingJsonPath = path.join(projectPath, '.kibitz', 'api', 'project.json');
+      if (fs.existsSync(existingJsonPath)) {
+        const existingData = JSON.parse(fs.readFileSync(existingJsonPath, 'utf8'));
+        gitHubEnabled = existingData.github?.enabled || false;
+        console.log(`📋 Generate API: Existing GitHub enabled state: ${gitHubEnabled}`);
+      }
+    } catch (error) {
+      console.log(`📋 Generate API: No existing project.json, using default GitHub disabled`);
+    }
+    
     // Extract ALL real git data - NO HARDCODING
     let repositoryData: any = {};
     let branchesData: any[] = [];
@@ -239,7 +253,7 @@ export async function POST(
       
       // GitHub sync configuration (v2 schema)
       github: {
-        enabled: true, // Default to enabled as requested
+        enabled: gitHubEnabled, // Use the read GitHub enabled state
         remoteUrl: `https://github.com/malikrohail/${projectId}-project.git`,
         syncInterval: 300000, // 5 minutes
         syncBranches: ['main', 'auto/*'],

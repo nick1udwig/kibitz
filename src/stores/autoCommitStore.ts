@@ -529,7 +529,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
             hasOpenAIKey: !!activeProject.settings.openaiApiKey,
             hasOpenRouterKey: !!activeProject.settings.openRouterApiKey,
             hasLegacyKey: !!activeProject.settings.apiKey,
-            model: activeProject.settings.model,
+            
             model: 'claude-3-haiku-20241022',
           }, null, 2));
 

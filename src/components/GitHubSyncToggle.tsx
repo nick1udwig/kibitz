@@ -8,7 +8,7 @@ interface GitHubSyncToggleProps {
 }
 
 export function GitHubSyncToggle({ className = '' }: GitHubSyncToggleProps) {
-  const { activeProjectId, projects } = useStore();
+  const { activeProjectId, projects, updateProjectSettings } = useStore();
   const [syncEnabled, setSyncEnabled] = useState(true); // Default true as requested
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error' | 'success'>('idle');
   const [isLoading, setIsLoading] = useState(false);
@@ -19,32 +19,42 @@ export function GitHubSyncToggle({ className = '' }: GitHubSyncToggleProps) {
   // Load GitHub sync status from project
   useEffect(() => {
     const loadGitHubStatus = async () => {
-      if (!activeProjectId) return;
+      if (!activeProjectId || !activeProject) return;
 
       try {
         setIsLoading(true);
         
-        // Try to get project data via API
+        // 🔧 FIRST CHECK PROJECT SETTINGS IN STORE
+        if (activeProject.settings.enableGitHub !== undefined) {
+          setSyncEnabled(activeProject.settings.enableGitHub);
+          console.log('📋 GitHubSyncToggle: Using project settings enableGitHub:', activeProject.settings.enableGitHub);
+        }
+        
+        // Then try to get project data via API for additional status
         const response = await fetch(`/api/projects/${activeProjectId}`);
         if (response.ok) {
           const projectData = await response.json();
           
           // Check if project has GitHub config
           if (projectData.github) {
-            setSyncEnabled(projectData.github.enabled);
+            // Only update if different from project settings
+            if (projectData.github.enabled !== activeProject.settings.enableGitHub) {
+              setSyncEnabled(projectData.github.enabled);
+            }
             setSyncStatus(projectData.github.syncStatus || 'idle');
           }
         }
       } catch (error) {
         console.warn('Could not load GitHub status:', error);
-        // Keep default enabled state
+        // Use project settings as fallback
+        setSyncEnabled(activeProject?.settings.enableGitHub || false);
       } finally {
         setIsLoading(false);
       }
     };
 
     loadGitHubStatus();
-  }, [activeProjectId]);
+  }, [activeProjectId, activeProject]);
 
   // Handle toggle change
   const handleToggleChange = async (enabled: boolean) => {
@@ -74,6 +84,14 @@ export function GitHubSyncToggle({ className = '' }: GitHubSyncToggleProps) {
 
       if (updateResponse.ok) {
         console.log('✅ GitHub sync updated:', enabled ? 'enabled' : 'disabled');
+        
+        // 🔧 UPDATE PROJECT SETTINGS IN STORE
+        updateProjectSettings(activeProjectId, {
+          settings: {
+            ...activeProject.settings,
+            enableGitHub: enabled
+          }
+        });
         
         // If enabling, trigger initial sync
         if (enabled) {
