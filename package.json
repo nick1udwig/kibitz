@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
+    "trace:dev": "NODE_OPTIONS='--trace-imports' next dev --no-turbo",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
