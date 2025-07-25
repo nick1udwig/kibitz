@@ -105,9 +105,9 @@ const initDb = async (): Promise<KibitzDb> => {
 
             // Update model if it's an old one
             if (project.settings) {
-              const oldModels = ['claude-2.0', 'claude-2.1', 'claude-2', 'claude-instant'];
+              const oldModels = ['claude-2.0', 'claude-2.1', 'claude-2', 'claude-instant', 'claude-3-7-sonnet-20250219'];
               if (oldModels.includes(project.settings.model) || !project.settings.model) {
-                project.settings.model = 'claude-3-7-sonnet-20250219';
+                project.settings.model = 'claude-sonnet-4-20250514';
               }
 
               // Always set provider if upgrading from v3
