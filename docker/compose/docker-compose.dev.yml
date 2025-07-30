@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  kibitz-dev:
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile.dev
+    image: kibitz:dev
+    container_name: kibitz-development
+    
+    # Port mapping
+    ports:
+      - "${KIBITZ_PORT:-3000}:3000"     # Kibitz Next.js frontend
+      - "${WS_MCP_PORT:-10125}:10125"   # ws-mcp WebSocket server
+      - "9229:9229"                     # Node.js debugging port
+    
+    # Volume mounts for development with live reloading
+    volumes:
+      # Mount source code for live development
+      - ../../src:/app/kibitz/src:delegated
+      - ../../public:/app/kibitz/public:delegated
+      - ../../package.json:/app/kibitz/package.json:ro
+      - ../../package-lock.json:/app/kibitz/package-lock.json:ro
+      - ../../tsconfig.json:/app/kibitz/tsconfig.json:ro
+      - ../../next.config.ts:/app/kibitz/next.config.ts:ro
+      - ../../tailwind.config.ts:/app/kibitz/tailwind.config.ts:ro
+      - ../../postcss.config.mjs:/app/kibitz/postcss.config.mjs:ro
+      
+      # Persistent storage
+      - ../../data:/app/kibitz/data
+      - dev_logs:/app/logs
+      
+      # Mount external projects directory
+      - "${USER_PROJECTS_PATH:-./user/gitrepo/projects}:/app/projects"
+      
+      # ws-mcp source code for development (if available)
+      - "${WS_MCP_PATH:-/dev/null}:/app/ws-mcp"
+      
+      # Node modules cache (avoid reinstalling on every start)
+      - node_modules_cache:/app/kibitz/node_modules
+    
+    # Environment variables for development
+    environment:
+      - NODE_ENV=development
+      - PYTHONUNBUFFERED=1
+      - NEXT_TELEMETRY_DISABLED=1
+      - PORT=3000
+      - WS_MCP_PORT=10125
+      - PROJECT_WORKSPACE_PATH=/app/projects
+      - CHOKIDAR_USEPOLLING=true  # For file watching in Docker
+      - WATCHPACK_POLLING=true    # For webpack file watching
+      
+      # Development debugging
+      - DEBUG=*
+      - NODE_OPTIONS=--inspect=0.0.0.0:9229
+      
+    # No resource limits in development for flexibility
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Network configuration
+    networks:
+      - kibitz-dev-network
+    
+    # Less strict security for development
+    security_opt:
+      - no-new-privileges:true
+    
+    # Init process
+    init: true
+    
+    # Development command override
+    command: ["npm", "run", "dev"]
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Named volumes for development
+volumes:
+  dev_logs:
+    driver: local
+  
+  node_modules_cache:
+    driver: local
+
+# Development network
+networks:
+  kibitz-dev-network:
+    driver: bridge 

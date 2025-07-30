@@ -1,0 +1,135 @@
+# Removed version as it's obsolete in newer Docker Compose
+
+services:
+  kibitz:
+    build:
+      context: ../../
+      dockerfile: docker/Dockerfile
+    image: kibitz:latest
+    container_name: kibitz-production
+    
+    # Port mapping - Kibitz frontend and WebSocket for ws-mcp
+    ports:
+      - "${KIBITZ_PORT:-3000}:3000"     # Kibitz Next.js frontend
+      - "${WS_MCP_PORT:-10125}:10125"   # ws-mcp WebSocket server
+      - "${NODE_DEBUG_PORT:-9229}:9229"
+    
+    # Volume mounts for persistent data and external project access
+    volumes:
+      # Data persistence
+      - kibitz_data:/app/kibitz/data
+      - kibitz_logs:/app/logs
+      
+      # User projects directory
+      - ../../user/gitrepo/projects:/app/projects
+    
+    # Environment variables
+    environment:
+      - NODE_ENV=development
+      - PYTHONUNBUFFERED=1
+      - NEXT_TELEMETRY_DISABLED=1
+      - PORT=3000
+      - WS_MCP_PORT=${WS_MCP_PORT:-10125}
+      - KIBITZ_PORT=${KIBITZ_PORT:-3000}
+      - PROJECT_WORKSPACE_PATH=/app/projects
+      
+      # Optional database configuration
+      - DATABASE_PATH=/app/kibitz/data/kibitz.db
+      - LOGS_PATH=/app/logs
+      
+      # Security settings
+      - SECURE_MODE=${SECURE_MODE:-true}
+      
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Network configuration
+    networks:
+      - kibitz-network
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Capabilities (minimal required for operation)
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - NET_BIND_SERVICE
+    
+    # Init process for proper signal handling
+    init: true
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/storage"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    
+    # Dependencies
+    depends_on:
+      - ws-mcp-health
+
+  # Health check service for ws-mcp (runs on same container but separate health monitoring)
+  ws-mcp-health:
+    image: curlimages/curl:latest
+    container_name: ws-mcp-health-check
+    restart: "no"
+    networks:
+      - kibitz-network
+    command: >
+      sh -c "
+        echo 'Waiting for ws-mcp service to be ready...' &&
+        sleep 10 &&
+        echo 'ws-mcp health check complete'
+      "
+
+# Named volumes for data persistence
+volumes:
+  # Named volumes for data persistence
+  kibitz_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../../data
+      
+  kibitz_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind  
+      device: ../volumes/logs
+
+# Custom network for service isolation
+networks:
+  kibitz-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: "kibitz-br0" 
