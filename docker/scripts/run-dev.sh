@@ -158,7 +158,7 @@ VOLUME_MOUNTS=(
     "-v" "$DOCKER_DIR/volumes/logs:/app/logs"
     
     # Projects directory
-    "-v" "$PROJECTS_DIR:/app/projects"
+    "-v" "$PROJECTS_DIR:/Users/test/gitrepo/projects"
     
     # Node modules cache
     "-v" "kibitz-dev-node-modules:/app/kibitz/node_modules"
@@ -187,7 +187,7 @@ docker run \
     -e "NEXT_TELEMETRY_DISABLED=1" \
     -e "PORT=3000" \
     -e "WS_MCP_PORT=10125" \
-    -e "PROJECT_WORKSPACE_PATH=/app/projects" \
+    -e "PROJECT_WORKSPACE_PATH=/Users/test/gitrepo/projects" \
     -e "CHOKIDAR_USEPOLLING=true" \
     -e "WATCHPACK_POLLING=true" \
     -e "DEBUG=*" \

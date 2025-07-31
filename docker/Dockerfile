@@ -103,9 +103,10 @@ FROM node-base AS deps
 # Create app user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Create workspace directories
-RUN mkdir -p /app/kibitz /app/projects /app/logs && \
-    chown -R appuser:appuser /app
+
+RUN mkdir -p /app/kibitz /Users/test/gitrepo/projects /app/logs /app/scripts /app/config
+RUN chown -R appuser:appuser /app/kibitz /Users/test/gitrepo/projects /app/logs /app/scripts /app/config
+
 
 # Set working directory
 WORKDIR /app/kibitz
@@ -182,7 +183,9 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 RUN groupadd -r appuser && useradd -r -g appuser -m appuser
 
 # Create necessary directories
-RUN mkdir -p /app/kibitz /app/projects /app/logs /app/scripts /app/config
+RUN mkdir -p /app/kibitz /Users/test/gitrepo/projects /app/logs /app/scripts /app/config
+
+RUN chown -R appuser:appuser /app/kibitz /Users/test/gitrepo/projects /app/logs /app/scripts /app/config
 
 # Set working directory
 WORKDIR /app/kibitz
@@ -221,7 +224,7 @@ RUN sed -i 's/"localhost"/"0.0.0.0"/g' /app/ws-mcp/src/ws_mcp/__init__.py && \
 RUN chmod +x /app/scripts/*.sh
 
 # Fix ownership of all files for appuser
-RUN chown -R appuser:appuser /app/kibitz /app/ws-mcp /app/projects /app/logs /app/scripts /app/config
+RUN chown -R appuser:appuser /app/kibitz /app/ws-mcp /Users/test/gitrepo/projects /app/logs /app/scripts /app/config 
 
 # Switch to non-root user for security
 USER appuser

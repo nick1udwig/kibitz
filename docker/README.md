@@ -213,7 +213,7 @@ The ws-mcp service provides WebSocket endpoints for MCP (Model Context Protocol)
 
 - **Host**: `0.0.0.0` (all interfaces)
 - **Port**: `10125`
-- **Workspace**: `/app/projects`
+- **Workspace**: `/Users/test/gitrepo/projects`
 - **CORS**: Enabled for all origins (development)
 
 ### Custom Configuration
@@ -225,7 +225,7 @@ Edit `docker/config/ws-mcp-config.json` to customize:
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/app/projects"]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/test/gitrepo/projects"]
     }
   },
   "server": {

@@ -20,8 +20,10 @@ services:
       - kibitz_data:/app/kibitz/data
       - kibitz_logs:/app/logs
       
-      # User projects directory
-      - ../../user/gitrepo/projects:/app/projects
+      # User projects directory - mount to same path for MCP compatibility
+      - /Users/test/gitrepo/projects:/Users/test/gitrepo/projects
+
+
     
     # Environment variables
     environment:
@@ -31,7 +33,7 @@ services:
       - PORT=3000
       - WS_MCP_PORT=${WS_MCP_PORT:-10125}
       - KIBITZ_PORT=${KIBITZ_PORT:-3000}
-      - PROJECT_WORKSPACE_PATH=/app/projects
+      - PROJECT_WORKSPACE_PATH=/Users/test/gitrepo/projects
       
       # Optional database configuration
       - DATABASE_PATH=/app/kibitz/data/kibitz.db

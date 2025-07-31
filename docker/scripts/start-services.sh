@@ -33,7 +33,7 @@ log_error() {
 # Configuration
 KIBITZ_PORT=${PORT:-3000}
 WS_MCP_PORT=${WS_MCP_PORT:-10125}
-PROJECT_WORKSPACE_PATH=${PROJECT_WORKSPACE_PATH:-/app/projects}
+PROJECT_WORKSPACE_PATH=${PROJECT_WORKSPACE_PATH:-/Users/test/gitrepo/projects}
 LOGS_PATH=${LOGS_PATH:-/app/logs}
 
 # Create necessary directories

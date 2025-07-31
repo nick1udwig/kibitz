@@ -88,7 +88,7 @@ RUN npm install -g yarn pnpm nodemon --no-audit --no-fund
 RUN groupadd -r appuser && useradd -r -g appuser -m appuser
 
 # Create workspace directories
-RUN mkdir -p /app/kibitz /app/projects /app/logs /app/scripts /app/config && \
+RUN mkdir -p /app/kibitz /Users/test/gitrepo/projects /app/logs /app/scripts /app/config && \
     chown -R appuser:appuser /app
 
 # Set working directory

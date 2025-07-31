@@ -9,7 +9,7 @@ WS_MCP_PORT=10125
 
 # Path Configuration
 # Absolute path to your user projects directory (where LLM will work)
-USER_PROJECTS_PATH=/Users/test/Downloads/kinode/user/gitrepo/projects
+USER_PROJECTS_PATH=/Users/test/gitrepo/projects
 
 # Optional: Path to ws-mcp source code for development
 WS_MCP_PATH=/Users/test/Downloads/kinode/ws-mcp

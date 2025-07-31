@@ -31,7 +31,7 @@ services:
       - dev_logs:/app/logs
       
       # Mount external projects directory
-      - "${USER_PROJECTS_PATH:-./user/gitrepo/projects}:/app/projects"
+      - "${USER_PROJECTS_PATH:-./user/gitrepo/projects}:/Users/test/gitrepo/projects"
       
       # ws-mcp source code for development (if available)
       - "${WS_MCP_PATH:-/dev/null}:/app/ws-mcp"
@@ -46,7 +46,7 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
       - PORT=3000
       - WS_MCP_PORT=10125
-      - PROJECT_WORKSPACE_PATH=/app/projects
+      - PROJECT_WORKSPACE_PATH=/Users/test/gitrepo/projects
       - CHOKIDAR_USEPOLLING=true  # For file watching in Docker
       - WATCHPACK_POLLING=true    # For webpack file watching
       
