@@ -1,0 +1,143 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-family-main: 'JetBrains Mono', monospace;
+
+    --orange: 17 100% 50%;
+    --dark-orange: 17 100% 40%;
+    --blue: 207 68% 51%;
+    --off-white: 0 0% 99%;
+    --white: 0 0% 100%;
+    --off-black: 240 17% 5%;
+    --black: 0 0% 0%;
+    --tan: 44 80% 94%;
+    --ansi-red: 1 69% 52%;
+    --maroon: 0 100% 15%;
+    --gray: 196 18% 46%;
+    --tasteful-dark: 0 0% 12%;
+
+    --background: 44 80% 94%;
+    --foreground: 240 17% 5%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 17% 5%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 17% 5%;
+
+    --primary: 17 100% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 44 80% 94%;
+    --secondary-foreground: 240 17% 5%;
+
+    --muted: 44 80% 94%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --accent: 0 100% 15%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 44 80% 86%;
+    --input: 44 80% 86%;
+    --ring: 17 100% 50%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 12%;
+    --foreground: 0 0% 99%;
+
+    --card: 0 100% 15%;
+    --card-foreground: 0 0% 99%;
+
+    --popover: 0 100% 15%;
+    --popover-foreground: 0 0% 99%;
+
+    --primary: 17 100% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 99%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --accent: 0 100% 15%;
+    --accent-foreground: 0 0% 99%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 17 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-['JetBrains_Mono'];
+    background-image: radial-gradient(circle at -1% -47%, rgba(71, 0, 0, 0.17) 7%, transparent 58.05%), radial-gradient(circle at 81% 210%, rgba(214, 67, 5, 0.31) 17%, transparent 77.05%);
+    min-width: 100vw;
+    min-height: 100vh;
+  }
+
+  a {
+    @apply text-primary hover:text-primary/90 hover:underline hover:decoration-wavy transition-colors;
+  }
+
+  button {
+    @apply font-['JetBrains_Mono'];
+  }
+
+  input, textarea, select {
+    @apply font-['JetBrains_Mono'];
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+    touch-action: manipulation;
+  }
+
+  /* Desktop size */
+  @media screen and (min-width: 769px) {
+    input, textarea, select {
+      font-size: 13px !important;
+    }
+  }
+
+  /* Mobile size - keep at 16px to prevent zoom */
+  @media screen and (max-width: 768px) {
+    input, textarea, select {
+      font-size: 16px !important;
+    }
+  }
+}
+
+@layer utilities {
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+  }
+  
+  .inline-code-fix code:not(pre code) {
+    display: inline !important;
+    white-space: normal !important;
+    word-break: normal !important;
+    line-height: inherit !important;
+    vertical-align: baseline !important;
+  }
+}
