@@ -55,8 +55,8 @@ services:
       - NODE_OPTIONS=--inspect=0.0.0.0:9229
       
       # Git and GitHub authentication
-      - GITHUB_TOKEN=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
-      - GH_TOKEN=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
+      - GITHUB_TOKEN=
+      - GH_TOKEN=
       - GITHUB_USERNAME=malikrohail
       - GIT_USER_NAME=malikrohail
       - GIT_USER_EMAIL=malikrohail525@gmail.com}

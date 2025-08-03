@@ -28063,3 +28063,363 @@ https://nextjs.org/docs/messages/module-not-found
 ✅ Got current branch from git command: conv-6ui5d-step-1
 🔍 Current branch for project sh9ttf: conv-6ui5d-step-1
  GET /api/projects/sh9ttf/branches/current 200 in 207ms
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /api/storage 400 in 137ms
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /api/storage 400 in 268ms
+🔍 Using project path: /Users/test/gitrepo/projects/sh9ttf_new-project
+✅ Got current branch from git command: conv-6ui5d-step-1
+🔍 Current branch for project sh9ttf: conv-6ui5d-step-1
+ GET /api/projects/sh9ttf/branches/current 200 in 618ms
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /api/storage 400 in 100ms
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /api/storage 400 in 101ms
+🔍 Using project path: /Users/test/gitrepo/projects/sh9ttf_new-project
+✅ Got current branch from git command: conv-6ui5d-step-1
+🔍 Current branch for project sh9ttf: conv-6ui5d-step-1
+ GET /api/projects/sh9ttf/branches/current 200 in 127ms
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /api/storage 400 in 99ms
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /api/storage 400 in 411ms
+🔍 Using project path: /Users/test/gitrepo/projects/sh9ttf_new-project
+✅ Got current branch from git command: conv-6ui5d-step-1
+🔍 Current branch for project sh9ttf: conv-6ui5d-step-1
+ GET /api/projects/sh9ttf/branches/current 200 in 208ms
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /api/storage 400 in 88ms
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ ⚠ ./tailwind.config.ts
+Specified module format (EcmaScript Modules) is not matching the module format of the source code (CommonJs)
+The EcmaScript module format was specified in the package.json that is affecting this source file or by using an special extension, but it looks like that CommonJs syntax is used in the source code.
+Exports made by CommonJs syntax will lead to a runtime error, since the module is in EcmaScript mode. Either change the "type" field in the package.json or replace CommonJs syntax with EcmaScript import/export syntax in the source file.
+
+
+ ⚠ ./src/lib/enhancedConversationCommitService.ts:138:18
+Module not found: Can't resolve 'fs'
+[0m [90m 136 |[39m       [90m// Use Node.js built-in modules for better reliability[39m[0m
+[0m [90m 137 |[39m       [36mconst[39m path [33m=[39m require([32m'path'[39m)[33m;[39m[0m
+[0m[31m[1m>[22m[39m[90m 138 |[39m       [36mconst[39m fs [33m=[39m require([32m'fs'[39m)[33m;[39m[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 139 |[39m       [36mconst[39m jsonFilePath [33m=[39m path[33m.[39mjoin(request[33m.[39mprojectPath[33m,[39m [32m'.kibitz'[39m[33m,[39m [32m'api'[39m[33m,[39m [32m'project.json'[39m)[33m;[39m[0m
+[0m [90m 140 |[39m       [0m
+[0m [90m 141 |[39m       console[33m.[39mlog([32m'📝 Looking for project JSON at:'[39m[33m,[39m jsonFilePath)[33m;[39m[0m
+
+
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+ GET /api/storage 400 in 104ms
+🔍 Using project path: /Users/test/gitrepo/projects/sh9ttf_new-project
+✅ Got current branch from git command: conv-6ui5d-step-1
+🔍 Current branch for project sh9ttf: conv-6ui5d-step-1
+ GET /api/projects/sh9ttf/branches/current 200 in 239ms
