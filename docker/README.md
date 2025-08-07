@@ -6,7 +6,7 @@ This guide explains how to set up and run the application using Docker, includin
 
 - Docker installed on your system
 - GitHub account and Personal Access Token
-- Basic understanding of Docker and Git
+
 
 ## Quick Start
 
