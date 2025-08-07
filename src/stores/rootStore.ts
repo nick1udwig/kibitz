@@ -1422,12 +1422,7 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>) => {
-      // 🚨 SIMPLE RECURSION PREVENTION: Block auto-commit internal calls
-      const callKey = `${toolName}-${args.thread_id || 'no-thread'}`;
-      
-      // Circuit breaker removed - proceed directly to tool execution
-      
-      // Skip auto-commit triggering for internal operations
+      // 🚀 PERFORMANCE: Quick early validation
       const isInternalCall = args.thread_id && 
         (String(args.thread_id).includes('git-') || 
          String(args.thread_id).includes('commit-') ||
@@ -1435,24 +1430,19 @@ export const useStore = create<RootState>((set, get) => {
          String(args.thread_id).includes('operations') ||
          String(args.thread_id).includes('check'));
       
-      console.log('🔧 executeTool: Detailed request info:', {
-        serverId,
-        toolName,
-        args: JSON.stringify(args, null, 2),
-        timestamp: new Date().toISOString(),
-        isInternalCall
-      });
+      // 🚀 PERFORMANCE: Reduce logging overhead - only log critical errors and non-internal calls
+      const shouldLogDetails = !isInternalCall || toolName === 'BashCommand';
+      
+      if (shouldLogDetails) {
+        console.log('🔧 executeTool:', { serverId, toolName, isInternalCall });
+      }
       
       // 🔍 CRITICAL DEBUG: Check for raw command format in BashCommand BEFORE processing
-      if (toolName === 'BashCommand') {
-        if (args.command && !args.action_json) {
-          console.error('🚨 CRITICAL: BashCommand called with raw command format BEFORE processing!', {
-            command: args.command,
-            hasActionJson: !!args.action_json,
-            allArgs: Object.keys(args),
-            stackTrace: new Error().stack
-          });
-        }
+      if (toolName === 'BashCommand' && args.command && !args.action_json) {
+        console.error('🚨 CRITICAL: BashCommand called with raw command format!', {
+          command: args.command,
+          hasActionJson: !!args.action_json
+        });
       }
       
       const connection = connectionsRef.get(serverId);
@@ -1461,16 +1451,16 @@ export const useStore = create<RootState>((set, get) => {
         throw new Error(`No connection found for server ${serverId}`);
       }
 
-      // Enhanced WebSocket state monitoring for BashCommand
-      const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-      const stateName = stateNames[connection.readyState] || 'UNKNOWN';
-      
-      if (toolName === 'BashCommand') {
-        console.log(`🔧 BashCommand WebSocket state: ${stateName} (${connection.readyState}) for server ${serverId}`);
-        console.log(`🔧 BashCommand pending requests: ${pendingRequestsRef.size}`);
+      // 🚀 PERFORMANCE: Only check WebSocket state if logging is needed
+      if (shouldLogDetails && toolName === 'BashCommand') {
+        const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+        const stateName = stateNames[connection.readyState] || 'UNKNOWN';
+        console.log(`🔧 BashCommand WebSocket: ${stateName} (pending: ${pendingRequestsRef.size})`);
       }
 
       if (connection.readyState !== WebSocket.OPEN) {
+        const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+        const stateName = stateNames[connection.readyState] || 'UNKNOWN';
         console.warn(`WebSocket is ${stateName} for server ${serverId} when executing ${toolName}`);
         
         // For BashCommand, be more aggressive about reconnection
@@ -1723,56 +1713,47 @@ export const useStore = create<RootState>((set, get) => {
                     console.warn('🔧 executeTool: Failed to import branch store:', error);
                   });
                   
-                  // 🚨 PREVENT INFINITE RECURSION: Only trigger auto-commit for user-initiated tools
-                  if (!isInternalCall) {
-                    console.log(`🔧 executeTool: Tool eligible for background auto-commit trigger: ${toolName}`);
+                  // 🚀 PERFORMANCE: Only trigger auto-commit for user-initiated tools with file changes
+                  if (!isInternalCall && shouldLogDetails) {
+                    // 🚀 PERFORMANCE: Only auto-commit for tools that actually change files
+                    const fileChangingTools = ['FileWriteOrEdit', 'write', 'edit', 'create', 'delete'];
+                    const shouldTriggerAutoCommit = fileChangingTools.some(tool => 
+                      toolName.toLowerCase().includes(tool.toLowerCase())
+                    );
                     
-                    // 🚨 CRITICAL FIX: Add auto-commit trigger after tool execution
-                    import('./autoCommitStore').then(({ useAutoCommitStore }) => {
-                      const { shouldAutoCommit, executeAutoCommit, trackFileChange } = useAutoCommitStore.getState();
-                      
-                      // 🔗 NEW: Track file changes for FileWriteOrEdit
-                      if (toolName === 'FileWriteOrEdit') {
-                        try {
-                          // Extract file path from the tool arguments
+                    if (shouldTriggerAutoCommit) {
+                      // 🚀 PERFORMANCE: Batch auto-commit operations with minimal logging
+                      import('./autoCommitStore').then(({ useAutoCommitStore }) => {
+                        const { shouldAutoCommit, executeAutoCommit, trackFileChange } = useAutoCommitStore.getState();
+                        
+                        // Track file changes for FileWriteOrEdit
+                        if (toolName === 'FileWriteOrEdit') {
                           const filePath = (args as any).file_path || 'unknown_file';
-                          console.log(`📝 Tracking file change for auto-commit: ${filePath}`);
                           trackFileChange(filePath);
-                        } catch (trackError) {
-                          console.error('Failed to track file change:', trackError);
                         }
-                      }
-                      
-                      // 🔧 CRITICAL FIX: Remove quotes from activeProjectId and project.name
-                      const cleanProjectId = activeProjectId.replace(/"/g, '');
-                      const cleanProjectName = project.name.replace(/"/g, '');
-                      
-                                          const autoCommitContext = {
-                      trigger: 'tool_execution' as const,
-                      toolName,
-                      projectId: cleanProjectId,
-                      projectPath: getProjectPath(cleanProjectId, cleanProjectName),
-                      conversationId: get().activeConversationId || undefined, // Add conversation ID for branch tracking
-                      timestamp: Date.now()
-                    };
-                      
-                      console.log(`🔧 executeTool: Background auto-commit context:`, autoCommitContext);
-                      
-                      if (shouldAutoCommit(autoCommitContext)) {
-                        console.log(`✅ executeTool: Background auto-commit check passed, executing...`);
-                        executeAutoCommit(autoCommitContext).then(() => {
-                          console.log(`✅ executeTool: Background auto-commit completed for tool: ${toolName}`);
-                        }).catch(autoCommitError => {
-                          console.error(`❌ executeTool: Background auto-commit execution failed for tool: ${toolName}`, autoCommitError);
-                        });
-                      } else {
-                        console.log(`❌ executeTool: Background auto-commit check failed for tool: ${toolName}`);
-                      }
-                    }).catch(error => {
-                      console.warn('🔧 executeTool: Failed to import auto-commit store:', error);
-                    });
-                  } else {
-                    console.log(`🔒 executeTool: Skipping background auto-commit for internal tool: ${toolName} (internal call)`);
+                        
+                        // 🚀 PERFORMANCE: Use cached project path
+                        const cleanProjectId = activeProjectId.replace(/"/g, '');
+                        const cleanProjectName = project.name.replace(/"/g, '');
+                        
+                        const autoCommitContext = {
+                          trigger: 'tool_execution' as const,
+                          toolName,
+                          projectId: cleanProjectId,
+                          projectPath: getProjectPath(cleanProjectId, cleanProjectName), // This is now cached!
+                          conversationId: get().activeConversationId || undefined,
+                          timestamp: Date.now()
+                        };
+                        
+                        if (shouldAutoCommit(autoCommitContext)) {
+                          executeAutoCommit(autoCommitContext).catch(autoCommitError => {
+                            console.error(`Auto-commit failed for ${toolName}:`, autoCommitError);
+                          });
+                        }
+                      }).catch(() => {
+                        // Silently ignore auto-commit store import failures in production
+                      });
+                    }
                   }
                 } catch (error) {
                   console.warn('🔧 executeTool: Error in background branch integration:', error);

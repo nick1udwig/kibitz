@@ -273,4 +273,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000/api/storage || exit 1
 
 # Default command
-CMD ["/app/scripts/start-services.sh"] 
+CMD ["/app/scripts/git-setup.sh", "/app/scripts/start-services.sh"] 

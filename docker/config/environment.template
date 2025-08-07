@@ -27,9 +27,9 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
 # Git and GitHub Configuration
 # GitHub personal access token for Git operations (required for push/pull)
-GITHUB_TOKEN=your_github_personal_access_token_here
+GITHUB_TOKEN=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
 # Alternative GitHub token environment variable (some tools use GH_TOKEN)
-GH_TOKEN=your_github_personal_access_token_here
+GH_TOKEN=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
 # GitHub username (for repository creation)
 GITHUB_USERNAME=malikrohail
 # Git user configuration (change these for your engineer to test with their details)

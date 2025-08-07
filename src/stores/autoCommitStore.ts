@@ -157,11 +157,14 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
   shouldAutoCommit: (context: AutoCommitContext) => {
     const { config, lastCommitTimestamp, pendingChanges, isProcessing, activeOperations } = get();
     
-    console.log('🔍 shouldAutoCommit check starting...');
-    console.log('📋 Config:', config);
-    console.log('📋 Context:', context);
-    console.log('📋 Last commit timestamp:', lastCommitTimestamp);
-    console.log('📋 Pending changes:', pendingChanges.size);
+    // 🚀 PERFORMANCE: Reduce logging overhead in hot path
+    const shouldLogDetails = !context.toolName?.includes('git-') && !context.toolName?.includes('auto-');
+    
+    if (shouldLogDetails) {
+      console.log('🔍 shouldAutoCommit check starting...');
+      console.log('📋 Context:', { trigger: context.trigger, toolName: context.toolName, projectId: context.projectId });
+      console.log('📋 State:', { enabled: config.enabled, pendingChanges: pendingChanges.size, isProcessing });
+    }
     
     // 🔍 Debug logging
     logDebug('info', 'auto-commit', 'Auto-commit check starting', {
@@ -175,19 +178,17 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
     }, context.projectId);
     
     if (!config.enabled) {
-      console.log('❌ shouldAutoCommit: config.enabled is false');
-      logDebug('warn', 'auto-commit', 'Auto-commit disabled in config', { config }, context.projectId);
+      if (shouldLogDetails) {
+        console.log('❌ shouldAutoCommit: disabled in config');
+      }
       return false;
     }
     
-    // 🔒 IMPROVED: Better operation tracking with timeout cleanup
-    if (isProcessing) {
-      console.log('❌ shouldAutoCommit: global isProcessing is true, blocking new auto-commit');
-      return false;
-    }
-    
-    if (activeOperations.has(context.projectId)) {
-      console.log('❌ shouldAutoCommit: operation already in progress for project', context.projectId, 'blocking concurrent auto-commit');
+    // 🔒 IMPROVED: Better operation tracking with timeout cleanup  
+    if (isProcessing || activeOperations.has(context.projectId)) {
+      if (shouldLogDetails) {
+        console.log('❌ shouldAutoCommit: operation already in progress');
+      }
       return false;
     }
     
@@ -263,13 +264,20 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
       console.log(`🕐 TIMING DEBUG: Consecutive commit check SKIPPED (skipConsecutiveCommits=${config.conditions.skipConsecutiveCommits})`);
     }
     
-    console.log('✅ shouldAutoCommit: all checks passed');
+    if (shouldLogDetails) {
+      console.log('✅ shouldAutoCommit: all checks passed');
+    }
     return true;
   },
 
   executeAutoCommit: async (context: AutoCommitContext): Promise<boolean> => {
-    console.log('🚀 executeAutoCommit starting with context:', context);
     const { config, activeOperations, pendingChanges } = get();
+    
+    // 🚀 PERFORMANCE: Reduce logging for internal operations
+    const shouldLogDetails = !context.toolName?.includes('git-') && !context.toolName?.includes('auto-');
+    if (shouldLogDetails) {
+      console.log('🚀 executeAutoCommit starting with context:', context);
+    }
     
     // 🔍 Debug logging
     logDebug('info', 'auto-commit', 'Starting auto-commit execution', {
@@ -281,12 +289,24 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
     
     // 🔒 IMPROVED: Check if operation already active for this project
     if (activeOperations.has(context.projectId)) {
-      console.log('⏭️ executeAutoCommit: Operation already active for project', context.projectId, 'reusing existing promise');
+      if (shouldLogDetails) {
+        console.log('⏭️ executeAutoCommit: Operation already active for project', context.projectId);
+      }
       return await activeOperations.get(context.projectId)!;
     }
     
+    // 🚀 PERFORMANCE: Global rate limiting - prevent excessive auto-commits
+    const now = Date.now();
+    const lastCommitTime = get().lastCommitTimestamp;
+    if (lastCommitTime && (now - lastCommitTime) < 2000) { // 2 second minimum between commits
+      if (shouldLogDetails) {
+        console.log('⏰ executeAutoCommit: Rate limited - too soon since last commit');
+      }
+      return false;
+    }
+    
     // 🔒 IMPROVED: Create operation promise and track it - TIMEOUT REMOVED
-    const operationPromise = (async () => {
+    const operationPromise = (async (): Promise<boolean> => {
       set({ isProcessing: true });
       
       try {
@@ -860,7 +880,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
             if (!currentBranch) {
               console.warn(`⚠️ AUTO-PUSH DEBUG: Could not detect current branch, skipping auto-push to prevent pushing wrong branch`);
               console.warn(`⚠️ AUTO-PUSH DEBUG: Branch detection result:`, branchResult);
-              return; // Exit early instead of defaulting to main
+              return false; // Exit early with explicit boolean return
             }
             
             console.log(`📤 AUTO-PUSH DEBUG: Detected current branch: '${currentBranch}'`);

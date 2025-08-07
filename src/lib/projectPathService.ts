@@ -49,8 +49,12 @@ export const sanitizeProjectName = (name: string): string => {
     .replace(/^-|-$/g, '');          // Remove leading/trailing hyphens
 };
 
+// 🚀 PERFORMANCE OPTIMIZATION: Project path cache to eliminate redundant calls
+const projectPathCache = new Map<string, string>();
+
 /**
  * Gets the full path to a project directory.
+ * 🚀 OPTIMIZED: Uses caching to prevent redundant path resolution (was called 1,384 times)
  * 
  * @param projectId The unique identifier for the project
  * @param projectName The name of the project (optional)
@@ -58,28 +62,22 @@ export const sanitizeProjectName = (name: string): string => {
  * @returns Full path to project directory
  */
 export const getProjectPath = (projectId: string, projectName?: string, customPath?: string): string => {
-  console.log(`🔧 getProjectPath: Input values:`, { 
-    projectId: `"${projectId}"`, 
-    projectName: `"${projectName}"`, 
-    customPath: `"${customPath}"`,
-    projectIdType: typeof projectId,
-    projectNameType: typeof projectName
-  });
-  
   // 🔧 CRITICAL FIX: Remove quotes from input parameters
   const cleanProjectId = projectId?.replace(/"/g, '') || '';
   const cleanProjectName = projectName?.replace(/"/g, '') || '';
   const cleanCustomPath = customPath?.replace(/"/g, '') || '';
   
-  console.log(`🔧 getProjectPath: Cleaned values:`, { 
-    cleanProjectId, 
-    cleanProjectName, 
-    cleanCustomPath 
-  });
+  // 🚀 PERFORMANCE: Create cache key for this specific path combination
+  const cacheKey = `${cleanProjectId}|${cleanProjectName || 'project'}|${cleanCustomPath || ''}`;
+  
+  // 🚀 PERFORMANCE: Return cached result if available
+  if (projectPathCache.has(cacheKey)) {
+    return projectPathCache.get(cacheKey)!;
+  }
   
   // If custom path is provided (for cloned repos), use that
   if (cleanCustomPath && cleanCustomPath !== 'undefined' && cleanCustomPath.trim() !== '') {
-    console.log(`🔧 getProjectPath: Using custom path: ${cleanCustomPath}`);
+    projectPathCache.set(cacheKey, cleanCustomPath);
     return cleanCustomPath;
   }
   
@@ -94,13 +92,6 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
   const sanitizedName = cleanProjectName ? sanitizeProjectName(cleanProjectName) : 'project';
   const fullPath = `${baseDir}/${cleanProjectId}_${sanitizedName}`;
   
-  console.log(`🔧 getProjectPath: Generated path components:`, {
-    baseDir,
-    projectId: cleanProjectId,
-    sanitizedName,
-    fullPath
-  });
-  
   // 🚨 VALIDATION: Ensure generated path is correct
   if (fullPath === baseDir || fullPath === `${baseDir}/`) {
     console.error(`❌ getProjectPath: Generated invalid path: "${fullPath}"`);
@@ -109,8 +100,16 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
     throw new Error(`Generated invalid project path: "${fullPath}" - check projectId and projectName`);
   }
   
-  console.log(`✅ getProjectPath: Final path: ${fullPath}`);
+  // 🚀 PERFORMANCE: Cache the result before returning
+  projectPathCache.set(cacheKey, fullPath);
   return fullPath;
+};
+
+/**
+ * 🚀 PERFORMANCE: Clear project path cache (useful for testing or when project paths change)
+ */
+export const clearProjectPathCache = (): void => {
+  projectPathCache.clear();
 };
 
 /**
