@@ -18,13 +18,19 @@ import ToolsView from './ToolsView';
 import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
 import { getDefaultModelForProvider } from '@/stores/rootStore';
+import { CheckpointManager } from '@/components/CheckpointManager';
 
 export const AdminView = () => {
-  const { projects, activeProjectId, updateProjectSettings, servers } = useStore();
+  const { projects, activeProjectId, updateProjectSettings, servers, apiKeys, saveApiKeysToServer } = useStore();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
   const [showSavePromptDialog, setShowSavePromptDialog] = useState(false);
   const [newPromptName, setNewPromptName] = useState('');
+  const [showSystemPromptModal, setShowSystemPromptModal] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [customPromptName, setCustomPromptName] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -101,14 +107,16 @@ export const AdminView = () => {
           <TabsList>
             <TabsTrigger value="config">Configuration</TabsTrigger>
             <TabsTrigger value="tools">Tools</TabsTrigger>
+            <TabsTrigger value="checkpoints">Checkpoints</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       {activeTab === 'tools' ? (
         <ToolsView />
+      ) : activeTab === 'checkpoints' ? (
+        <CheckpointManager projectId={activeProjectId || ''} />
       ) : (
-
         <>
           <Card>
         <CardContent className="p-6">
