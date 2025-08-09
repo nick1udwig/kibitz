@@ -119,14 +119,17 @@ async function performGitInitialization(
     console.log('✅ autoInitializeGitForProject: Git repository initialized successfully');
     
     // 🚀 AUTO-GENERATE JSON FILES for new repos
-    console.log('📋 autoInitializeGitForProject: Generating JSON files for new repository...');
-    try {
-      const { extractAndSaveProjectData } = await import('./projectDataExtractor');
-      await extractAndSaveProjectData(projectId, projectName, mcpServerId, executeTool);
-      console.log('✅ autoInitializeGitForProject: JSON files generated for new repository');
-    } catch (jsonError) {
-      console.warn('⚠️ autoInitializeGitForProject: Failed to generate JSON files for new repo:', jsonError);
-    }
+    // Defer heavy extraction so init returns quickly; write minimal file later
+    setTimeout(async () => {
+      try {
+        console.log('📋 autoInitializeGitForProject: Deferred JSON extraction start...');
+        const { extractAndSaveProjectData } = await import('./projectDataExtractor');
+        await extractAndSaveProjectData(projectId, projectName, mcpServerId, executeTool);
+        console.log('✅ autoInitializeGitForProject: Deferred JSON extraction completed');
+      } catch (jsonError) {
+        console.warn('⚠️ autoInitializeGitForProject: Deferred JSON extraction failed:', jsonError);
+      }
+    }, 0);
 
           // 🚀 PERFORMANCE: Mark project as Git-initialized to prevent future checks
       gitInitializedProjects.add(projectId);

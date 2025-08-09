@@ -12,6 +12,7 @@ export async function GET(
   context: { params: Promise<{ projectId: string }> }
 ): Promise<NextResponse> {
   try {
+    const __t0 = Date.now();
     const { projectId } = await context.params;
     
     if (!projectId) {
@@ -23,9 +24,10 @@ export async function GET(
 
     const fs = require('fs');
     const path = require('path');
+  const { getProjectsBaseDir } = await import('../../../../../lib/pathConfig');
     
-    // Calculate project path
-    const baseDir = '/Users/test/gitrepo/projects';
+  // Calculate project path
+  const baseDir = getProjectsBaseDir();
     const projectPath = path.join(baseDir, `${projectId}_new-project`);
     const branchesJsonPath = path.join(projectPath, '.kibitz', 'api', 'branches.json');
     
@@ -82,11 +84,13 @@ export async function GET(
     // Read existing branches.json
     try {
       const branchesData = JSON.parse(fs.readFileSync(branchesJsonPath, 'utf8'));
-      return NextResponse.json({
+      const response = {
         ...branchesData,
         lastUpdated: Date.now(),
         source: 'branches-json'
-      });
+      };
+      console.log(`⏱️ Branches GET total time: ${Date.now() - __t0}ms for ${projectId}`);
+      return NextResponse.json(response);
     } catch (error) {
       console.error('❌ Failed to read branches.json:', error);
       return NextResponse.json(

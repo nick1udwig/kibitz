@@ -33,7 +33,7 @@ log_error() {
 # Configuration
 KIBITZ_PORT=${PORT:-3000}
 WS_MCP_PORT=${WS_MCP_PORT:-10125}
-PROJECT_WORKSPACE_PATH=${PROJECT_WORKSPACE_PATH:-/Users/test/gitrepo/projects}
+PROJECT_WORKSPACE_PATH=${PROJECT_WORKSPACE_PATH:-${USER_PROJECTS_PATH:-/Users/test/gitrepo/projects}}
 LOGS_PATH=${LOGS_PATH:-/app/logs}
 
 # Create necessary directories
@@ -134,8 +134,8 @@ export NEXT_TELEMETRY_DISABLED=1
 export CHOKIDAR_USEPOLLING=true
 export WATCHPACK_POLLING=true
 
-# Start the development server
-npm run dev > "$LOGS_PATH/kibitz-dev.log" 2>&1 &
+# Start the development server on a fixed port and host
+npx next dev -p "$KIBITZ_PORT" -H 0.0.0.0 > "$LOGS_PATH/kibitz-dev.log" 2>&1 &
 KIBITZ_PID=$!
 
 log_success "Kibitz development server started (PID: $KIBITZ_PID)"

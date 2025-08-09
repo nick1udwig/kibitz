@@ -95,6 +95,10 @@ export interface ProjectApiData {
 
 export class ProjectDataExtractor {
   private static instance: ProjectDataExtractor | null = null;
+  // Cache thread_id per (server|path) to avoid repeated Initialize & mismatched IDs
+  private static threadCache: Map<string, string> = new Map();
+  // Guard to prevent duplicate Initialize calls
+  private static initGuard: Set<string> = new Set();
 
   static getInstance(): ProjectDataExtractor {
     if (!ProjectDataExtractor.instance) {
@@ -112,6 +116,7 @@ export class ProjectDataExtractor {
     mcpServerId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<ProjectApiData> {
+    const __t0 = Date.now();
     console.log(`🔍 ProjectDataExtractor: Starting extraction for project ${projectId}`);
 
     const projectPath = getProjectPath(projectId, projectName);
@@ -165,10 +170,12 @@ export class ProjectDataExtractor {
       await this.saveStructuredData(apiData, projectPath, executeTool, mcpServerId, threadId);
       
       console.log(`✅ ProjectDataExtractor: Extraction complete for project ${projectId}`);
+      console.log(`⏱️ ProjectDataExtractor total time: ${Date.now() - __t0}ms for project ${projectId}`);
       return apiData;
       
     } catch (error) {
       console.error(`❌ ProjectDataExtractor: Failed to extract project data:`, error);
+      console.log(`⏱️ ProjectDataExtractor total time (error): ${Date.now() - __t0}ms for project ${projectId}`);
       throw error;
     }
   }
@@ -181,28 +188,56 @@ export class ProjectDataExtractor {
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
     mcpServerId: string
   ): Promise<string> {
-    const threadId = "git-operations";
-    
+    const key = `${mcpServerId}|${projectPath}`;
+    // If thread already known, reuse it
+    const cached = ProjectDataExtractor.threadCache.get(key);
+    if (cached) return cached;
+
+    // Respect global init cache to avoid duplicate Initialize
+    const g: any = globalThis as any;
+    if (g.__kibitzInitCache && g.__kibitzInitCache.has(key)) {
+      const fallback = 'git-operations';
+      ProjectDataExtractor.threadCache.set(key, fallback);
+      return fallback;
+    }
+
+    if (ProjectDataExtractor.initGuard.has(key)) {
+      // Another call is initializing; use fallback for now
+      return 'git-operations';
+    }
+    ProjectDataExtractor.initGuard.add(key);
+
     try {
-      console.log(`🔧 ProjectDataExtractor: Initializing MCP thread: ${threadId}`);
+      const tentative = 'git-operations';
+      console.log(`🔧 ProjectDataExtractor: Initializing MCP thread once for ${key}`);
       const result = await executeTool(mcpServerId, 'Initialize', {
-        type: "first_call",
+        type: 'first_call',
         any_workspace_path: projectPath,
         initial_files_to_read: [],
-        task_id_to_resume: "",
-        mode_name: "wcgw",
-        thread_id: threadId
+        task_id_to_resume: '',
+        mode_name: 'wcgw',
+        thread_id: tentative
       });
-      
-      if (result.includes('error') || result.includes('Error')) {
-        throw new Error(`Initialize failed: ${result}`);
-      }
-      
-      console.log(`✅ ProjectDataExtractor: MCP thread initialized: ${threadId}`);
+
+      // Parse thread id from various server responses
+      let threadId = tentative;
+      const m1 = result.match(/thread_id=([a-z0-9]+)/i);
+      const m2 = result.match(/Use\s+thread_id=([a-z0-9]+)/i);
+      if (m1 && m1[1]) threadId = m1[1];
+      else if (m2 && m2[1]) threadId = m2[1];
+
+      ProjectDataExtractor.threadCache.set(key, threadId);
+      if (!g.__kibitzInitCache) g.__kibitzInitCache = new Set<string>();
+      g.__kibitzInitCache.add(key);
+      console.log(`✅ ProjectDataExtractor: Using thread_id=${threadId} for ${key}`);
       return threadId;
     } catch (error) {
-      console.warn(`⚠️ ProjectDataExtractor: Failed to initialize MCP thread, using fallback:`, error);
-      return "git-operations";
+      console.warn(`⚠️ ProjectDataExtractor: Initialize failed; using fallback thread`, error);
+      const fallback = 'git-operations';
+      ProjectDataExtractor.threadCache.set(key, fallback);
+      return fallback;
+    } finally {
+      ProjectDataExtractor.initGuard.delete(key);
     }
   }
 
@@ -244,10 +279,10 @@ export class ProjectDataExtractor {
       };
     }
 
-    // Get all branches
+    // Get local branches only to avoid duplicate remote refs like origin/main
     const branchesResult = await executeTool(mcpServerId, 'BashCommand', {
       action_json: {
-        command: `cd "${projectPath}" && git branch -a --format="%(refname:short)|%(objectname)|%(committerdate:unix)|%(subject)" 2>/dev/null || echo "no_branches"`,
+        command: `cd "${projectPath}" && git for-each-ref --sort=-committerdate --format="%(refname:short)|%(objectname)|%(committerdate:unix)|%(subject)" refs/heads/ 2>/dev/null || echo "no_branches"`,
         type: 'command'
       },
       thread_id: threadId
@@ -256,11 +291,21 @@ export class ProjectDataExtractor {
     const branchLines = this.extractCommandOutput(branchesResult).split('\n').filter(line => line.trim());
     const branches: BranchSnapshot[] = [];
 
+    // Deduplicate by normalized branch name
+    const seenBranches = new Set<string>();
     for (const line of branchLines) {
       if (line.includes('no_branches') || !line.includes('|')) continue;
       
-      const [branchName, commitHash, timestamp, message] = line.split('|');
-      if (!branchName || !commitHash) continue;
+      const [rawBranchName, commitHash, timestamp, message] = line.split('|');
+      if (!rawBranchName || !commitHash) continue;
+
+      const branchName = rawBranchName
+        .replace(/^remotes\//, '')
+        .replace(/^origin\//, '')
+        .trim();
+
+      if (seenBranches.has(branchName)) continue;
+      seenBranches.add(branchName);
 
       // Get detailed commit info
       const commitInfoResult = await executeTool(mcpServerId, 'BashCommand', {
@@ -274,7 +319,7 @@ export class ProjectDataExtractor {
       const commitInfo = this.parseCommitInfo(this.extractCommandOutput(commitInfoResult));
 
       branches.push({
-        branchName: branchName.replace('origin/', ''),
+        branchName,
         commitHash,
         commitMessage: message || commitInfo.message,
         timestamp: parseInt(timestamp) * 1000 || Date.now(),

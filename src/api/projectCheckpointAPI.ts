@@ -14,11 +14,12 @@ import { Project } from '../components/LlmChat/context/types';
 import { analyzeRepository, type RepoAnalysis } from '../lib/repoAnalysisService';
 import { safeRollback, createAutoCheckpoint, shouldCreateCheckpoint, listCheckpoints } from '../lib/checkpointRollbackService';
 import { ensureProjectDirectory, getProjectPath, sanitizeProjectName } from '../lib/projectPathService';
+import { getProjectsBaseDir } from '../lib/pathConfig';
 import { autoInitGitIfNeeded, createGitHubRepository, getGitHubUsername } from '../lib/gitService';
 import { autoSetupGitHub } from '../lib/gitService';
 
 // Constants
-const BASE_PROJECT_DIR = '/Users/test/gitrepo/projects';
+const BASE_PROJECT_DIR = getProjectsBaseDir();
 
 /**
  * Configuration for project initialization

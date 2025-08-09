@@ -49,6 +49,7 @@ export function CommitRollbackControls({ className = '' }: CommitRollbackControl
   };
 
   const loadRecentCommits = async () => {
+    const __t0 = Date.now();
     if (!activeProjectId || !activeMcpServers.length) return;
 
     try {
@@ -79,6 +80,7 @@ export function CommitRollbackControls({ className = '' }: CommitRollbackControl
       branchCommits.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       
       setCommits(branchCommits.slice(0, 5)); // Show last 5 commits
+      console.log(`⏱️ UI loadRecentCommits total time: ${Date.now() - __t0}ms for project ${activeProjectId}`);
     } catch (error) {
       console.warn('Could not load commits:', error);
     }

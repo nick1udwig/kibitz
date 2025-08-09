@@ -23,7 +23,8 @@ export async function GET(
     const path = require('path');
     
     // Try to find the actual project directory
-    const baseProjectsPath = '/Users/test/gitrepo/projects';
+    const { getProjectsBaseDir } = await import('../../../../../../lib/pathConfig');
+    const baseProjectsPath = getProjectsBaseDir();
     const possiblePaths = [
       path.join(baseProjectsPath, `${projectId}_new-project`),
       path.join(baseProjectsPath, `${projectId}_new-project`),

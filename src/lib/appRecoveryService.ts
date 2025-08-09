@@ -270,8 +270,10 @@ export class AppRecoveryService {
         return { needed: true, reason: 'Project not found in store' };
       }
       
-      // Get project path
-      const projectPath = `/Users/test/gitrepo/projects/${projectId}_${project.name.toLowerCase().replace(/\s+/g, '-')}`;
+      // Get project path based on configured base directory
+      const { getProjectsBaseDir } = await import('./pathConfig');
+      const baseDir = getProjectsBaseDir();
+      const projectPath = `${baseDir}/${projectId}_${project.name.toLowerCase().replace(/\s+/g, '-')}`;
       
       // Check if .kibitz directory exists
       const metadata = await LocalPersistenceService.getProjectMetadata(

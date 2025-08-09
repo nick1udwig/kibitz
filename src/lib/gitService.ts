@@ -15,6 +15,12 @@ import { createHash } from 'crypto';
 import { getGitHubRepoName } from './projectPathService';
 import { wrapGitCommand, createGitContext } from './gitCommandOptimizer';
 
+// MCP thread reuse cache to avoid repeated Initialize handshakes
+const mcpThreadCache: Map<string, string> = new Map();
+
+// Cache of repositories where git user config has been set
+const gitConfigInitializedForRepo: Set<string> = new Set();
+
 /**
  * GitHub Sync Protected Functions:
  * The following functions will check GitHub sync status and immediately return with
@@ -124,34 +130,28 @@ export const executeGitCommand = async (
     
     console.log(`🔧 executeGitCommand: Using working directory: "${cwd}" for command: "${command}"`);
     
-    // Storage for the thread ID
-    let threadId = "git-operations";
-    let needToInitialize = true;
-    
-    // First try to initialize if needed
-    if (needToInitialize) {
+    // Reuse or establish an MCP thread once per (serverId + cwd)
+    const threadKey = `${serverId}|${cwd}`;
+    let threadId = mcpThreadCache.get(threadKey) || 'git-operations';
+    if (!mcpThreadCache.has(threadKey)) {
       try {
-        console.log("Initializing MCP environment...");
+        console.log('Initializing MCP environment (once per path)...');
         const initResult = await executeTool(serverId, 'Initialize', {
-          type: "first_call",
+          type: 'first_call',
           any_workspace_path: cwd,
           initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
+          task_id_to_resume: '',
+          mode_name: 'wcgw',
           thread_id: threadId
         });
-        
-        // Extract the thread_id from the response
         const match = initResult.match(/thread_id=([a-z0-9]+)/i);
         if (match && match[1]) {
           threadId = match[1];
-          console.log(`Successfully initialized with thread_id=${threadId}`);
-          needToInitialize = false;
-        } else {
-          console.log("Initialized but couldn't extract thread_id, using default");
         }
+        mcpThreadCache.set(threadKey, threadId);
+        console.log(`MCP thread cached for ${threadKey}: ${threadId}`);
       } catch (initError) {
-        console.warn("Failed to initialize MCP environment:", initError);
+        console.warn('Initialize failed; proceeding with default thread_id', initError);
       }
     }
     
@@ -528,295 +528,67 @@ export const createCommit = async (
 ): Promise<{ success: boolean; commitHash: string | null }> => {
   try {
     console.log(`Attempting to create commit in ${projectPath} with message: "${message}"`);
-    
-    // Ensure Git user configuration is set before any Git operations
-    console.log("Setting Git user configuration...");
-    const gitUserName = process.env.GIT_USER_NAME || 'malikrohail';
-    const gitUserEmail = process.env.GIT_USER_EMAIL || 'malikrohail525@gmail.com';
-    const gitConfigResult = await executeGitCommand(
-      serverId,
-      `git config user.name "${gitUserName}" && git config user.email "${gitUserEmail}"`,
-      projectPath,
-      executeTool
-    );
-    
-    if (!gitConfigResult.success) {
-      console.warn("Failed to set Git config, but continuing...", gitConfigResult.error);
-    } else {
-      console.log("Git user configuration set successfully");
+
+    // Configure git user once per repo path
+    if (!gitConfigInitializedForRepo.has(projectPath)) {
+      const gitUserName = process.env.GIT_USER_NAME || 'malikrohail';
+      const gitUserEmail = process.env.GIT_USER_EMAIL || 'malikrohail525@gmail.com';
+      const gitConfigResult = await executeGitCommand(
+        serverId,
+        `git config user.name "${gitUserName}" && git config user.email "${gitUserEmail}"`,
+        projectPath,
+        executeTool
+      );
+      if (!gitConfigResult.success) {
+        console.warn('Failed to set Git config (continuing):', gitConfigResult.error || gitConfigResult.output);
+      } else {
+        gitConfigInitializedForRepo.add(projectPath);
+      }
     }
-    
-    // First, let's verify what files exist in the project directory
-    console.log("Checking files in project directory...");
-    const listFilesResult = await executeGitCommand(
-      serverId,
-      'ls -la',
-      projectPath,
-      executeTool
-    );
-    
-    if (listFilesResult.success) {
-      console.log("Files in project directory:", listFilesResult.output);
-    }
-    
-    // Check git status before adding files
-    console.log("Checking git status before staging...");
-    const preStatusResult = await executeGitCommand(
-      serverId,
-      'git status --porcelain',
-      projectPath,
-      executeTool
-    );
-    
-    if (preStatusResult.success) {
-      console.log("Git status before staging:", preStatusResult.output || "(empty)");
-    }
-    
-    // Stage all changes with explicit patterns to catch more files
-    console.log("Staging changes...");
+
+    // Stage and commit in the minimal number of calls
     const stageResult = await executeGitCommand(
       serverId,
-      'git add . && git add -A && git add --all',
+      'git add -A',
       projectPath,
       executeTool
     );
-    
     if (!stageResult.success) {
-      console.error("Failed to stage changes:", stageResult.error || stageResult.output);
+      console.error('Failed to stage changes:', stageResult.error || stageResult.output);
       return { success: false, commitHash: null };
     }
-    
-    // Also try to add any files that might be in subdirectories
-    console.log("Staging files with force...");
-    const forceStageResult = await executeGitCommand(
-      serverId,
-      'find . -type f -not -path "./.git/*" -not -name ".gitignore" -exec git add {} \\;',
-      projectPath,
-      executeTool
-    );
-    
-    // This command might fail if there are no files, that's okay
-    if (forceStageResult.success) {
-      console.log("Force staging successful");
-    }
-    
-    // Wait a moment for file system operations to complete
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Check if there are changes to commit (retry up to 3 times)
-    console.log("Checking for changes to commit...");
-    let statusResult;
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    do {
-      attempts++;
-      console.log(`Checking git status (attempt ${attempts}/${maxAttempts})...`);
-      
-      statusResult = await executeGitCommand(
-        serverId,
-        'git status --porcelain',
-        projectPath,
-        executeTool
-      );
-      
-      if (statusResult.success && statusResult.output.trim()) {
-        console.log("Found changes to commit:", statusResult.output);
-        break;
-      }
-      
-      if (attempts < maxAttempts) {
-        console.log("No changes detected, waiting and retrying...");
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Re-stage files before retry with more aggressive approach
-        await executeGitCommand(
-          serverId,
-          'git add . && git add -A && git add --all',
-          projectPath,
-          executeTool
-        );
-        
-        // Also try force staging again
-        await executeGitCommand(
-          serverId,
-          'find . -type f -not -path "./.git/*" -not -name ".gitignore" -exec git add {} \\;',
-          projectPath,
-          executeTool
-        );
-      }
-    } while (attempts < maxAttempts);
-    
-    if (!statusResult || !statusResult.success) {
-      console.error("Failed to check git status:", statusResult?.error || statusResult?.output);
-      return { success: false, commitHash: null };
-    }
-    
-    // If still no changes after retries, check what files git can see
-    if (!statusResult.output.trim()) {
-      console.log("No changes detected after retries. Checking git ls-files...");
-      const gitLsResult = await executeGitCommand(
-        serverId,
-        'git ls-files',
-        projectPath,
-        executeTool
-      );
-      
-      console.log("Git tracked files:", gitLsResult.output || "(none)");
-      
-      const gitLsOthersResult = await executeGitCommand(
-        serverId,
-        'git ls-files --others --exclude-standard',
-        projectPath,
-        executeTool
-      );
-      
-      console.log("Git untracked files:", gitLsOthersResult.output || "(none)");
-      
-      console.log("No changes to commit");
-      return { success: true, commitHash: "no_changes" };
-    }
-    
-    // Commit changes
-    console.log(`Creating commit with message: "${message}"...`);
+
     const commitResult = await executeGitCommand(
       serverId,
       `git commit -m "${message}"`,
       projectPath,
       executeTool
     );
-    
-    // Check if the commit result indicates "nothing to commit"
+
+    // If nothing to commit, exit fast
     if (commitResult.success && commitResult.output.includes('nothing to commit')) {
-      console.log("Git reports: nothing to commit, working tree clean");
-      return { success: true, commitHash: "no_changes" };
+      return { success: true, commitHash: 'no_changes' };
     }
-    
     if (!commitResult.success) {
-      console.error("Failed to commit changes:", commitResult.error || commitResult.output);
+      // Some git wrappers return success=false but print "nothing to commit"
+      if (commitResult.output.includes('nothing to commit')) {
+        return { success: true, commitHash: 'no_changes' };
+      }
       return { success: false, commitHash: null };
     }
-    
-    console.log("Commit successful, retrieving commit hash...");
-    // Get commit hash
+
     const hashResult = await executeGitCommand(
       serverId,
       'git rev-parse HEAD',
       projectPath,
       executeTool
     );
-    
     if (!hashResult.success || !hashResult.output.trim()) {
-      console.error("Failed to get commit hash:", hashResult.error || "Empty result");
-      return { success: true, commitHash: "unknown" };
-    }
-    
-    const commitHash = hashResult.output.trim();
-    console.log(`Successfully retrieved commit hash: ${commitHash}`);
-    
-    // Try to push to GitHub if remote origin exists AND sync is enabled
-    console.log("🔍 BRANCH PUSH DEBUG: Checking for remote origin and GitHub sync status...");
-    try {
-      // 🚫 SYNC CHECK: Only push to GitHub if sync is enabled
-      const syncEnabled = await isGitHubSyncEnabled(projectPath);
-      console.log(`🔍 BRANCH PUSH DEBUG: GitHub sync enabled = ${syncEnabled}`);
-      if (!syncEnabled) {
-        console.log("🔒 BRANCH PUSH DEBUG: GitHub sync is disabled for this project. Skipping push to GitHub.");
-      } else {
-        const remoteCheckResult = await executeGitCommand(
-          serverId,
-          'git remote get-url origin',
-          projectPath,
-          executeTool
-        );
-        
-        console.log(`🔍 BRANCH PUSH DEBUG: Remote check result - success: ${remoteCheckResult.success}, output: "${remoteCheckResult.output}"`);
-        
-        // Check if remote actually exists (not just command success)
-        const hasRemote = remoteCheckResult.success && 
-                         remoteCheckResult.output.trim() && 
-                         !remoteCheckResult.output.includes('error:') &&
-                         !remoteCheckResult.output.includes('No such remote');
-        
-        console.log(`🔍 BRANCH PUSH DEBUG: Has remote = ${hasRemote}`);
-        
-        if (hasRemote) {
-          console.log("🔍 BRANCH PUSH DEBUG: Remote origin found and sync enabled, proceeding with push...");
-          
-          // 🔧 FIX: Get current branch name instead of hardcoding 'main'
-          const currentBranchResult = await executeGitCommand(
-            serverId,
-            'git branch --show-current',
-            projectPath,
-            executeTool
-          );
-          
-          console.log(`🔍 BRANCH PUSH DEBUG: Current branch check - success: ${currentBranchResult.success}, output: "${currentBranchResult.output}"`);
-          
-          if (currentBranchResult.success && currentBranchResult.output.trim()) {
-            const currentBranch = currentBranchResult.output.trim();
-            console.log(`🔍 BRANCH PUSH DEBUG: Current branch detected: '${currentBranch}'`);
-            console.log(`🌿 BRANCH PUSH DEBUG: Attempting to push branch '${currentBranch}' to GitHub...`);
-            
-            // 🚀 Try normal push first
-            console.log(`🔍 BRANCH PUSH DEBUG: Executing: git push origin ${currentBranch}`);
-            let pushResult = await executeGitCommand(
-              serverId,
-              `git push origin ${currentBranch}`,
-              projectPath,
-              executeTool
-            );
-            
-            console.log(`🔍 BRANCH PUSH DEBUG: First push attempt - success: ${pushResult.success}, output: "${pushResult.output}", error: "${pushResult.error}"`);
-            
-            // 🔄 If push fails (likely because branch doesn't exist on remote), set upstream
-            if (!pushResult.success && (
-              pushResult.output.includes('no upstream branch') || 
-              pushResult.output.includes('has no upstream branch') ||
-              pushResult.output.includes('refused to push') ||
-              pushResult.output.includes('does not exist')
-            )) {
-              console.log(`🔍 BRANCH PUSH DEBUG: First push failed, setting upstream for new branch '${currentBranch}'...`);
-              console.log(`🔍 BRANCH PUSH DEBUG: Executing: git push -u origin ${currentBranch}`);
-              pushResult = await executeGitCommand(
-                serverId,
-                `git push -u origin ${currentBranch}`,
-                projectPath,
-                executeTool
-              );
-              
-              console.log(`🔍 BRANCH PUSH DEBUG: Upstream push attempt - success: ${pushResult.success}, output: "${pushResult.output}", error: "${pushResult.error}"`);
-            }
-            
-            if (pushResult.success) {
-              console.log(`✅ BRANCH PUSH DEBUG: Successfully pushed branch '${currentBranch}' to GitHub`);
-            } else {
-              console.log(`❌ BRANCH PUSH DEBUG: Failed to push branch '${currentBranch}' to GitHub. Output: "${pushResult.output}", Error: "${pushResult.error}"`);
-            }
-          } else {
-            console.log(`❌ BRANCH PUSH DEBUG: Failed to get current branch name. Success: ${currentBranchResult.success}, Output: "${currentBranchResult.output}", Error: "${currentBranchResult.error}"`);
-          }
-        } else {
-          console.log("🔍 BRANCH PUSH DEBUG: No remote origin configured, skipping push to GitHub");
-        }
-      }
-    } catch (pushError) {
-      console.log("Error checking/pushing to GitHub (commit was still successful):", pushError);
-    }
-    
-    // 🚀 IMMEDIATE JSON GENERATION after successful commit
-    try {
-      const { createProjectJSONFiles } = await import('./branchService');
-      await createProjectJSONFiles(projectPath, serverId, executeTool);
-      console.log('✅ JSON files generated after successful commit');
-    } catch (jsonError) {
-      console.warn('⚠️ Failed to generate JSON files after commit:', jsonError);
+      return { success: true, commitHash: 'unknown' };
     }
 
-    return {
-      success: true,
-      commitHash
-    };
+    const commitHash = hashResult.output.trim();
+    return { success: true, commitHash };
   } catch (error) {
     console.error('Failed to create commit:', error);
     return { 

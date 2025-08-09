@@ -1,6 +1,11 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
+// Do not import TS from JS here. Read from environment directly to work in Node contexts
+function getEnvProjectsBaseDir() {
+  const value = process.env.PROJECT_WORKSPACE_PATH || process.env.USER_PROJECTS_PATH || process.env.NEXT_PUBLIC_PROJECTS_DIR || '/Users/test/gitrepo/projects';
+  return value.replace(/\/+$/, '');
+}
 
 /**
  * Default GitHub configuration for new projects
@@ -9,7 +14,7 @@ const DEFAULT_GITHUB_CONFIG = {
   enabled: false,
   remoteUrl: null,
   syncInterval: 300000, // 5 minutes
-  syncBranches: ['main', 'auto/*'],
+  syncBranches: ['main', 'step-*'],
   lastSync: null,
   syncStatus: 'idle',
   authentication: {
@@ -42,7 +47,7 @@ const DEFAULT_BRANCH_SYNC = {
 /**
  * Base projects directory
  */
-const BASE_PROJECTS_DIR = '/Users/test/gitrepo/projects/';
+const BASE_PROJECTS_DIR = `${getEnvProjectsBaseDir()}/`;
 
 /**
  * Logger utility for debugging
@@ -51,7 +56,8 @@ const logger = {
   info: (msg, ...args) => console.log(`[INFO] ${msg}`, ...args),
   warn: (msg, ...args) => console.warn(`[WARN] ${msg}`, ...args),
   error: (msg, ...args) => console.error(`[ERROR] ${msg}`, ...args),
-  debug: (msg, ...args) => process.env.DEBUG && console.log(`[DEBUG] ${msg}`, ...args)
+  // Always log debug messages to measure real latency end-to-end
+  debug: (msg, ...args) => console.log(`[DEBUG] ${msg}`, ...args)
 };
 
 /**
@@ -157,6 +163,63 @@ export async function readProjectJson(projectPath) {
 }
 
 /**
+ * Derive project identity (id and name) from a project path
+ * Directory format: {projectId}_{projectName}
+ */
+function deriveProjectIdentity(projectPath) {
+  const dirName = path.basename(projectPath);
+  const parts = dirName.split('_');
+  const projectId = parts[0] || 'unknown';
+  const projectName = parts.length > 1 ? parts.slice(1).join('_') : 'project';
+  return { projectId, projectName };
+}
+
+/**
+ * Creates a minimal, valid project.json structure in memory
+ */
+function buildDefaultProjectData(projectPath) {
+  const { projectId, projectName } = deriveProjectIdentity(projectPath);
+  const now = Date.now();
+  return {
+    // Basic git-like fields (placeholders)
+    commit_hash: 'unknown',
+    branch: 'main',
+    author: 'Unknown',
+    date: new Date(now).toISOString(),
+    message: 'Initialized project metadata',
+    remote_url: null,
+    is_dirty: false,
+
+    // Required project info
+    projectId,
+    projectName,
+    projectPath,
+
+    // Minimal repository and branches info
+    repository: {
+      defaultBranch: 'main',
+      totalBranches: 0,
+      totalCommits: 0,
+      lastActivity: now,
+      size: 0,
+      languages: {}
+    },
+    branches: [],
+    conversations: [],
+
+    // v2 schema sections with defaults
+    github: { ...DEFAULT_GITHUB_CONFIG },
+    sync: { ...DEFAULT_SYNC_CONFIG },
+
+    metadata: {
+      generated: now,
+      version: '2.0',
+      source: 'auto-init'
+    }
+  };
+}
+
+/**
  * Writes updated project.json with proper formatting and locking
  * @param {string} projectPath - Path to the project directory
  * @param {Object} data - Project data to write
@@ -214,7 +277,15 @@ export async function updateGitHubConfig(projectPath, config) {
   logger.debug(`Updating GitHub config for project: ${projectPath}`);
   
   try {
-    const data = await readProjectJson(projectPath);
+    let data;
+    try {
+      data = await readProjectJson(projectPath);
+    } catch (readErr) {
+      // If project.json doesn't exist or is invalid, initialize a minimal valid one
+      logger.warn(`project.json missing or invalid at ${projectPath}, creating a default one:`, readErr?.message || readErr);
+      await ensureKibitzDirectory(projectPath);
+      data = buildDefaultProjectData(projectPath);
+    }
     
     // Merge with existing GitHub config
     data.github = {

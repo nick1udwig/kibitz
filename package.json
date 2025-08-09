@@ -18,10 +18,12 @@
     "sync:test:performance": "node test-background-service.js --performance",
     "sync:setup": "node setup-github-sync.js",
     "sync:setup:discover": "node setup-github-sync.js discover",
-    "sync:check": "node test-project-creation-v2.js"
+    "sync:check": "node test-project-creation-v2.js",
+    "hypergrid:bridge": "node scripts/hypergrid-ws-bridge.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",
+    "@modelcontextprotocol/sdk": "*",
     "@radix-ui/react-alert-dialog": "^1.1.4",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-dropdown-menu": "^2.1.4",
@@ -44,6 +46,7 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0",
+    "ws": "^8.18.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "zustand": "^5.0.3"

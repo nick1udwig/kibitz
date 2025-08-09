@@ -854,6 +854,25 @@ export const useStore = create<RootState>((set, get) => {
                 .then(result => {
                   if (result.success) {
                     console.log('Git repository initialized for project:', name);
+                    // 🌐 Enable GitHub sync and let background provisioning run
+                    try {
+                      fetch('/api/github-sync/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          projectId,
+                          projectName: name,
+                          enabled: true,
+                          // Include step-* by default; keep others during transition
+                          syncBranches: ['main', 'step-*', 'auto/*', 'conv-*'],
+                          authentication: { type: 'token', configured: true }
+                        })
+                      }).then(() => {
+                        console.log('✅ GitHub sync config posted for new project');
+                      }).catch(err => console.warn('⚠️ Failed to post GitHub config for new project:', err));
+                    } catch (e) {
+                      console.warn('⚠️ Could not schedule GitHub sync config for new project:', e);
+                    }
                   } else {
                     console.warn('Git repository initialization failed:', result.message);
                   }
@@ -1422,6 +1441,19 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>) => {
+      // Guard: Skip Initialize if server doesn't support it
+      try {
+        const serverForGuard = get().servers.find(s => s.id === serverId);
+        const hasInitializeTool = !!serverForGuard?.tools?.some(t =>
+          (t.name || '').toLowerCase() === 'initialize'
+        );
+        if (toolName === 'Initialize' && !hasInitializeTool) {
+          console.warn(`🔧 Skipping Initialize for server ${serverId} - tool not available`);
+          return 'Initialize skipped: tool not supported by server';
+        }
+      } catch (guardErr) {
+        console.warn('Initialize guard check failed (continuing without preflight):', guardErr);
+      }
       // 🚀 PERFORMANCE: Quick early validation
       const isInternalCall = args.thread_id && 
         (String(args.thread_id).includes('git-') || 

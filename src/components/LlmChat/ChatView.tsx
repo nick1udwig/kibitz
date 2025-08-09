@@ -125,48 +125,47 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
   // Get project path for revert functionality - Optimized approach
   useEffect(() => {
-    const initProjectPath = async () => {
-      if (activeProject && servers.length > 0) {
-        try {
-          const activeMcpServers = servers.filter(server => 
-            server.status === 'connected' && 
-            activeProject.settings.mcpServerIds?.includes(server.id)
-          );
-          
-          if (activeMcpServers.length > 0) {
-            console.log('📂 initProjectPath: Starting optimized Git initialization...');
-            
-            // 🚀 OPTIMIZED: Use the simplified Git auto-initialization system
-            const projectPath = getProjectPath(activeProject.id, activeProject.name);
-            const gitResult = await autoInitializeGitForProject(
-              activeProject.id,
-              activeProject.name,
-              projectPath,
-              activeMcpServers[0].id,
-              executeTool
-            );
-            
-            if (gitResult.success) {
-              console.log('✅ initProjectPath: Git initialization successful');
-              setProjectPath(projectPath);
-            } else {
-              console.error('❌ initProjectPath: Git initialization failed:', gitResult.message);
-              // Still set the project path for basic functionality
-              const projectPath = getProjectPath(activeProject.id, activeProject.name);
-              setProjectPath(projectPath);
-            }
-          }
-        } catch (error) {
-          console.error('❌ initProjectPath: Error during initialization:', error);
-          // Fallback to basic path setting
-          const projectPath = getProjectPath(activeProject.id, activeProject.name);
-          setProjectPath(projectPath);
+    const key = activeProject ? `${activeProject.id}` : '';
+    // Avoid re-running initialization multiple times during re-renders
+    const w: any = window as any;
+    if (!activeProject || servers.length === 0) return;
+    if (!w.__kibitzChatInit) w.__kibitzChatInit = new Set<string>();
+    if (w.__kibitzChatInit.has(key)) {
+      // Already initialized; just ensure projectPath is set
+      const pp = getProjectPath(activeProject.id, activeProject.name);
+      setProjectPath(pp);
+      return;
+    }
+    (async () => {
+      try {
+        const activeMcpServers = servers.filter(
+          server => server.status === 'connected' && activeProject.settings.mcpServerIds?.includes(server.id)
+        );
+        if (activeMcpServers.length === 0) return;
+        console.log('📂 initProjectPath: Starting optimized Git initialization...');
+        const pp = getProjectPath(activeProject.id, activeProject.name);
+        const gitResult = await autoInitializeGitForProject(
+          activeProject.id,
+          activeProject.name,
+          pp,
+          activeMcpServers[0].id,
+          executeTool
+        );
+        setProjectPath(pp);
+        if (gitResult.success) {
+          console.log('✅ initProjectPath: Git initialization successful');
+        } else {
+          console.error('❌ initProjectPath: Git initialization failed:', gitResult.message);
         }
+      } catch (error) {
+        console.error('❌ initProjectPath: Error during initialization:', error);
+        const pp = getProjectPath(activeProject.id, activeProject.name);
+        setProjectPath(pp);
+      } finally {
+        w.__kibitzChatInit.add(key);
       }
-    };
-
-    initProjectPath();
-  }, [activeProject, servers]);
+    })();
+  }, [activeProject, servers, executeTool]);
 
   // Handle revert to commit
   const handleRevert = useCallback(async (commitHash: string) => {

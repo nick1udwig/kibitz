@@ -10,11 +10,12 @@
 
 import { executeGitCommand } from './gitService';
 import { ensureProjectDirectory } from './projectPathService';
+import { getProjectsBaseDir } from './pathConfig';
 import { Checkpoint } from '../types/Checkpoint';
 import { BranchInfo } from './branchService';
 
 // Base directory for all projects
-const BASE_PROJECTS_DIR = '/Users/test/gitrepo/projects';
+const BASE_PROJECTS_DIR = getProjectsBaseDir();
 
 /**
  * Checkpoint metadata stored in .kibitz/checkpoints.json

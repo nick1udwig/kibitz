@@ -11,14 +11,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
+import { getProjectsBaseDir } from '../../../../lib/pathConfig';
 
-const BASE_PROJECTS_DIR = '/Users/test/gitrepo/projects';
+const BASE_PROJECTS_DIR = getProjectsBaseDir();
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> }
 ): Promise<NextResponse> {
   try {
+    const __t0 = Date.now();
     const { projectId } = await context.params;
     
     if (!projectId) {
@@ -78,6 +80,7 @@ export async function GET(
         author: projectData.author,
         fileSize: jsonData.length + ' bytes'
       });
+      console.log(`⏱️ Project GET total time: ${Date.now() - __t0}ms for ${projectId}`);
       
       return NextResponse.json(projectData);
     } catch (readError) {

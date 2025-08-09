@@ -318,7 +318,7 @@ export async function saveConversationMetadata(
         enabled: false,
         remoteUrl: null,
         syncInterval: 300000, // 5 minutes
-        syncBranches: ['main', 'auto/*'],
+        syncBranches: ['main', 'step-*'],
         lastSync: null,
         syncStatus: 'idle',
         authentication: {

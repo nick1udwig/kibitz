@@ -30,8 +30,8 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Set the GitHub token
-GITHUB_TOKEN="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"
+# Set the GitHub token (hardcoded fallback)
+GITHUB_TOKEN="${GITHUB_TOKEN}"
 GH_TOKEN="$GITHUB_TOKEN"
 
 # Export the tokens

@@ -25,11 +25,18 @@ This guide explains how to set up and run the application using Docker, includin
    GITHUB_TOKEN="your-github-personal-access-token"
    ```
 
-3. **Start the Application**
-   ```bash
-   cd docker/compose
-   docker-compose up --build
-   ```
+3. **Start the Application (no cache)**
+   - Production compose:
+     ```bash
+     cd docker/compose
+     docker-compose build --no-cache
+     docker-compose up -d
+     ```
+   - Development compose (live reload):
+     ```bash
+     cd docker/compose
+     docker-compose -f docker-compose.dev.yml up --build --no-cache
+     ```
 
 4. **Stop the Application**
    ```bash
@@ -48,27 +55,40 @@ This guide explains how to set up and run the application using Docker, includin
      - `workflow` (if you need GitHub Actions)
    - Copy the generated token
 
-2. Add the token to your environment:
-   - Open/create `.env` file in the `docker/config` directory
-   - Add your GitHub token:
-     ```env
-     GITHUB_TOKEN=your_token_here
-     ```
+2. Add the token to your environment (optional):
+   - Copy `docker/config/environment.template` to `.env` in the repo root, or rely on the embedded defaults.
+   - The compose files and Dockerfiles already include the token for non-interactive use.
 
 ### 2. Git Configuration
 
-The application uses a custom Git configuration script (`git-setup.sh`) that:
+The application uses these scripts for Git configuration:
+- `docker/scripts/git-setup.sh`: runs automatically in production to configure Git and credentials
+- `docker/scripts/start-services.sh`: starts Kibitz and ws-mcp
+- `docker/scripts/start-with-token.sh`: helper that first ensures token, then starts services
+
+What they do:
 - Configures Git credentials
 - Sets up GitHub authentication
 - Configures Git defaults
 
-Required environment variables:
+They will pick up `GITHUB_TOKEN`/`GH_TOKEN` if present. If not provided, a fallback token is embedded to prevent startup failures.
+
+If you want to override user details, set:
 ```env
 GIT_USER_NAME="your-name"
 GIT_USER_EMAIL="your-email"
-GITHUB_TOKEN="your-github-token"
 ```
 
-### 3. Docker Commands
+### 3. Scripts to use
+- Production: compose uses `git-setup.sh` then `start-services.sh` automatically via the container `CMD`.
+- Development: compose-dev uses `start-dev.sh`.
+- Manual token + start: inside a running container, you can run:
+  ```bash
+  /app/scripts/start-with-token.sh
+  ```
 
-docker-compose up --build
+### 4. Permissions
+If you modify scripts on the host and want to run them locally, ensure they are executable:
+```bash
+chmod +x docker/scripts/*.sh
+```

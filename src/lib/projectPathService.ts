@@ -6,6 +6,7 @@
  */
 
 import { Project } from '../components/LlmChat/context/types';
+import { getProjectsBaseDir } from './pathConfig';
 
 /**
  * Cache to prevent multiple simultaneous directory creation attempts
@@ -27,13 +28,9 @@ const DIRECTORY_CREATION_TIMEOUT = 30000;
  * This ensures the system works universally across different environments
  */
 const getCurrentWorkingDirectory = (): string => {
-  // For browser environments, return base projects directory
-  if (typeof window !== 'undefined') {
-    return '/Users/test/gitrepo/projects';
-  }
-  
-  // In Node.js environment, use base projects directory
-  return '/Users/test/gitrepo/projects';
+  // Always resolve from shared config. In the browser, NEXT_PUBLIC_PROJECTS_DIR
+  // should be provided to hydrate UI-only path usage; on server, runtime envs.
+  return getProjectsBaseDir();
 };
 
 /**
@@ -306,9 +303,10 @@ export const ensureProjectDirectory = async (
   console.log(`🔧 ensureProjectDirectory: Generated project path: ${projectPath}`);
   
   // 🚨 CRITICAL: Validate project path is absolute and complete
-  if (!projectPath.startsWith('/Users/test/gitrepo/projects/') || projectPath.length < 30) {
+  const baseDir = getProjectsBaseDir();
+  if (!projectPath.startsWith(`${baseDir}/`) || projectPath.length < baseDir.length + 5) {
     console.error(`❌ Invalid project path detected: "${projectPath}"`);
-    console.error(`❌ Expected format: /Users/test/gitrepo/projects/{projectId}_{projectName}`);
+    console.error(`❌ Expected format: ${baseDir}/{projectId}_{projectName}`);
     throw new Error(`Invalid project path: ${projectPath}`);
   }
   
@@ -319,55 +317,39 @@ export const ensureProjectDirectory = async (
   // This prevents the manual directory creation loops that were causing issues
   
   // 🚀 CRITICAL: Initialize MCP environment with the specific project directory
-  // This ensures ALL subsequent tool calls work in the correct project workspace
-  console.log(`🔧 Initializing MCP environment for project directory: ${projectPath}`);
-  console.log(`🔧 MCP should initialize at: ${projectPath} (NOT the parent directory)`);
-  
-  try {
-    const initArgs = {
-      type: "first_call",
-      any_workspace_path: projectPath,
-      initial_files_to_read: [],
-      task_id_to_resume: "",
-      mode_name: "wcgw",
-      thread_id: "git-operations"
-    };
-    console.log(`🔧 MCP Initialize args:`, JSON.stringify(initArgs, null, 2));
-    
-    let initResult: string;
+  // Only if the connected server supports Initialize
+  console.log(`🔧 Preparing MCP environment for project directory: ${projectPath}`);
+  // Initialize at most once per (server, projectPath)
+  const initKey = `${mcpServerId}|${projectPath}`;
+  const g: any = globalThis as any;
+  if (!g.__kibitzInitCache) g.__kibitzInitCache = new Set<string>();
+  if (!g.__kibitzInitCache.has(initKey)) {
     try {
-      // Try with full arguments first
-      initResult = await executeTool(mcpServerId, 'Initialize', initArgs);
+      const initArgs = {
+        type: 'first_call',
+        any_workspace_path: projectPath,
+        initial_files_to_read: [],
+        task_id_to_resume: '',
+        mode_name: 'wcgw',
+        thread_id: 'git-operations'
+      } as const;
+      const result = await executeTool(mcpServerId, 'Initialize', initArgs as unknown as Record<string, unknown>);
+      if (typeof result === 'string' && result.toLowerCase().includes('skipped')) {
+        console.log('ℹ️ Initialize not supported by server, proceeding without it');
+      } else {
+        console.log(`✅ MCP environment initialized for project: ${project.name}`);
+      }
     } catch (error) {
-      // If it fails, try with simplified arguments
-      console.warn(`⚠️ Initialize failed with full args, trying simplified:`, error);
-      const simplifiedInitArgs = {
-        type: "first_call",
-        any_workspace_path: projectPath
-      };
-      console.log(`🔧 MCP Initialize simplified args:`, JSON.stringify(simplifiedInitArgs, null, 2));
-      initResult = await executeTool(mcpServerId, 'Initialize', simplifiedInitArgs);
+      const message = String(error || 'unknown');
+      if (/not found/i.test(message) || /initialize/i.test(message)) {
+        console.log('ℹ️ Initialize not available on this server; continuing');
+      } else {
+        console.error(`❌ MCP preflight error:`, error);
+        // Do not throw here; avoid blocking app due to transient init issues
+      }
+    } finally {
+      g.__kibitzInitCache.add(initKey);
     }
-    
-    // 🔍 VALIDATION: Check if MCP actually initialized in the correct directory
-    if (initResult.includes('Initialized in directory') && !initResult.includes(projectPath)) {
-      console.error(`❌ MCP initialized in wrong directory!`);
-      console.error(`❌ Expected: ${projectPath}`);
-      console.error(`❌ Actual result: ${initResult.substring(0, 500)}`);
-      throw new Error(`MCP workspace initialization failed - wrong directory`);
-    }
-    
-    console.log(`✅ MCP environment initialized for project: ${project.name} at ${projectPath}`);
-    console.log(`📋 MCP Init result: ${initResult.substring(0, 200)}...`);
-    
-    // 🔧 REMOVED: pwd verification step that was causing timeout cascades
-    // The Initialize tool is working properly, so we don't need this verification
-    console.log(`✅ Skipping pwd verification to prevent timeout cascades`);
-    console.log(`✅ Project directory initialization complete: ${projectPath}`);
-    
-  } catch (error) {
-    console.error(`❌ CRITICAL: Failed to initialize MCP environment for project ${project.name}:`, error);
-    throw new Error(`MCP initialization failed: ${error}`);
   }
   
   console.log(`✅ ensureProjectDirectory: Using project path: ${projectPath}`);

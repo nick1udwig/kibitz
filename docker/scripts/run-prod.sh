@@ -43,7 +43,7 @@ DOCKER_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$DOCKER_DIR")"
 
 # Default projects directory
-PROJECTS_DIR="$PROJECT_ROOT/user/gitrepo/projects"
+PROJECTS_DIR="${USER_PROJECTS_PATH:-$PROJECT_ROOT/user/gitrepo/projects}"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -133,7 +133,7 @@ docker run \
     --init \
     -p "$KIBITZ_PORT:3000" \
     -p "$WS_MCP_PORT:10125" \
-    -v "$PROJECTS_DIR:/Users/test/gitrepo/projects" \
+    -v "$PROJECTS_DIR:${USER_PROJECTS_PATH:-/Users/test/gitrepo/projects}" \
     -v "$DOCKER_DIR/volumes/data:/app/kibitz/data" \
     -v "$DOCKER_DIR/volumes/logs:/app/logs" \
     -v "$DOCKER_DIR/config/ws-mcp-config.json:/app/config/ws-mcp-config.json:ro" \
@@ -142,7 +142,7 @@ docker run \
     -e "NEXT_TELEMETRY_DISABLED=1" \
     -e "PORT=3000" \
     -e "WS_MCP_PORT=10125" \
-    -e "PROJECT_WORKSPACE_PATH=/Users/test/gitrepo/projects" \
+    -e "PROJECT_WORKSPACE_PATH=${USER_PROJECTS_PATH:-/Users/test/gitrepo/projects}" \
     --restart unless-stopped \
     --security-opt no-new-privileges:true \
     --cap-drop ALL \

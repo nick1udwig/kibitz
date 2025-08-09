@@ -267,6 +267,8 @@ ENV NODE_ENV=production
 ENV PYTHONUNBUFFERED=1
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
+ENV GITHUB_TOKEN=${GITHUB_TOKEN}
+ENV GH_TOKEN=${GITHUB_TOKEN}
 
 # Health check - check if Kibitz frontend is responding
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

@@ -2,25 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readProjectJson } from '../../../../../project-json-manager.js';
 import path from 'path';
 import fs from 'fs';
+import { getProjectsBaseDir } from '../../../../lib/pathConfig';
 
-const BASE_PROJECTS_DIR = '/Users/test/gitrepo/projects';
+const BASE_PROJECTS_DIR = getProjectsBaseDir();
+const GITHUB_USERNAME = process.env.GITHUB_USERNAME || 'malikrohail';
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
 
 /**
  * Find project directory by scanning for {projectId}_* pattern
  */
 async function findProjectPath(projectId: string): Promise<string | null> {
   try {
-    const entries = fs.readdirSync(BASE_PROJECTS_DIR);
-    
+    const entries = fs.readdirSync(BASE_PROJECTS_DIR, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.startsWith(`${projectId}_`) && entry.includes('project')) {
-        const fullPath = path.join(BASE_PROJECTS_DIR, entry);
-        const stats = fs.statSync(fullPath);
-        
-        if (stats.isDirectory()) {
-          console.log(`📁 Found project directory: ${fullPath}`);
-          return fullPath;
-        }
+      if (entry.isDirectory() && entry.name.startsWith(`${projectId}_`)) {
+        const fullPath = path.join(BASE_PROJECTS_DIR, entry.name);
+        console.log(`📁 Found project directory: ${fullPath}`);
+        return fullPath;
       }
     }
     return null;
@@ -60,9 +58,9 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
     console.log(`🔍 DEBUG: GIT_USER_NAME: ${process.env.GIT_USER_NAME || 'NOT SET'}`);
     console.log(`🔍 DEBUG: GIT_USER_EMAIL: ${process.env.GIT_USER_EMAIL || 'NOT SET'}`);
     
-    // Get remote URL from GitHub config or generate one
-    const remoteUrl = githubConfig.remoteUrl || `https://github.com/malikrohail/${projectId}-project.git`;
-    const repoName = remoteUrl.split('/').pop()?.replace('.git', '') || `${projectId}-project`;
+    // Get remote URL from GitHub config or generate one based on env
+    const repoName = `${projectId}-project`;
+    const remoteUrl = githubConfig.remoteUrl || `https://github.com/${GITHUB_USERNAME}/${repoName}.git`;
     
     console.log(`🔗 Using remote URL: ${remoteUrl}`);
     
@@ -91,6 +89,37 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
     
     if (!ghAvailable) {
       console.log(`⚠️ GitHub CLI not found in any common paths`);
+    }
+
+    // Ensure the remote repository exists via REST API (works with or without gh CLI)
+    try {
+      if (GITHUB_TOKEN) {
+        const repoCheck = await fetch(`https://api.github.com/repos/${GITHUB_USERNAME}/${repoName}`, {
+          headers: { Authorization: `token ${GITHUB_TOKEN}`, 'User-Agent': 'kibitz' }
+        });
+        if (repoCheck.status === 404) {
+          console.log(`🔧 Creating GitHub repo via REST: ${repoName}`);
+          const createResp = await fetch('https://api.github.com/user/repos', {
+            method: 'POST',
+            headers: {
+              Authorization: `token ${GITHUB_TOKEN}`,
+              'Content-Type': 'application/json',
+              'User-Agent': 'kibitz'
+            },
+            body: JSON.stringify({ name: repoName, private: true })
+          });
+          if (!createResp.ok) {
+            const txt = await createResp.text();
+            console.log(`⚠️ REST repo create failed: ${createResp.status} ${txt}`);
+          } else {
+            console.log(`✅ Repo created via REST: ${repoName}`);
+          }
+        }
+      } else {
+        console.log('⚠️ No GITHUB_TOKEN provided; skipping REST repo creation');
+      }
+    } catch (restErr) {
+      console.log('⚠️ REST repo ensure failed (continuing):', restErr);
     }
     
     // Step 2: Check if we're in a git repository
@@ -160,16 +189,12 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
           console.log(`🔍 DEBUG: GitHub CLI repo list test failed: ${testError}`);
         }
         
-        console.log(`🔍 DEBUG: Attempting to create repository: ${ghPath} repo create ${repoName} --private --source=. --remote=origin --push`);
+        console.log(`🔍 DEBUG: Attempting to create repository with gh: ${repoName}`);
+        // Use gh CLI creation only if auth works; errors will be caught and we'll fall back to REST-created repo
         await execAsync(`${ghPath} repo create ${repoName} --private --source=. --remote=origin --push`, { cwd: projectPath, env });
-        console.log(`✅ Created GitHub repository and pushed: ${repoName}`);
+        console.log(`✅ Created GitHub repository and pushed with gh: ${repoName}`);
         console.log(`🔗 Repository URL: ${remoteUrl}`);
-          
-          return {
-            success: true,
-            details: `Created new GitHub repository: ${repoName} at ${remoteUrl}`,
-            remoteUrl
-          };
+        return { success: true, details: `Created and pushed with gh: ${repoName}`, remoteUrl };
           
         } catch (ghError) {
           console.log(`⚠️ GitHub CLI creation failed: ${ghError}`);
@@ -178,7 +203,7 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
         }
       }
       
-      // Fallback: Manual repository creation (when GitHub CLI fails or unavailable)
+      // Fallback: Manual remote add + push (repo should already exist via REST ensure above)
       try {
         console.log(`🔧 Adding remote manually: ${remoteUrl}`);
         console.log(`🔍 DEBUG: Setting up git remote and branch...`);
@@ -200,7 +225,7 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
           console.log(`🔍 DEBUG: Git status check failed:`, statusError);
         }
         
-        // Try to push anyway (will fail if repo doesn't exist)
+        // Try to push (may still fail if token/permissions invalid)
         console.log(`🔍 DEBUG: Attempting git push -u origin main...`);
         await execAsync('git push -u origin main', { cwd: projectPath, env });
         
@@ -236,8 +261,9 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
 
 export async function POST(request: NextRequest) {
   try {
+    const __t0 = Date.now();
     const body = await request.json();
-    const { projectId, immediate = false } = body;
+    const { projectId, immediate = false, force = false } = body;
 
     if (!projectId) {
       return NextResponse.json(
@@ -257,8 +283,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Read project data
-    const projectData = await readProjectJson(projectPath);
+    // Read project data (best-effort)
+    let projectData: any;
+    try {
+      projectData = await readProjectJson(projectPath);
+    } catch (e) {
+      console.warn(`⚠️ Could not read project.json for ${projectId}, proceeding with defaults`, e);
+      projectData = { github: { enabled: false } };
+    }
 
     console.log(`🚀 Triggering GitHub sync for project ${projectId}:`, {
       immediate,
@@ -266,9 +298,9 @@ export async function POST(request: NextRequest) {
       enabled: (projectData as any).github?.enabled
     });
 
-    // Check if GitHub sync is enabled
+    // Check if GitHub sync is enabled unless forced
     const githubConfig = (projectData as any).github;
-    if (!githubConfig?.enabled) {
+    if (!githubConfig?.enabled && !force) {
       return NextResponse.json({
         success: false,
         error: 'GitHub sync is not enabled for this project',
@@ -281,7 +313,7 @@ export async function POST(request: NextRequest) {
     
     try {
       // Import the real GitHub sync functionality
-      const syncResult = await performRealGitHubSync(projectId, projectPath, githubConfig);
+      const syncResult = await performRealGitHubSync(projectId, projectPath, githubConfig || {});
       
       if (syncResult.success) {
         console.log(`✅ Real GitHub sync completed for ${projectId}:`, syncResult.details);
@@ -294,13 +326,15 @@ export async function POST(request: NextRequest) {
           remoteUrl: syncResult.remoteUrl
         });
         
-        return NextResponse.json({
+        const res = NextResponse.json({
           success: true,
           message: `GitHub sync completed successfully for ${projectId}`,
           details: syncResult.details,
           remoteUrl: syncResult.remoteUrl,
           projectId
         });
+        console.log(`⏱️ GitHub sync total time: ${Date.now() - __t0}ms for project ${projectId}`);
+        return res;
         
       } else {
         console.error(`❌ GitHub sync failed for ${projectId}:`, syncResult.error);
@@ -312,35 +346,32 @@ export async function POST(request: NextRequest) {
           lastSync: new Date().toISOString()
         });
         
-        return NextResponse.json({
+        const res = NextResponse.json({
           success: false,
           error: `GitHub sync failed: ${syncResult.error}`,
           projectId
         }, { status: 500 });
+        console.log(`⏱️ GitHub sync total time (failure): ${Date.now() - __t0}ms for project ${projectId}`);
+        return res;
       }
       
     } catch (error) {
       console.error(`❌ GitHub sync error for ${projectId}:`, error);
-      return NextResponse.json({
+      const res = NextResponse.json({
         success: false,
         error: `GitHub sync failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         projectId
       }, { status: 500 });
+      console.log(`⏱️ GitHub sync total time (exception): ${Date.now() - __t0}ms for project ${projectId}`);
+      return res;
     }
     
-    return NextResponse.json({
-      success: true,
-      message: 'GitHub sync completed successfully',
-      projectId,
-      immediate,
-      simulated: true,
-      timestamp: new Date().toISOString(),
-      note: 'This is a simulated sync. Real GitHub integration requires authentication setup.'
-    });
+    // Note: We should never reach here because we return above; keep a guard
+    return NextResponse.json({ success: false, error: 'Unexpected sync fallthrough' }, { status: 500 });
 
   } catch (error) {
     console.error('❌ Failed to trigger GitHub sync:', error);
-    return NextResponse.json(
+    const res = NextResponse.json(
       { 
         success: false, 
         error: 'Failed to trigger GitHub sync',
@@ -348,5 +379,11 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
+    try {
+      const body = await request.json().catch(() => ({}));
+      const projectId = body?.projectId || 'unknown';
+      console.log(`⏱️ GitHub sync total time (outer catch): ${Date.now()}ms start-unknown for project ${projectId}`);
+    } catch {}
+    return res;
   }
 } 

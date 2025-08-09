@@ -7,7 +7,6 @@ services:
       dockerfile: docker/Dockerfile.dev
     image: kibitz:dev
     container_name: kibitz-development
-    
     # Port mapping
     ports:
       - "${KIBITZ_PORT:-3000}:3000"     # Kibitz Next.js frontend
@@ -31,7 +30,7 @@ services:
       - dev_logs:/app/logs
       
       # Mount external projects directory
-      - "${USER_PROJECTS_PATH:-./user/gitrepo/projects}:/Users/test/gitrepo/projects"
+      - "${USER_PROJECTS_PATH:-./user/gitrepo/projects}:${USER_PROJECTS_PATH:-/Users/test/gitrepo/projects}"
       
       # ws-mcp source code for development (if available)
       - "${WS_MCP_PATH:-/dev/null}:/app/ws-mcp"
@@ -46,7 +45,7 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
       - PORT=3000
       - WS_MCP_PORT=10125
-      - PROJECT_WORKSPACE_PATH=/Users/test/gitrepo/projects
+      - PROJECT_WORKSPACE_PATH=${USER_PROJECTS_PATH:-/Users/test/gitrepo/projects}
       - CHOKIDAR_USEPOLLING=true  # For file watching in Docker
       - WATCHPACK_POLLING=true    # For webpack file watching
       
@@ -55,11 +54,11 @@ services:
       - NODE_OPTIONS=--inspect=0.0.0.0:9229
       
       # Git and GitHub authentication
-      - GITHUB_TOKEN=
-      - GH_TOKEN=
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GH_TOKEN=${GITHUB_TOKEN}
       - GITHUB_USERNAME=malikrohail
       - GIT_USER_NAME=malikrohail
-      - GIT_USER_EMAIL=malikrohail525@gmail.com}
+      - GIT_USER_EMAIL=malikrohail525@gmail.com
       
     # No resource limits in development for flexibility
     
@@ -77,8 +76,8 @@ services:
     # Init process
     init: true
     
-    # Development command override
-    command: ["npm", "run", "dev"]
+    # Ensure our startup script sets port 3000 and host 0.0.0.0
+    command: ["/app/scripts/start-dev.sh"]
     
     # Logging configuration
     logging:

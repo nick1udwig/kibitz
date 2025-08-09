@@ -150,33 +150,33 @@ export class LlmAgentGitHandler {
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
     mcpServerId: string
   ): Promise<string> {
-    let threadId = `llm-git-${Date.now()}`;
-    
+    // Reuse the global init cache used by projectPathService to avoid repeated Initialize
+    const initKey = `${mcpServerId}|${projectPath}`;
+    const g: any = global as any;
+    if (g.__kibitzInitCache && g.__kibitzInitCache.has(initKey)) {
+      return 'git-operations';
+    }
+
+    let threadId = 'git-operations';
     try {
-      console.log(`🔧 LlmAgentGitHandler: Initializing MCP thread: ${threadId}`);
+      console.log(`🔧 LlmAgentGitHandler: Initializing MCP thread once for ${initKey}`);
       const initResult = await executeTool(mcpServerId, 'Initialize', {
-        type: "first_call",
+        type: 'first_call',
         any_workspace_path: projectPath,
         initial_files_to_read: [],
-        task_id_to_resume: "",
-        mode_name: "wcgw",
+        task_id_to_resume: '',
+        mode_name: 'wcgw',
         thread_id: threadId
       });
-      
-      // Extract the actual thread_id from the response (like gitService.ts does)
       const match = initResult.match(/thread_id=([a-z0-9]+)/i);
-      if (match && match[1]) {
-        threadId = match[1];
-        console.log(`✅ LlmAgentGitHandler: MCP thread initialized with extracted thread_id: ${threadId}`);
-      } else {
-        console.log(`✅ LlmAgentGitHandler: MCP thread initialized with original thread_id: ${threadId}`);
-      }
-      
-      return threadId;
+      if (match && match[1]) threadId = match[1];
     } catch (error) {
-      console.warn(`⚠️ LlmAgentGitHandler: Failed to initialize MCP thread, using default:`, error);
-      return "git-operations"; // Fallback to default
+      console.warn('⚠️ LlmAgentGitHandler: Initialize failed, proceeding with default thread_id', error);
+    } finally {
+      if (!g.__kibitzInitCache) g.__kibitzInitCache = new Set<string>();
+      g.__kibitzInitCache.add(initKey);
     }
+    return threadId;
   }
 
   /**

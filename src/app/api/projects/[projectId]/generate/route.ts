@@ -7,14 +7,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
+import { getProjectsBaseDir } from '../../../../../lib/pathConfig';
 
-const BASE_PROJECTS_DIR = '/Users/test/gitrepo/projects';
+const BASE_PROJECTS_DIR = getProjectsBaseDir();
 
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ projectId: string }> }
 ): Promise<NextResponse> {
   try {
+    const __t0 = Date.now();
     const { projectId } = await context.params;
     
     if (!projectId) {
@@ -58,8 +60,9 @@ export async function POST(
     try {
       console.log(`📋 Generate API: Extracting ALL real git data from ${projectPath}`);
       
-      // Get ALL branches
-      const allBranchesCommand = 'git branch -a --format="%(refname:short)|%(objectname)|%(committerdate:iso8601)|%(authorname)|%(subject)"';
+      // Get local heads only (avoid remote refs like origin/main which cause UI duplicates)
+      // Using for-each-ref over refs/heads/ to ensure only local branches are returned
+      const allBranchesCommand = 'git for-each-ref --sort=-committerdate --format="%(refname:short)|%(objectname)|%(committerdate:iso8601)|%(authorname)|%(subject)" refs/heads/';
       const allBranchesOutput = execSync(allBranchesCommand, { 
         cwd: projectPath, 
         encoding: 'utf8',
@@ -117,11 +120,25 @@ export async function POST(
       // Parse branches
       if (allBranchesOutput) {
         const branchLines = allBranchesOutput.split('\n').filter(line => line.trim());
-        
+
+        // Use a map to deduplicate by normalized branch name
+        const seenBranches = new Map<string, boolean>();
+
         for (const line of branchLines) {
-          const [branchName, commitHash, commitDate, authorName, commitMessage] = line.split('|');
-          
-                     if (branchName && !branchName.includes('remotes/') && branchName.trim()) {
+          const [rawBranchName, commitHash, commitDate, authorName, commitMessage] = line.split('|');
+
+          // Normalize the branch name: remove any accidental 'origin/' or 'remotes/' prefixes
+          const branchName = (rawBranchName || '')
+            .replace(/^remotes\//, '')
+            .replace(/^origin\//, '')
+            .trim();
+
+          if (branchName && branchName.trim()) {
+            // Skip duplicates (e.g., if both 'main' and 'origin/main' slipped through)
+            if (seenBranches.has(branchName)) {
+              continue;
+            }
+            seenBranches.set(branchName, true);
              // Get file changes for this branch's latest commit
              let filesChanged: string[] = [];
              let linesAdded = 0;
@@ -256,7 +273,8 @@ export async function POST(
         enabled: gitHubEnabled, // Use the read GitHub enabled state
         remoteUrl: `https://github.com/malikrohail/${projectId}-project.git`,
         syncInterval: 300000, // 5 minutes
-        syncBranches: ['main', 'auto/*'],
+        // Include step-* by default (also keep legacy patterns during transition)
+        syncBranches: ['main', 'step-*', 'auto/*', 'conv-*'],
         lastSync: null,
         syncStatus: 'idle',
         authentication: {
@@ -302,6 +320,7 @@ export async function POST(
       path: jsonFilePath,
       size: fileStats.size + ' bytes'
     });
+    console.log(`⏱️ Generate API total time: ${Date.now() - __t0}ms for project ${projectId}`);
     
     return NextResponse.json({
       success: true,
@@ -314,6 +333,11 @@ export async function POST(
     
   } catch (error) {
     console.error('❌ Generate API: Error creating JSON:', error);
+    // Still log timing when failing
+    try {
+      const { projectId } = await context.params;
+      console.log(`⏱️ Generate API total time (error): ${Date.now()}ms start-unknown for project ${projectId}`);
+    } catch {}
     return NextResponse.json(
       { 
         error: 'Failed to generate project JSON',
