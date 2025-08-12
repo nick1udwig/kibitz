@@ -21,7 +21,7 @@ services:
       - kibitz_logs:/app/logs
       
       # User projects directory - mount to same path for MCP compatibility
-      - /Users/test/gitrepo/projects:/Users/test/gitrepo/projects
+      - ${USER_PROJECTS_PATH:-/Users/test/gitrepo/projects}:${USER_PROJECTS_PATH:-/Users/test/gitrepo/projects}
 
 
     
@@ -33,7 +33,7 @@ services:
       - PORT=3000
       - WS_MCP_PORT=${WS_MCP_PORT:-10125}
       - KIBITZ_PORT=${KIBITZ_PORT:-3000}
-      - PROJECT_WORKSPACE_PATH=/Users/test/gitrepo/projects
+      - PROJECT_WORKSPACE_PATH=${USER_PROJECTS_PATH:-/Users/test/gitrepo/projects}
       
       # Optional database configuration
       - DATABASE_PATH=/app/kibitz/data/kibitz.db
@@ -48,6 +48,10 @@ services:
       - GITHUB_USERNAME=${GITHUB_USERNAME:-malikrohail}
       - GIT_USER_NAME=${GIT_USER_NAME:-malikrohail}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-malikrohail525@gmail.com}
+      # Encrypted server-config persistence
+      - KIBITZ_CONFIG_SECRET=${KIBITZ_CONFIG_SECRET:-}
+      - KIBITZ_SERVER_CONFIG_PATH=${KIBITZ_SERVER_CONFIG_PATH:-/app/kibitz/data/server-config.json.enc}
+      - KIBITZ_DATA_DIR=/app/kibitz/data
       
     # Resource limits for production
     deploy:
@@ -92,7 +96,7 @@ services:
         
     # Health check
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/storage"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/github-sync/health"]
       interval: 30s
       timeout: 10s
       start_period: 60s

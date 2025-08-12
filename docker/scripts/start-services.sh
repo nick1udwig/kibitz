@@ -74,6 +74,15 @@ log_success "Projects directory available at: $PROJECT_WORKSPACE_PATH"
 # Configure Git for appuser (critical for commit operations)
 log_info "Configuring Git for current user (appuser)..."
 
+# Ensure token is present (fallback to GH_TOKEN or hardcoded)
+if [[ -z "${GITHUB_TOKEN:-}" && -n "${GH_TOKEN:-}" ]]; then
+    export GITHUB_TOKEN="$GH_TOKEN"
+fi
+
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+    export GITHUB_TOKEN="${GITHUB_TOKEN}"
+fi
+
 # Set Git configuration for the current user with environment variables
 GIT_USER_NAME="${GIT_USER_NAME:-malikrohail}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-malikrohail525@gmail.com}"
@@ -280,9 +289,9 @@ cd /app/kibitz
 log_info "Running npm install in kibitz directory..."
 npm install
 
-# Run npm run dev (exactly like user does manually)
-log_info "Running npm run dev..."
-npm run dev > "$KIBITZ_LOG" 2>&1 &
+# Run Next dev explicitly on the desired port and host
+log_info "Running next dev on -p $KIBITZ_PORT -H 0.0.0.0..."
+npx next dev -p "$KIBITZ_PORT" -H 0.0.0.0 > "$KIBITZ_LOG" 2>&1 &
 KIBITZ_PID=$!
 
 log_success "Kibitz started (PID: $KIBITZ_PID)"

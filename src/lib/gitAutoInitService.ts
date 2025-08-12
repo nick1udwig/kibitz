@@ -7,11 +7,22 @@
  *
  * Optimized for production with dynamic path detection.
  */
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 import { getProjectPath } from './projectPathService';
 
 // 🚀 PREVENT REPETITIVE OPERATIONS - Cache initialization results
 const initializationCache = new Map<string, Promise<{ success: boolean; message?: string }>>();
+
+// 🚀 PERFORMANCE: In-memory flags to prevent repeated Git checks
+const gitInitializedProjects = new Set<string>();
+
+/**
+ * 🚀 PERFORMANCE: Clear git initialization flags (useful for testing)
+ */
+export const clearGitInitializationFlags = (): void => {
+  gitInitializedProjects.clear();
+  initializationCache.clear();
+};
 
 /**
  * Auto-initializes Git for a project if needed
@@ -25,10 +36,14 @@ export const autoInitializeGitForProject = async (
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<{ success: boolean; message?: string }> => {
   
+  // 🚀 PERFORMANCE: Quick check for already initialized projects
+  if (gitInitializedProjects.has(projectId)) {
+    return { success: true, message: 'Project Git already initialized (cached)' };
+  }
+  
   // 🔧 PREVENT DUPLICATE OPERATIONS - Check cache first
   const cacheKey = `${projectId}-${projectPath}`;
   if (initializationCache.has(cacheKey)) {
-    console.log('🔄 autoInitializeGitForProject: Using cached initialization result');
     return await initializationCache.get(cacheKey)!;
   }
 
@@ -87,6 +102,8 @@ async function performGitInitialization(
         console.log('✅ autoInitializeGitForProject: JSON files already exist');
       }
       
+      // 🚀 PERFORMANCE: Mark project as Git-initialized to prevent future checks
+      gitInitializedProjects.add(projectId);
       return { success: true, message: 'Git repository already initialized with JSON files' };
     }
 
@@ -102,16 +119,21 @@ async function performGitInitialization(
     console.log('✅ autoInitializeGitForProject: Git repository initialized successfully');
     
     // 🚀 AUTO-GENERATE JSON FILES for new repos
-    console.log('📋 autoInitializeGitForProject: Generating JSON files for new repository...');
-    try {
-      const { extractAndSaveProjectData } = await import('./projectDataExtractor');
-      await extractAndSaveProjectData(projectId, projectName, mcpServerId, executeTool);
-      console.log('✅ autoInitializeGitForProject: JSON files generated for new repository');
-    } catch (jsonError) {
-      console.warn('⚠️ autoInitializeGitForProject: Failed to generate JSON files for new repo:', jsonError);
-    }
+    // Defer heavy extraction so init returns quickly; write minimal file later
+    setTimeout(async () => {
+      try {
+        console.log('📋 autoInitializeGitForProject: Deferred JSON extraction start...');
+        const { extractAndSaveProjectData } = await import('./projectDataExtractor');
+        await extractAndSaveProjectData(projectId, projectName, mcpServerId, executeTool);
+        console.log('✅ autoInitializeGitForProject: Deferred JSON extraction completed');
+      } catch (jsonError) {
+        console.warn('⚠️ autoInitializeGitForProject: Deferred JSON extraction failed:', jsonError);
+      }
+    }, 0);
 
-    return { success: true, message: 'Git repository initialized and JSON files created' };
+          // 🚀 PERFORMANCE: Mark project as Git-initialized to prevent future checks
+      gitInitializedProjects.add(projectId);
+      return { success: true, message: 'Git repository initialized and JSON files created' };
 
   } catch (error) {
     console.error('❌ autoInitializeGitForProject: Unexpected error:', error);

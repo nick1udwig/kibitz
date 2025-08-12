@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { useStore } from './rootStore';
 import { ensureProjectDirectory } from '../lib/projectPathService';
+
+// Simple debounce map to prevent duplicate branch detection triggers
+const toolTriggerDebounceMs = 1500;
+const lastToolTriggerAt: Map<string, number> = new Map();
 import {
   BranchType,
   BranchInfo,
@@ -69,7 +73,7 @@ interface BranchState {
  * Default configuration
  */
 const DEFAULT_BRANCH_CONFIG: BranchConfig = {
-  autoCreateBranches: true,
+  autoCreateBranches: false,
   changeThreshold: 2, // Trigger at 2+ files changed (matches user requirement)
   enableSmartNaming: true,
   defaultBranchType: 'iteration',
@@ -135,8 +139,10 @@ export const useBranchStore = create<BranchState>((set, get) => ({
         console.log(`🔍 detectProjectChanges: Using project path: ${projectPath}`);
       } catch (pathError) {
         console.warn(`⚠️ detectProjectChanges: Failed to ensure project directory, using fallback path:`, pathError);
-        // Fallback to basic path generation without MCP verification
-        projectPath = `/Users/test/gitrepo/projects/${projectId}_${project.name.toLowerCase().replace(/\s+/g, '-')}`;
+        // Fallback to basic path generation without MCP verification, using configured base dir
+        const { getProjectsBaseDir } = await import('../lib/pathConfig');
+        const baseDir = getProjectsBaseDir();
+        projectPath = `${baseDir}/${projectId}_${project.name.toLowerCase().replace(/\s+/g, '-')}`;
       }
       
       const changeResult = await detectChanges(projectPath, mcpServerId, rootStore.executeTool);
@@ -530,6 +536,15 @@ export const useBranchStore = create<BranchState>((set, get) => ({
     console.log(`🔧 handleToolExecution: Called for project ${projectId}, tool: ${toolName}`);
     console.log(`🔧 handleToolExecution: Auto-branch creation enabled? ${config.autoCreateBranches}`);
     
+    // Debounce per project to avoid rapid duplicate triggers
+    const now = Date.now();
+    const last = lastToolTriggerAt.get(projectId) || 0;
+    if (now - last < toolTriggerDebounceMs) {
+      console.log(`⏱️ handleToolExecution: Debounced duplicate trigger for project ${projectId}`);
+      return;
+    }
+    lastToolTriggerAt.set(projectId, now);
+    
     if (!config.autoCreateBranches) {
       console.log(`🔒 handleToolExecution: Auto-branch creation disabled, skipping`);
       return;
@@ -549,7 +564,8 @@ export const useBranchStore = create<BranchState>((set, get) => ({
     }
     
     // Only create branches for tools that actually modify files
-    const eligibleTools = ['FileWriteOrEdit', 'BashCommand'];
+    // Avoid reacting to internal Git/Bash traffic which causes thrash
+    const eligibleTools = ['FileWriteOrEdit'];
     if (!eligibleTools.includes(toolName)) {
       console.log(`🔒 handleToolExecution: Tool ${toolName} not eligible for auto-branching`);
       return;

@@ -9,7 +9,11 @@ WS_MCP_PORT=10125
 
 # Path Configuration
 # Absolute path to your user projects directory (where LLM will work)
+# Configure this once; all services read from here
 USER_PROJECTS_PATH=/Users/test/gitrepo/projects
+
+# Optional: expose to frontend for display-only purposes
+NEXT_PUBLIC_PROJECTS_DIR=${USER_PROJECTS_PATH}
 
 # Optional: Path to ws-mcp source code for development
 WS_MCP_PATH=/Users/test/Downloads/kinode/ws-mcp
@@ -27,14 +31,20 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
 # Git and GitHub Configuration
 # GitHub personal access token for Git operations (required for push/pull)
-GITHUB_TOKEN=your_github_personal_access_token_here
+GITHUB_TOKEN=
 # Alternative GitHub token environment variable (some tools use GH_TOKEN)
-GH_TOKEN=your_github_personal_access_token_here
+GH_TOKEN=
 # GitHub username (for repository creation)
-GITHUB_USERNAME=malikrohail
+GITHUB_USERNAME=
 # Git user configuration (change these for your engineer to test with their details)
-GIT_USER_NAME=malikrohail
-GIT_USER_EMAIL=malikrohail525@gmail.com
+GIT_USER_NAME=
+GIT_USER_EMAIL=
+
+# Encrypted server-config persistence
+# Strong secret to encrypt kibitz/data/server-config.json.enc on the server
+KIBITZ_CONFIG_SECRET=
+# Optional override for where the encrypted file lives
+# KIBITZ_SERVER_CONFIG_PATH=/app/data/server-config.json.enc
 
 # Development Configuration
 NODE_ENV=production

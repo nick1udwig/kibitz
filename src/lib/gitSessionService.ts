@@ -5,7 +5,6 @@
  * revert the workspace to the state after a specific message was sent.
  */
 
-import { safeRollback } from './checkpointRollbackService';
 
 export interface SessionCommit {
   hash: string;
@@ -75,41 +74,27 @@ export default class GitSessionService {
         };
       }
 
-      // Stash changes if requested
-      if (stashChanges) {
-        await this.stashChanges();
-      }
-
-      // Create backup branch if requested
-      let backupBranch: string | undefined;
-      if (createBackup) {
-        backupBranch = await this.createBackupBranch();
-      }
-
-      // Perform the rollback using git checkout
-      const rollbackResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git checkout ${commitHash}`
-        },
-        thread_id: `session-rollback-${Date.now()}`
+      // Use unified rollback facade
+      const { rollbackToCommit: vcRollbackToCommit } = await import('./versionControl/rollback');
+      const res = await vcRollbackToCommit({
+        projectPath: this.projectPath,
+        serverId: this.serverId,
+        executeTool: this.executeTool,
+        commitHash,
+        options: { stashChanges, createBackup, force }
       });
 
-      if (rollbackResult.includes('Error:') || rollbackResult.includes('fatal:')) {
+      if (res.success) {
+        console.log(`✅ Successfully rolled back to commit: ${commitHash.substring(0, 7)}`);
         return {
-          success: false,
-          error: `Failed to checkout commit: ${rollbackResult}`,
-          backupBranch
+          success: true,
+          commitHash,
+          backupBranch: res.backupBranch,
+          message: res.message || `Rolled back to commit ${commitHash.substring(0, 7)}`
         };
       }
 
-      console.log(`✅ Successfully rolled back to commit: ${commitHash.substring(0, 7)}`);
-
-      return {
-        success: true,
-        commitHash,
-        backupBranch,
-        message: `Rolled back to commit ${commitHash.substring(0, 7)}`
-      };
+      return { success: false, error: res.error, backupBranch: res.backupBranch };
 
     } catch (error) {
       console.error('Rollback failed:', error);
@@ -184,8 +169,10 @@ export default class GitSessionService {
   private async verifyCommitExists(commitHash: string): Promise<boolean> {
     try {
       const result = await this.executeTool(this.serverId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git cat-file -e ${commitHash}`,
-        type: 'command',
+        action_json: {
+          command: `cd "${this.projectPath}" && git cat-file -e ${commitHash}`,
+          type: 'command'
+        },
         thread_id: `verify-commit-${Date.now()}`
       });
       return !result.includes('Error:');
@@ -212,8 +199,10 @@ export default class GitSessionService {
     try {
       const stashMessage = `auto-stash-before-message-revert-${Date.now()}`;
       await this.executeTool(this.serverId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git stash push -m "${stashMessage}"`,
-        type: 'command',
+        action_json: {
+          command: `cd "${this.projectPath}" && git stash push -m "${stashMessage}"`,
+          type: 'command'
+        },
         thread_id: `stash-changes-${Date.now()}`
       });
       console.log(`📦 Stashed changes: ${stashMessage}`);
@@ -229,16 +218,20 @@ export default class GitSessionService {
       const backupBranch = `backup-before-message-revert-${timestamp}`;
       
       await this.executeTool(this.serverId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git checkout -b ${backupBranch}`,
-        type: 'command',
+        action_json: {
+          command: `cd "${this.projectPath}" && git checkout -b ${backupBranch}`,
+          type: 'command'
+        },
         thread_id: `backup-branch-${Date.now()}`
       });
 
       // Return to original branch/commit
       const currentCommit = await this.getCurrentCommit();
       await this.executeTool(this.serverId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git checkout ${currentCommit}`,
-        type: 'command',
+        action_json: {
+          command: `cd "${this.projectPath}" && git checkout ${currentCommit}`,
+          type: 'command'
+        },
         thread_id: `return-to-commit-${Date.now()}`
       });
 

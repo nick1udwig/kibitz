@@ -39,8 +39,8 @@ export function ChatSnapshotPanel({
   const [fastBranches, setFastBranches] = useState<FastBranchInfo[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
 
-  // Get project path
-  const projectPath = project.customPath || `/Users/test/gitrepo/projects/${project.id}_${project.name}`;
+  // Get project path - avoid hardcoded base, use shared resolver via API shape or construct client-side
+  const projectPath = project.customPath || `${process.env.NEXT_PUBLIC_PROJECTS_DIR || ''}/${project.id}_${project.name}`;
 
   // Load data on mount and when project changes
   useEffect(() => {

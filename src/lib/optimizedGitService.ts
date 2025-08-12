@@ -324,21 +324,8 @@ export class OptimizedGitService {
         ...status.untrackedFiles
       ];
 
-      // Create auto-commit branch name
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      const branchName = `auto/${timestamp}`;
-
-      // Create and switch to auto-commit branch
-      const branchResult = await this.executeGitCommand(
-        projectPath,
-        `git checkout -b ${branchName}`,
-        executeTool,
-        { skipCache: true }
-      );
-
-      if (!branchResult.success) {
-        console.warn('⚠️ Failed to create branch, committing to current branch');
-      }
+      // Do NOT auto-create branches; stay on current branch (main or conv-*)
+      const branchResult = { success: true } as any;
 
       // Stage all changes
       const addResult = await this.executeGitCommand(
@@ -360,12 +347,21 @@ export class OptimizedGitService {
         `Auto-commit: ${filesChanged.length} files changed`;
 
       // Create commit
-      const commitResult = await this.executeGitCommand(
-        projectPath,
-        `git commit -m "${commitMessage}"`,
-        executeTool,
-        { skipCache: true }
-      );
+      // Use env-based identity inline if provided
+      let nameEnv = (process.env.NEXT_PUBLIC_GIT_USER_NAME || process.env.GIT_USER_NAME || '').trim();
+      let emailEnv = (process.env.NEXT_PUBLIC_GIT_USER_EMAIL || process.env.GIT_USER_EMAIL || '').trim();
+      try {
+        const { useStore } = await import('../stores/rootStore');
+        const st = useStore.getState();
+        nameEnv = (st.apiKeys.githubUsername || nameEnv || '').trim();
+        emailEnv = (st.apiKeys.githubEmail || emailEnv || '').trim();
+      } catch {}
+      const escapedMsg = commitMessage.replace(/"/g, '\\"');
+      const commitCmd = nameEnv && emailEnv
+        ? `git -c user.name="${nameEnv.replace(/"/g, '\\"')}" -c user.email="${emailEnv.replace(/"/g, '\\"')}" commit -m "${escapedMsg}"`
+        : `git commit -m "${escapedMsg}"`;
+
+      const commitResult = await this.executeGitCommand(projectPath, commitCmd, executeTool, { skipCache: true });
 
       if (!commitResult.success) {
         return {
@@ -384,10 +380,10 @@ export class OptimizedGitService {
 
       const commitSha = shaResult.success ? shaResult.output.trim() : 'unknown';
 
-      console.log(`✅ Optimized auto-commit completed: ${branchName}`);
+      console.log(`✅ Optimized auto-commit completed on branch: ${status.currentBranch}`);
       return {
         success: true,
-        branchName: branchResult.success ? branchName : status.currentBranch,
+        branchName: status.currentBranch,
         commitSha,
         filesChanged
       };

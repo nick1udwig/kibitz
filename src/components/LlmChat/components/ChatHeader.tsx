@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { CheckCircle, CheckSquare, GitBranch, GitCommit } from 'lucide-react';
+import { GitCommit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCheckpointStore } from '@/stores/checkpointStore';
 import { useStore } from '@/stores/rootStore';
-import { CreateCheckpointDialog } from '@/components/CheckpointManager';
 // import SessionRestoreButton from './SessionRestoreButton'; // Temporarily disabled
 
 interface ChatHeaderProps {
@@ -11,7 +10,7 @@ interface ChatHeaderProps {
 }
 
 export const ChatHeader: React.FC<ChatHeaderProps> = ({ projectId }) => {
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showStatus, setShowStatus] = useState(false);
   
@@ -118,18 +117,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ projectId }) => {
           </div>
         )}
         
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setShowCreateDialog(true)}
-          disabled={isCheckpointLoading}
-          className="text-muted-foreground hover:text-foreground"
-          title="Create checkpoint"
-        >
-          <CheckCircle className="h-4 w-4 mr-1" />
-          <span className="hidden sm:inline">Checkpoint</span>
-        </Button>
-        
+
         <Button
           variant="ghost"
           size="sm"
@@ -145,16 +133,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ projectId }) => {
 {/* SessionRestoreButton temporarily removed - using per-message revert instead */}
       </div>
       
-      <CreateCheckpointDialog
-        projectId={projectId}
-        isOpen={showCreateDialog}
-        onClose={() => setShowCreateDialog(false)}
-        onSuccess={() => {
-          setStatusMessage("Checkpoint created");
-          setShowStatus(true);
-          setTimeout(() => setShowStatus(false), 3000);
-        }}
-      />
+
     </div>
   );
 }; 

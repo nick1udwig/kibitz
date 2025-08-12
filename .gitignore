@@ -42,3 +42,9 @@ next-env.d.ts
 
 *.swp
 summary.md
+.env
+.env.local
+docker/volumes/logs/
+*.log
+.kibitz/
+docker/compose/.env

@@ -4,8 +4,8 @@ import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers, loadWorkspaceMappings, saveWorkspaceMappings, getWorkspaceByConversationId, updateWorkspaceMapping, deleteWorkspaceMapping } from '../lib/db';
 import { WsTool } from '../components/LlmChat/types/toolTypes';
 import { autoInitializeGitForProject } from '../lib/gitAutoInitService';
-import { ensureProjectDirectory, getProjectPath } from '../lib/projectPathService';
-import { recordSystemError, shouldThrottleOperation } from '../lib/systemDiagnostics';
+import { ensureProjectDirectory, getProjectPath, sanitizeProjectName } from '../lib/projectPathService';
+import { recordSystemError, shouldThrottleOperation } from '@/lib/systemDiagnostics';
 import { createWorkspaceMapping } from '../lib/conversationWorkspaceService';
 import { initializeAutoCommitAgent, stopAutoCommitAgent, getAutoCommitAgent } from '../lib/autoCommitAgent';
 
@@ -25,6 +25,32 @@ export const getDefaultModelForProvider = (provider?: string): string => {
   }
 };
 
+// Small, fast commit-model defaults per provider (used only to seed settings)
+const getSmallCommitModelForProvider = (provider?: string): string => {
+  switch (provider) {
+    case 'openai':
+      return 'gpt-4o-mini';
+    case 'openrouter':
+      return 'openai/gpt-4o-mini';
+    case 'anthropic':
+    default:
+      return 'claude-3-5-haiku-20241022';
+  }
+};
+
+// Ensure commit-specific settings exist without overriding explicit user choices
+const ensureCommitDefaults = (settings: ProjectSettings): ProjectSettings => {
+  const commitProvider = settings.commitProvider || settings.provider;
+  const commitModel = settings.commitModel && settings.commitModel.trim()
+    ? settings.commitModel
+    : getSmallCommitModelForProvider(commitProvider);
+  return {
+    ...settings,
+    commitProvider,
+    commitModel
+  };
+};
+
 const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
@@ -36,11 +62,16 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   },
   provider: 'anthropic' as const,  // ensure TypeScript treats this as a literal type
   model: DEFAULT_MODEL,
+  // Default commit settings use the small/fast model for the current provider
+  commitProvider: 'anthropic',
+  commitModel: getSmallCommitModelForProvider('anthropic'),
   systemPrompt: '',
   elideToolResults: false,
   mcpServerIds: [],
-  messageWindowSize: 30,  // default number of messages in truncated view
+  messageWindowSize: 30,  // legacy 
   enableGitHub: true,  // GitHub integration enabled by default
+  // Default threshold: require at least 2 changed files before auto commit/push
+  minFilesForAutoCommitPush: 2,
   savedPrompts: [
     {
       id: 'kibitz',
@@ -204,6 +235,7 @@ interface RootState extends ProjectState, McpState {
   apiKeys: Record<string, string>;
   hasLoadedApiKeysFromServer: boolean;
   saveApiKeysToServer: (keys: Record<string, string>) => void;
+  updateApiKeys: (keys: Record<string, string>) => void;
   initialize: () => Promise<void>;
   // Project methods
   createProject: (name: string, settings?: Partial<ProjectSettings>) => void;
@@ -252,7 +284,7 @@ export const useStore = create<RootState>((set, get) => {
   const initializationThrottleRef = new Map<string, number>();
   const INITIALIZATION_THROTTLE_MS = 1000; // Reduced from 5000ms to 1000ms for better responsiveness
 
-  // Helper function to save API keys to server
+  // Helper function to save API keys to server (masked persistence channel)
   const saveApiKeysToServer = (keys: Record<string, string>) => {
     console.log(`saving ${JSON.stringify({ keys })}`);
     const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
@@ -582,6 +614,14 @@ export const useStore = create<RootState>((set, get) => {
     apiKeys: {},
     hasLoadedApiKeysFromServer: false,
     saveApiKeysToServer,
+    updateApiKeys: (keys: Record<string, string>) => {
+      set(state => {
+        const merged = { ...state.apiKeys, ...keys };
+        // Immediately persist to server so secrets don't linger only in memory
+        saveApiKeysToServer(merged);
+        return { apiKeys: merged } as Partial<RootState> as any;
+      });
+    },
 
     // Initialization
     initialize: async () => {
@@ -612,6 +652,26 @@ export const useStore = create<RootState>((set, get) => {
           } catch (error) {
             console.error('Failed to load API keys:', error);
           }
+        }
+
+        // Always load server config to get projectsBaseDir and set runtime hint early
+        try {
+          const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+          const resCfg = await fetch(`${BASE_PATH}/api/keys/config`).catch(() => null);
+          if (resCfg && resCfg.ok) {
+            const data = await resCfg.json();
+            const dir = data?.config?.projectsBaseDir as string | undefined;
+            if (dir && typeof dir === 'string' && dir.trim()) {
+              const cleaned = dir.trim().replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
+              set(state => ({ apiKeys: { ...state.apiKeys, projectsBaseDir: cleaned } } as any));
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = cleaned;
+              } catch {}
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to load server config (projectsBaseDir):', error);
         }
 
         // Load workspace mappings
@@ -666,9 +726,12 @@ export const useStore = create<RootState>((set, get) => {
         const hasProjects = state.projects.length > 0;
         console.log('Loading projects from IndexedDB:', JSON.stringify(state));
 
-        if (hasProjects) {
+      if (hasProjects) {
           set({
-            projects: state.projects,
+            projects: state.projects.map(p => ({
+              ...p,
+              settings: ensureCommitDefaults(p.settings)
+            })),
             activeProjectId: state.activeProjectId,
             activeConversationId: state.activeProjectId && state.activeConversationId
               ? state.activeConversationId
@@ -752,6 +815,8 @@ export const useStore = create<RootState>((set, get) => {
       const defaultSettings: ProjectSettings = {
         provider: 'anthropic' as const,
         model: 'claude-3-5-sonnet-20241022',
+        commitProvider: 'anthropic',
+        commitModel: getSmallCommitModelForProvider('anthropic'),
         systemPrompt: '',
         mcpServerIds: [],
         elideToolResults: false,
@@ -759,7 +824,24 @@ export const useStore = create<RootState>((set, get) => {
         enableGitHub: true  // Default to true - GitHub sync enabled by default
       };
 
-      const mergedSettings = { ...defaultSettings, ...settings };
+      const mergedSettings = ensureCommitDefaults({ ...defaultSettings, ...settings } as ProjectSettings);
+
+      // Prefer a UI-configured base dir immediately to avoid fallback to hardcoded path
+      let uiBaseDir: string | undefined;
+      try {
+        // from in-memory apiKeys first
+        uiBaseDir = (state.apiKeys as any)?.projectsBaseDir as string | undefined;
+        // then from localStorage (persisted across reloads)
+        if (!uiBaseDir && typeof window !== 'undefined') {
+          uiBaseDir = window.localStorage?.getItem('kibitz_projects_base_dir') || undefined;
+        }
+        if (uiBaseDir) {
+          uiBaseDir = uiBaseDir.trim().replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
+          if (!uiBaseDir.startsWith('/') && /^Users\//.test(uiBaseDir)) uiBaseDir = '/' + uiBaseDir;
+          // expose runtime hint so client resolvers see it
+          try { (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBaseDir; } catch {}
+        }
+      } catch {}
 
       const newProject: Project = {
         id: projectId,
@@ -769,6 +851,11 @@ export const useStore = create<RootState>((set, get) => {
         createdAt: new Date(),
         updatedAt: new Date(),
         order: Math.max(...state.projects.map(p => p.order), 0) + 1,
+        // If we have a UI base dir, set a concrete customPath so downstream code
+        // never falls back to the hardcoded default for this project
+        ...(uiBaseDir
+          ? { customPath: `${uiBaseDir}/${projectId}_${sanitizeProjectName(name)}` }
+          : {})
       };
 
       const updatedState: ProjectState = {
@@ -854,6 +941,25 @@ export const useStore = create<RootState>((set, get) => {
                 .then(result => {
                   if (result.success) {
                     console.log('Git repository initialized for project:', name);
+                    // 🌐 Enable GitHub sync and let background provisioning run
+                    try {
+                      fetch('/api/github-sync/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          projectId,
+                          projectName: name,
+                          enabled: true,
+                          // Only main and conversation step branches
+                          syncBranches: ['main', 'conv-*'],
+                          authentication: { type: 'token', configured: true }
+                        })
+                      }).then(() => {
+                        console.log('✅ GitHub sync config posted for new project');
+                      }).catch(err => console.warn('⚠️ Failed to post GitHub config for new project:', err));
+                    } catch (e) {
+                      console.warn('⚠️ Could not schedule GitHub sync config for new project:', e);
+                    }
                   } else {
                     console.warn('Git repository initialization failed:', result.message);
                   }
@@ -906,9 +1012,11 @@ export const useStore = create<RootState>((set, get) => {
       
       const projectId = generateId();
       
-             const defaultSettings: ProjectSettings = {
+       const defaultSettings: ProjectSettings = {
          provider: 'anthropic' as const,
          model: 'claude-3-5-sonnet-20241022',
+         commitProvider: 'anthropic',
+         commitModel: getSmallCommitModelForProvider('anthropic'),
          systemPrompt: '',
          mcpServerIds: [mcpServerId],
          elideToolResults: false,
@@ -986,17 +1094,37 @@ export const useStore = create<RootState>((set, get) => {
               });
             }
 
-            return {
-              ...p,
-              settings: updates.settings
-                ? {
+            // Merge settings and ensure commit defaults remain populated (without overriding explicit values)
+            const merged = updates.settings
+              ? {
                   ...p.settings,
                   ...updates.settings,
                   mcpServerIds: updates.settings.mcpServerIds !== undefined
                     ? updates.settings.mcpServerIds
                     : p.settings.mcpServerIds
                 }
-                : p.settings,
+              : p.settings;
+
+            // If provider changed and commitModel not explicitly provided in updates, preserve existing commitModel if present,
+            // otherwise seed with the small model for the (new) provider.
+            const providerChanged = !!updates.settings?.provider && updates.settings?.provider !== p.settings.provider;
+            let nextSettings = merged as ProjectSettings;
+            if (providerChanged && !updates.settings?.commitModel) {
+              nextSettings = {
+                ...nextSettings,
+                commitProvider: nextSettings.commitProvider || nextSettings.provider,
+                commitModel: nextSettings.commitModel && nextSettings.commitModel.trim()
+                  ? nextSettings.commitModel
+                  : getSmallCommitModelForProvider(updates.settings!.provider)
+              } as ProjectSettings;
+            }
+
+            // Ensure commit defaults exist generally
+            nextSettings = ensureCommitDefaults(nextSettings);
+
+            return {
+              ...p,
+              settings: nextSettings,
               conversations: updatedConversations,
               updatedAt: new Date()
             };
@@ -1422,12 +1550,20 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>) => {
-      // 🚨 SIMPLE RECURSION PREVENTION: Block auto-commit internal calls
-      const callKey = `${toolName}-${args.thread_id || 'no-thread'}`;
-      
-      // Circuit breaker removed - proceed directly to tool execution
-      
-      // Skip auto-commit triggering for internal operations
+      // Guard: Skip Initialize if server doesn't support it
+      try {
+        const serverForGuard = get().servers.find(s => s.id === serverId);
+        const hasInitializeTool = !!serverForGuard?.tools?.some(t =>
+          (t.name || '').toLowerCase() === 'initialize'
+        );
+        if (toolName === 'Initialize' && !hasInitializeTool) {
+          console.warn(`🔧 Skipping Initialize for server ${serverId} - tool not available`);
+          return 'Initialize skipped: tool not supported by server';
+        }
+      } catch (guardErr) {
+        console.warn('Initialize guard check failed (continuing without preflight):', guardErr);
+      }
+      // 🚀 PERFORMANCE: Quick early validation
       const isInternalCall = args.thread_id && 
         (String(args.thread_id).includes('git-') || 
          String(args.thread_id).includes('commit-') ||
@@ -1435,24 +1571,19 @@ export const useStore = create<RootState>((set, get) => {
          String(args.thread_id).includes('operations') ||
          String(args.thread_id).includes('check'));
       
-      console.log('🔧 executeTool: Detailed request info:', {
-        serverId,
-        toolName,
-        args: JSON.stringify(args, null, 2),
-        timestamp: new Date().toISOString(),
-        isInternalCall
-      });
+      // 🚀 PERFORMANCE: Reduce logging overhead - only log critical errors and non-internal calls
+      const shouldLogDetails = !isInternalCall || toolName === 'BashCommand';
+      
+      if (shouldLogDetails) {
+        console.log('🔧 executeTool:', { serverId, toolName, isInternalCall });
+      }
       
       // 🔍 CRITICAL DEBUG: Check for raw command format in BashCommand BEFORE processing
-      if (toolName === 'BashCommand') {
-        if (args.command && !args.action_json) {
-          console.error('🚨 CRITICAL: BashCommand called with raw command format BEFORE processing!', {
-            command: args.command,
-            hasActionJson: !!args.action_json,
-            allArgs: Object.keys(args),
-            stackTrace: new Error().stack
-          });
-        }
+      if (toolName === 'BashCommand' && args.command && !args.action_json) {
+        console.error('🚨 CRITICAL: BashCommand called with raw command format!', {
+          command: args.command,
+          hasActionJson: !!args.action_json
+        });
       }
       
       const connection = connectionsRef.get(serverId);
@@ -1461,16 +1592,16 @@ export const useStore = create<RootState>((set, get) => {
         throw new Error(`No connection found for server ${serverId}`);
       }
 
-      // Enhanced WebSocket state monitoring for BashCommand
-      const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-      const stateName = stateNames[connection.readyState] || 'UNKNOWN';
-      
-      if (toolName === 'BashCommand') {
-        console.log(`🔧 BashCommand WebSocket state: ${stateName} (${connection.readyState}) for server ${serverId}`);
-        console.log(`🔧 BashCommand pending requests: ${pendingRequestsRef.size}`);
+      // 🚀 PERFORMANCE: Only check WebSocket state if logging is needed
+      if (shouldLogDetails && toolName === 'BashCommand') {
+        const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+        const stateName = stateNames[connection.readyState] || 'UNKNOWN';
+        console.log(`🔧 BashCommand WebSocket: ${stateName} (pending: ${pendingRequestsRef.size})`);
       }
 
       if (connection.readyState !== WebSocket.OPEN) {
+        const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+        const stateName = stateNames[connection.readyState] || 'UNKNOWN';
         console.warn(`WebSocket is ${stateName} for server ${serverId} when executing ${toolName}`);
         
         // For BashCommand, be more aggressive about reconnection
@@ -1505,7 +1636,15 @@ export const useStore = create<RootState>((set, get) => {
       
       // 🚨 CRITICAL: Workspace enforcement for tools that support any_workspace_path
       if (project) {
-        const projectPath = getProjectPath(project.id, project.name);
+          const projectPath = getProjectPath(project.id, project.name);
+          // If user set a base path in Admin panel (apiKeys.projectsBaseDir), honor it immediately on client
+          try {
+            const uiBase = (get().apiKeys as any)?.projectsBaseDir as string | undefined;
+            if (uiBase && uiBase.trim()) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
+            }
+          } catch {}
         
         // Only tools that actually support any_workspace_path parameter
         const workspaceAwareTools = ['Initialize'];
@@ -1558,6 +1697,13 @@ export const useStore = create<RootState>((set, get) => {
       
       if (project && (toolName === 'BashCommand' || toolName === 'FileWriteOrEdit')) {
         const projectPath = getProjectPath(project.id, project.name);
+        try {
+          const uiBase = (get().apiKeys as any)?.projectsBaseDir as string | undefined;
+          if (uiBase && uiBase.trim()) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
+          }
+        } catch {}
         
         // For BashCommand: ensure commands use full project path, not just project ID
         if (toolName === 'BashCommand' && modifiedArgs.command) {
@@ -1635,17 +1781,17 @@ export const useStore = create<RootState>((set, get) => {
             console.log(`🔒 Redirected external path to project: ${filePath}`);
           }
           
-          // Handle subdirectory attempts - flatten to project root
+          // Handle subdirectory attempts - flatten to project root, except .kibitz/* metadata
           if (filePath.includes('/') && filePath.startsWith(projectPath)) {
             const pathParts = filePath.split('/');
             const fileName = pathParts.pop() || 'file.txt';
-            // 🚀 FIX: Allow .kibitz subdirectories for API files
-            const isKibitzApiFile = filePath.includes('.kibitz/api/');
-            if (pathParts.length > projectPath.split('/').length && !isKibitzApiFile) {
+            // ✅ Allow any files inside .kibitz/ (api, checkpoints, config, etc.)
+            const isKibitzFile = filePath.includes('/.kibitz/');
+            if (pathParts.length > projectPath.split('/').length && !isKibitzFile) {
               filePath = `${projectPath}/${fileName}`;
               console.log(`🔒 Flattened subdirectory path to: ${filePath}`);
-            } else if (isKibitzApiFile) {
-              console.log(`✅ Allowing .kibitz/api file: ${filePath}`);
+            } else if (isKibitzFile) {
+              console.log(`✅ Allowing .kibitz file: ${filePath}`);
             }
           }
           
@@ -1723,56 +1869,47 @@ export const useStore = create<RootState>((set, get) => {
                     console.warn('🔧 executeTool: Failed to import branch store:', error);
                   });
                   
-                  // 🚨 PREVENT INFINITE RECURSION: Only trigger auto-commit for user-initiated tools
-                  if (!isInternalCall) {
-                    console.log(`🔧 executeTool: Tool eligible for background auto-commit trigger: ${toolName}`);
+                  // 🚀 PERFORMANCE: Only trigger auto-commit for user-initiated tools with file changes
+                  if (!isInternalCall && shouldLogDetails) {
+                    // 🚀 PERFORMANCE: Only auto-commit for tools that actually change files
+                    const fileChangingTools = ['FileWriteOrEdit', 'write', 'edit', 'create', 'delete'];
+                    const shouldTriggerAutoCommit = fileChangingTools.some(tool => 
+                      toolName.toLowerCase().includes(tool.toLowerCase())
+                    );
                     
-                    // 🚨 CRITICAL FIX: Add auto-commit trigger after tool execution
-                    import('./autoCommitStore').then(({ useAutoCommitStore }) => {
-                      const { shouldAutoCommit, executeAutoCommit, trackFileChange } = useAutoCommitStore.getState();
-                      
-                      // 🔗 NEW: Track file changes for FileWriteOrEdit
-                      if (toolName === 'FileWriteOrEdit') {
-                        try {
-                          // Extract file path from the tool arguments
+                    if (shouldTriggerAutoCommit) {
+                      // 🚀 PERFORMANCE: Batch auto-commit operations with minimal logging
+                      import('./autoCommitStore').then(({ useAutoCommitStore }) => {
+                        const { shouldAutoCommit, executeAutoCommit, trackFileChange } = useAutoCommitStore.getState();
+                        
+                        // Track file changes for FileWriteOrEdit
+                        if (toolName === 'FileWriteOrEdit') {
                           const filePath = (args as any).file_path || 'unknown_file';
-                          console.log(`📝 Tracking file change for auto-commit: ${filePath}`);
                           trackFileChange(filePath);
-                        } catch (trackError) {
-                          console.error('Failed to track file change:', trackError);
                         }
-                      }
-                      
-                      // 🔧 CRITICAL FIX: Remove quotes from activeProjectId and project.name
-                      const cleanProjectId = activeProjectId.replace(/"/g, '');
-                      const cleanProjectName = project.name.replace(/"/g, '');
-                      
-                                          const autoCommitContext = {
-                      trigger: 'tool_execution' as const,
-                      toolName,
-                      projectId: cleanProjectId,
-                      projectPath: getProjectPath(cleanProjectId, cleanProjectName),
-                      conversationId: get().activeConversationId || undefined, // Add conversation ID for branch tracking
-                      timestamp: Date.now()
-                    };
-                      
-                      console.log(`🔧 executeTool: Background auto-commit context:`, autoCommitContext);
-                      
-                      if (shouldAutoCommit(autoCommitContext)) {
-                        console.log(`✅ executeTool: Background auto-commit check passed, executing...`);
-                        executeAutoCommit(autoCommitContext).then(() => {
-                          console.log(`✅ executeTool: Background auto-commit completed for tool: ${toolName}`);
-                        }).catch(autoCommitError => {
-                          console.error(`❌ executeTool: Background auto-commit execution failed for tool: ${toolName}`, autoCommitError);
-                        });
-                      } else {
-                        console.log(`❌ executeTool: Background auto-commit check failed for tool: ${toolName}`);
-                      }
-                    }).catch(error => {
-                      console.warn('🔧 executeTool: Failed to import auto-commit store:', error);
-                    });
-                  } else {
-                    console.log(`🔒 executeTool: Skipping background auto-commit for internal tool: ${toolName} (internal call)`);
+                        
+                        // 🚀 PERFORMANCE: Use cached project path
+                        const cleanProjectId = activeProjectId.replace(/"/g, '');
+                        const cleanProjectName = project.name.replace(/"/g, '');
+                        
+                        const autoCommitContext = {
+                          trigger: 'tool_execution' as const,
+                          toolName,
+                          projectId: cleanProjectId,
+                          projectPath: getProjectPath(cleanProjectId, cleanProjectName), // This is now cached!
+                          conversationId: get().activeConversationId || undefined,
+                          timestamp: Date.now()
+                        };
+                        
+                        if (shouldAutoCommit(autoCommitContext)) {
+                          executeAutoCommit(autoCommitContext).catch(autoCommitError => {
+                            console.error(`Auto-commit failed for ${toolName}:`, autoCommitError);
+                          });
+                        }
+                      }).catch(() => {
+                        // Silently ignore auto-commit store import failures in production
+                      });
+                    }
                   }
                 } catch (error) {
                   console.warn('🔧 executeTool: Error in background branch integration:', error);

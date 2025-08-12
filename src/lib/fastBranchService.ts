@@ -5,7 +5,7 @@
  * Designed for showing clean branch names like GitHub's interface.
  */
 
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 
 export interface FastBranchInfo {
   name: string;           // Clean branch name (e.g., "main", "feature/auth")

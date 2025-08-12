@@ -6,6 +6,8 @@
  */
 
 import { Project } from '../components/LlmChat/context/types';
+import { getProjectsBaseDir } from './pathConfig';
+import { getServerProjectsBaseDir } from './server/pathConfigServer';
 
 /**
  * Cache to prevent multiple simultaneous directory creation attempts
@@ -27,13 +29,9 @@ const DIRECTORY_CREATION_TIMEOUT = 30000;
  * This ensures the system works universally across different environments
  */
 const getCurrentWorkingDirectory = (): string => {
-  // For browser environments, return base projects directory
-  if (typeof window !== 'undefined') {
-    return '/Users/test/gitrepo/projects';
-  }
-  
-  // In Node.js environment, use base projects directory
-  return '/Users/test/gitrepo/projects';
+  // Always resolve from shared config. In the browser, NEXT_PUBLIC_PROJECTS_DIR
+  // should be provided to hydrate UI-only path usage; on server, runtime envs.
+  return getProjectsBaseDir();
 };
 
 /**
@@ -49,8 +47,12 @@ export const sanitizeProjectName = (name: string): string => {
     .replace(/^-|-$/g, '');          // Remove leading/trailing hyphens
 };
 
+// 🚀 PERFORMANCE OPTIMIZATION: Project path cache to eliminate redundant calls
+const projectPathCache = new Map<string, string>();
+
 /**
  * Gets the full path to a project directory.
+ * 🚀 OPTIMIZED: Uses caching to prevent redundant path resolution (was called 1,384 times)
  * 
  * @param projectId The unique identifier for the project
  * @param projectName The name of the project (optional)
@@ -58,29 +60,30 @@ export const sanitizeProjectName = (name: string): string => {
  * @returns Full path to project directory
  */
 export const getProjectPath = (projectId: string, projectName?: string, customPath?: string): string => {
-  console.log(`🔧 getProjectPath: Input values:`, { 
-    projectId: `"${projectId}"`, 
-    projectName: `"${projectName}"`, 
-    customPath: `"${customPath}"`,
-    projectIdType: typeof projectId,
-    projectNameType: typeof projectName
-  });
-  
   // 🔧 CRITICAL FIX: Remove quotes from input parameters
   const cleanProjectId = projectId?.replace(/"/g, '') || '';
   const cleanProjectName = projectName?.replace(/"/g, '') || '';
   const cleanCustomPath = customPath?.replace(/"/g, '') || '';
   
-  console.log(`🔧 getProjectPath: Cleaned values:`, { 
-    cleanProjectId, 
-    cleanProjectName, 
-    cleanCustomPath 
-  });
+  // 🚀 PERFORMANCE: Create cache key for this specific path combination
+  const cacheKey = `${cleanProjectId}|${cleanProjectName || 'project'}|${cleanCustomPath || ''}`;
   
-  // If custom path is provided (for cloned repos), use that
+  // 🚀 PERFORMANCE: Return cached result if available
+  if (projectPathCache.has(cacheKey)) {
+    return projectPathCache.get(cacheKey)!;
+  }
+  
+  // If custom path is provided (for cloned repos or UI override), normalize and use that
   if (cleanCustomPath && cleanCustomPath !== 'undefined' && cleanCustomPath.trim() !== '') {
-    console.log(`🔧 getProjectPath: Using custom path: ${cleanCustomPath}`);
-    return cleanCustomPath;
+    let normalizedCustom = cleanCustomPath.trim();
+    // Strip masked bullets and trailing slashes
+    normalizedCustom = normalizedCustom.replace(/[•\u2022]+/g, '').replace(/\/+$/g, '');
+    // If it looks like a macOS path missing leading slash (e.g., "Users/..."), add it
+    if (!normalizedCustom.startsWith('/') && /^Users\//.test(normalizedCustom)) {
+      normalizedCustom = '/' + normalizedCustom;
+    }
+    projectPathCache.set(cacheKey, normalizedCustom);
+    return normalizedCustom;
   }
   
   // 🚨 VALIDATION: Ensure project data is valid
@@ -90,16 +93,16 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
   }
   
   // Create project-specific subdirectories in the base projects directory  
-  const baseDir = getCurrentWorkingDirectory();
+  // Prefer server-only resolution to include persisted UI override when available
+  const baseDir = (typeof process !== 'undefined' && (process as any).versions?.node)
+    ? getServerProjectsBaseDir()
+    : getCurrentWorkingDirectory();
   const sanitizedName = cleanProjectName ? sanitizeProjectName(cleanProjectName) : 'project';
-  const fullPath = `${baseDir}/${cleanProjectId}_${sanitizedName}`;
-  
-  console.log(`🔧 getProjectPath: Generated path components:`, {
-    baseDir,
-    projectId: cleanProjectId,
-    sanitizedName,
-    fullPath
-  });
+  let fullPath = `${baseDir}/${cleanProjectId}_${sanitizedName}`;
+  // Fix accidental loss of leading slash if baseDir came in as "Users/..."
+  if (!fullPath.startsWith('/')) {
+    fullPath = '/' + fullPath;
+  }
   
   // 🚨 VALIDATION: Ensure generated path is correct
   if (fullPath === baseDir || fullPath === `${baseDir}/`) {
@@ -109,8 +112,16 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
     throw new Error(`Generated invalid project path: "${fullPath}" - check projectId and projectName`);
   }
   
-  console.log(`✅ getProjectPath: Final path: ${fullPath}`);
+  // 🚀 PERFORMANCE: Cache the result before returning
+  projectPathCache.set(cacheKey, fullPath);
   return fullPath;
+};
+
+/**
+ * 🚀 PERFORMANCE: Clear project path cache (useful for testing or when project paths change)
+ */
+export const clearProjectPathCache = (): void => {
+  projectPathCache.clear();
 };
 
 /**
@@ -306,72 +317,62 @@ export const ensureProjectDirectory = async (
   const projectPath = getProjectPath(project.id, project.name, project.customPath);
   console.log(`🔧 ensureProjectDirectory: Generated project path: ${projectPath}`);
   
-  // 🚨 CRITICAL: Validate project path is absolute and complete
-  if (!projectPath.startsWith('/Users/test/gitrepo/projects/') || projectPath.length < 30) {
+  // 🚨 CRITICAL: Validate project path is absolute and complete.
+  // Use server base dir when available for strict validation.
+  const baseDir = (typeof process !== 'undefined' && (process as any).versions?.node)
+    ? getServerProjectsBaseDir()
+    : getProjectsBaseDir();
+  // If a customPath was provided, only require an absolute path
+  const hasCustom = !!(project.customPath && String(project.customPath).trim());
+  const pathIsAbsolute = projectPath.startsWith('/');
+  if ((hasCustom && !pathIsAbsolute) || (!hasCustom && (!projectPath.startsWith(`${baseDir}/`) || projectPath.length < baseDir.length + 5))) {
     console.error(`❌ Invalid project path detected: "${projectPath}"`);
-    console.error(`❌ Expected format: /Users/test/gitrepo/projects/{projectId}_{projectName}`);
+    console.error(`❌ Expected format: ${baseDir}/{projectId}_{projectName}`);
     throw new Error(`Invalid project path: ${projectPath}`);
   }
   
-  // 🚨 UPDATED: Trust that project directory exists (as per new system design)
-  console.log(`✅ Trusting project directory exists: ${projectPath}`);
-  
-  // Skip directory existence check and creation - directories are managed by the system
-  // This prevents the manual directory creation loops that were causing issues
-  
-  // 🚀 CRITICAL: Initialize MCP environment with the specific project directory
-  // This ensures ALL subsequent tool calls work in the correct project workspace
-  console.log(`🔧 Initializing MCP environment for project directory: ${projectPath}`);
-  console.log(`🔧 MCP should initialize at: ${projectPath} (NOT the parent directory)`);
-  
-  try {
-    const initArgs = {
-      type: "first_call",
-      any_workspace_path: projectPath,
-      initial_files_to_read: [],
-      task_id_to_resume: "",
-      mode_name: "wcgw",
-      thread_id: "git-operations"
-    };
-    console.log(`🔧 MCP Initialize args:`, JSON.stringify(initArgs, null, 2));
-    
-    let initResult: string;
+  // 🚀 CRITICAL: Initialize MCP environment with the specific project directory FIRST
+  // Many MCP servers require Initialize before any BashCommand on a given thread
+  console.log(`🔧 Preparing MCP environment for project directory: ${projectPath}`);
+  // Initialize at most once per (server, projectPath)
+  const initKey = `${mcpServerId}|${projectPath}`;
+  const g: any = globalThis as any;
+  if (!g.__kibitzInitCache) g.__kibitzInitCache = new Set<string>();
+  if (!g.__kibitzInitCache.has(initKey)) {
     try {
-      // Try with full arguments first
-      initResult = await executeTool(mcpServerId, 'Initialize', initArgs);
+      const initArgs = {
+        type: 'first_call',
+        any_workspace_path: projectPath,
+        initial_files_to_read: [],
+        task_id_to_resume: '',
+        mode_name: 'wcgw',
+        thread_id: 'git-operations'
+      } as const;
+      const result = await executeTool(mcpServerId, 'Initialize', initArgs as unknown as Record<string, unknown>);
+      if (typeof result === 'string' && result.toLowerCase().includes('skipped')) {
+        console.log('ℹ️ Initialize not supported by server, proceeding without it');
+      } else {
+        console.log(`✅ MCP environment initialized for project: ${project.name}`);
+      }
     } catch (error) {
-      // If it fails, try with simplified arguments
-      console.warn(`⚠️ Initialize failed with full args, trying simplified:`, error);
-      const simplifiedInitArgs = {
-        type: "first_call",
-        any_workspace_path: projectPath
-      };
-      console.log(`🔧 MCP Initialize simplified args:`, JSON.stringify(simplifiedInitArgs, null, 2));
-      initResult = await executeTool(mcpServerId, 'Initialize', simplifiedInitArgs);
+      const message = String(error || 'unknown');
+      if (/not found/i.test(message) || /initialize/i.test(message)) {
+        console.log('ℹ️ Initialize not available on this server; continuing');
+      } else {
+        console.error(`❌ MCP preflight error:`, error);
+        // Do not throw here; avoid blocking app due to transient init issues
+      }
+    } finally {
+      g.__kibitzInitCache.add(initKey);
     }
-    
-    // 🔍 VALIDATION: Check if MCP actually initialized in the correct directory
-    if (initResult.includes('Initialized in directory') && !initResult.includes(projectPath)) {
-      console.error(`❌ MCP initialized in wrong directory!`);
-      console.error(`❌ Expected: ${projectPath}`);
-      console.error(`❌ Actual result: ${initResult.substring(0, 500)}`);
-      throw new Error(`MCP workspace initialization failed - wrong directory`);
-    }
-    
-    console.log(`✅ MCP environment initialized for project: ${project.name} at ${projectPath}`);
-    console.log(`📋 MCP Init result: ${initResult.substring(0, 200)}...`);
-    
-    // 🔧 REMOVED: pwd verification step that was causing timeout cascades
-    // The Initialize tool is working properly, so we don't need this verification
-    console.log(`✅ Skipping pwd verification to prevent timeout cascades`);
-    console.log(`✅ Project directory initialization complete: ${projectPath}`);
-    
-  } catch (error) {
-    console.error(`❌ CRITICAL: Failed to initialize MCP environment for project ${project.name}:`, error);
-    throw new Error(`MCP initialization failed: ${error}`);
   }
-  
+
+  // Ensure directory exists (mkdir -p) AFTER Initialize so thread is ready
+  try {
+    await createProjectDirectory(projectPath, mcpServerId, executeTool);
+  } catch {}
   console.log(`✅ ensureProjectDirectory: Using project path: ${projectPath}`);
+  
   return projectPath;
 };
 

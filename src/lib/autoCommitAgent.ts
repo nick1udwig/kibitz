@@ -280,12 +280,10 @@ export class AutoCommitAgent {
         threadId = "git-operations"; // Fallback to default
       }
 
-      // Step 2: Initialize git repository if needed and set user config from environment
-      const gitUserName = process.env.GIT_USER_NAME || 'malikrohail';
-      const gitUserEmail = process.env.GIT_USER_EMAIL || 'malikrohail525@gmail.com';
+      // Step 2: Initialize git repository if needed. Do not set identity here.
       const initResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
         action_json: {
-          command: `cd "${projectPath}" && git init && git config user.name "${gitUserName}" && git config user.email "${gitUserEmail}"`,
+          command: `cd "${projectPath}" && git init`,
           type: 'command'
         },
         thread_id: threadId
@@ -328,10 +326,10 @@ export class AutoCommitAgent {
       const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
       const commitMessage = `Auto-commit: Changes detected ${timestamp}`;
       
-      // Commit with user config (using variables already declared above)
+      // Commit without forcing identity (must be provided by env or git config)
       const commitResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
         action_json: {
-          command: `cd "${projectPath}" && git config user.name "${gitUserName}" && git config user.email "${gitUserEmail}" && git commit -m "${commitMessage}"`,
+          command: `cd "${projectPath}" && git commit -m "${commitMessage}"`,
           type: 'command'
         },
         thread_id: threadId

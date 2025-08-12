@@ -12,6 +12,7 @@ import {
   BranchInfo,
   Project
 } from '../components/LlmChat/context/types';
+import { buildProjectsSubpath, getProjectsBaseDir } from './pathConfig';
 
 /**
  * Generate a unique workspace ID
@@ -32,7 +33,8 @@ export const generateWorkspacePath = (
     ? conversationName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase()
     : conversationId;
   
-  return `/Users/test/gitrepo/projects/${projectId}/conversations/${conversationId}`;
+  // Conversations live under the project workspace directory
+  return buildProjectsSubpath(`${projectId}`, 'conversations', `${conversationId}`);
 };
 
 /**
@@ -124,7 +126,8 @@ export const validateWorkspacePath = (path: string): boolean => {
   }
   
   // Check if path is within allowed project directory structure
-  const validPathPattern = /^\/Users\/test\/gitrepo\/projects\/[\w-]+\/conversations\/[\w-]+$/;
+  const base = getProjectsBaseDir().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const validPathPattern = new RegExp(`^${base}\/[\\w-]+\/conversations\/[\\w-]+$`);
   return validPathPattern.test(path);
 };
 

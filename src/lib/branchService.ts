@@ -313,66 +313,49 @@ export const detectChanges = async (
     console.log('📊 detectChanges: Files changed count:', filesChanged);
     console.log('📋 detectChanges: Changed files list:', changedFiles);
     
-    // Get diff stats for line counts
+    // Get diff stats for line counts (skip heavy diff when only untracked files)
     let linesAdded = 0;
     let linesRemoved = 0;
-    
+
     try {
-      console.log('📈 detectChanges: Getting diff stats...');
-      
-      // 🔧 FIX: Try staged changes first, then unstaged changes
-      let diffResult = await executeGitCommand(
-        serverId,
-        'git diff --cached --numstat',
-        projectPath,
-        executeTool
-      );
-      
-      // If no staged changes, check unstaged changes
-      if (diffResult.success && !diffResult.output.trim()) {
-        console.log('📈 detectChanges: No staged changes, checking unstaged changes...');
-        diffResult = await executeGitCommand(
+      const onlyUntracked = statusLines.every(l => l.startsWith('??'));
+      if (onlyUntracked) {
+        // Cheap estimate: 5 lines per new file to avoid extra git diff calls
+        linesAdded = filesChanged * 5;
+        console.log('ℹ️ detectChanges: Only untracked files detected, skipping git diff. Estimated linesAdded:', linesAdded);
+      } else {
+        console.log('📈 detectChanges: Getting diff stats...');
+        // Try staged first, then unstaged
+        let diffResult = await executeGitCommand(
           serverId,
-          'git diff --numstat',
+          'git diff --cached --numstat',
           projectPath,
           executeTool
         );
-      }
-      
-      console.log('📊 detectChanges: Diff result:', diffResult);
-      
-      if (diffResult.success && diffResult.output.trim()) {
-        const diffLines = diffResult.output.trim().split('\n');
-        console.log('📝 detectChanges: Diff lines:', diffLines);
-        
-        for (const line of diffLines) {
-          if (line.trim()) {
-            console.log('🔍 detectChanges: Parsing diff line:', line);
-            // Format: "added\tremoved\tfilename"
+        if (diffResult.success && !diffResult.output.trim()) {
+          diffResult = await executeGitCommand(
+            serverId,
+            'git diff --numstat',
+            projectPath,
+            executeTool
+          );
+        }
+        if (diffResult.success && diffResult.output.trim()) {
+          for (const line of diffResult.output.trim().split('\n')) {
             const parts = line.split('\t');
             if (parts.length >= 2) {
-              const added = parseInt(parts[0]) || 0;
-              const removed = parseInt(parts[1]) || 0;
-              linesAdded += added;
-              linesRemoved += removed;
-              console.log('➕ detectChanges: Added lines:', added, 'Removed lines:', removed);
+              linesAdded += parseInt(parts[0]) || 0;
+              linesRemoved += parseInt(parts[1]) || 0;
             }
           }
-        }
-      } else {
-        console.log('ℹ️ detectChanges: No diff stats available, using fallback...');
-        // Fallback: if we have staged files, assume some line changes
-        if (filesChanged > 0) {
-          linesAdded = filesChanged * 5; // Estimate 5 lines per file
-          console.log('🔄 detectChanges: Using fallback estimate:', linesAdded, 'lines');
+        } else if (filesChanged > 0) {
+          linesAdded = filesChanged * 5;
         }
       }
     } catch (diffError) {
       console.error('⚠️ detectChanges: Error getting diff stats:', diffError);
-      // Fallback: estimate based on file count
       if (filesChanged > 0) {
         linesAdded = filesChanged * 5;
-        console.log('🔄 detectChanges: Using error fallback estimate:', linesAdded, 'lines');
       }
     }
     
@@ -827,36 +810,9 @@ export const autoCreateBranchIfNeeded = async (
       }
     }
     
-    if (!existingAutoBranch) {
-      // Create new auto branch only if no existing one found
-      const now = new Date();
-      const timestamp = now.toISOString()
-        .slice(0, 19)
-        .replace(/[-:]/g, '')
-        .replace('T', '-');
-      
-      branchName = `auto/${timestamp}`;
-      
-      console.log(`🌿 autoCreateBranchIfNeeded: Creating NEW auto branch ${branchName} for ${changeResult.filesChanged} files changed`);
-      
-      // Create the new branch
-      const createBranchResult = await executeGitCommand(
-        serverId,
-        `git checkout -b ${branchName}`,
-        projectPath,
-        executeTool
-      );
-      
-      if (!createBranchResult.success) {
-        console.error('❌ autoCreateBranchIfNeeded: Failed to create branch:', createBranchResult.error);
-        return {
-          branchCreated: false,
-          reason: `Failed to create branch: ${createBranchResult.error}`
-        };
-      }
-      
-      branchCreated = true;
-    }
+    // DO NOT create new auto branches; keep current branch
+    branchName = currentBranch;
+    branchCreated = false;
     
     // Get current commit hash
     const commitHashResult = await executeGitCommand(
@@ -881,7 +837,7 @@ export const autoCreateBranchIfNeeded = async (
       isActive: true
     };
     
-    console.log(`✅ autoCreateBranchIfNeeded: Successfully created branch: ${branchName}`);
+    console.log(`✅ autoCreateBranchIfNeeded: Using current branch: ${branchName}`);
     
     // 🚀 IMMEDIATE JSON GENERATION - Create .kibitz/api/project.json at the END
     try {

@@ -1,0 +1,195 @@
+Need to install the following packages:
+unimported@1.31.0
+Ok to proceed? (y) 
+
+       summary               unimported v1.31.0 (next)
+─────────────────────────────────────────────────────────────────────────────
+
+       unresolved imports  : 0
+       unused dependencies : 24
+       unimported files    : 146
+
+
+─────┬───────────────────────────────────────────────────────────────────────
+     │ 24 unused dependencies
+─────┼───────────────────────────────────────────────────────────────────────
+   1 │ @anthropic-ai/sdk
+   2 │ @modelcontextprotocol/sdk
+   3 │ @radix-ui/react-alert-dialog
+   4 │ @radix-ui/react-dialog
+   5 │ @radix-ui/react-dropdown-menu
+   6 │ @radix-ui/react-slot
+   7 │ @radix-ui/react-switch
+   8 │ @radix-ui/react-tabs
+   9 │ @types/react-window
+  10 │ better-sqlite3
+  11 │ class-variance-authority
+  12 │ clsx
+  13 │ cors
+  14 │ date-fns
+  15 │ express
+  16 │ lodash
+  17 │ lucide-react
+  18 │ next-themes
+  19 │ openai
+  20 │ react-markdown
+  21 │ remark-gfm
+  22 │ tailwind-merge
+  23 │ tailwindcss-animate
+  24 │ zustand
+─────┴───────────────────────────────────────────────────────────────────────
+
+
+─────┬───────────────────────────────────────────────────────────────────────
+     │ 146 unimported files
+─────┼───────────────────────────────────────────────────────────────────────
+   1 │ /Users/test/Downloads/kinode/kibitz/src/api/checkpointAPI.ts
+   2 │ /Users/test/Downloads/kinode/kibitz/src/api/enhancedProjectAPI.ts
+   3 │ /Users/test/Downloads/kinode/kibitz/src/api/projectCheckpointAPI.ts
+   4 │ /Users/test/Downloads/kinode/kibitz/src/api/projectManagementAPI.ts
+   5 │ /Users/test/Downloads/kinode/kibitz/src/app/api/database/route.ts
+   6 │ /Users/test/Downloads/kinode/kibitz/src/app/api/github-sync/config/route.ts
+   7 │ /Users/test/Downloads/kinode/kibitz/src/app/api/github-sync/status/route.ts
+   8 │ /Users/test/Downloads/kinode/kibitz/src/app/api/github-sync/trigger/route.ts
+   9 │ /Users/test/Downloads/kinode/kibitz/src/app/api/keys/route.ts
+  10 │ /Users/test/Downloads/kinode/kibitz/src/app/api/log/route.ts
+  11 │ /Users/test/Downloads/kinode/kibitz/src/app/api/projects/[projectId]/branches/current/route.ts
+  12 │ /Users/test/Downloads/kinode/kibitz/src/app/api/projects/[projectId]/branches/route.ts
+  13 │ /Users/test/Downloads/kinode/kibitz/src/app/api/projects/[projectId]/branches/switch/route.ts
+  14 │ /Users/test/Downloads/kinode/kibitz/src/app/api/projects/[projectId]/enhanced-commit/route.ts
+  15 │ /Users/test/Downloads/kinode/kibitz/src/app/api/projects/[projectId]/generate/route.ts
+  16 │ /Users/test/Downloads/kinode/kibitz/src/app/api/projects/[projectId]/route.ts
+  17 │ /Users/test/Downloads/kinode/kibitz/src/app/api/storage/route.ts
+  18 │ /Users/test/Downloads/kinode/kibitz/src/app/layout.tsx
+  19 │ /Users/test/Downloads/kinode/kibitz/src/app/page.tsx
+  20 │ /Users/test/Downloads/kinode/kibitz/src/app/providers.tsx
+  21 │ /Users/test/Downloads/kinode/kibitz/src/components/AutoBranchSettings.tsx
+  22 │ /Users/test/Downloads/kinode/kibitz/src/components/BranchHistoryPanel.tsx
+  23 │ /Users/test/Downloads/kinode/kibitz/src/components/BranchManager/BranchManager.tsx
+  24 │ /Users/test/Downloads/kinode/kibitz/src/components/BranchManager/BranchSystemSettings.tsx
+  25 │ /Users/test/Downloads/kinode/kibitz/src/components/BranchManager/index.tsx
+  26 │ /Users/test/Downloads/kinode/kibitz/src/components/BranchManager/SimpleBranchManager.tsx
+  27 │ /Users/test/Downloads/kinode/kibitz/src/components/ChatSnapshotPanel.tsx
+  28 │ /Users/test/Downloads/kinode/kibitz/src/components/CheckpointManager/AutoCommitSettings.tsx
+  29 │ /Users/test/Downloads/kinode/kibitz/src/components/CheckpointManager/CheckpointList.tsx
+  30 │ /Users/test/Downloads/kinode/kibitz/src/components/CheckpointManager/CheckpointManager.tsx
+  31 │ /Users/test/Downloads/kinode/kibitz/src/components/CheckpointManager/ConversationCheckpointManager.tsx
+  32 │ /Users/test/Downloads/kinode/kibitz/src/components/CheckpointManager/CreateCheckpointDialog.tsx
+  33 │ /Users/test/Downloads/kinode/kibitz/src/components/CheckpointManager/index.ts
+  34 │ /Users/test/Downloads/kinode/kibitz/src/components/CommitRollbackControls.tsx
+  35 │ /Users/test/Downloads/kinode/kibitz/src/components/GitHubSyncToggle.tsx
+  36 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/AdminView/index.tsx
+  37 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/AdminView/McpConfiguration.tsx
+  38 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/AdminView/ToolsView.tsx
+  39 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/ChatView.tsx
+  40 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/ChatHeader.tsx
+  41 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/ChatInput.tsx
+  42 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/CheckpointMessage.tsx
+  43 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/CommitDisplay.tsx
+  44 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/ConversationMetadataPanel.tsx
+  45 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/FileChangeCounter.tsx
+  46 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/FileContentList.tsx
+  47 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/index.ts
+  48 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/MessageContent.tsx
+  49 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/MessagesLoadingIndicator.tsx
+  50 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/RevertButton.tsx
+  51 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/ScrollToBottomButton.tsx
+  52 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/components/SessionRecoveryPanel.tsx
+  53 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/context/types.ts
+  54 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/context/useFocusControl.tsx
+  55 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/ConversationSidebar.tsx
+  56 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/FileUpload/index.tsx
+  57 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useAutoCommit.ts
+  58 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useCommitTracking.ts
+  59 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useConversationBranches.ts
+  60 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useConversationGitHandler.ts
+  61 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useConversationMetadata.ts
+  62 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useDelayedJSONGeneration.ts
+  63 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useErrorDisplay.ts
+  64 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useMessageSender.ts
+  65 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/usePagination.ts
+  66 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/hooks/useScrollControl.ts
+  67 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/index.tsx
+  68 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/ThemeToggle.tsx
+  69 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/ToolCallModal.tsx
+  70 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/types.ts
+  71 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/types/genericMessage.ts
+  72 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/types/mcp.ts
+  73 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/types/provider.ts
+  74 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/types/toolTypes.ts
+  75 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/utils/promptEnhancer.ts
+  76 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/utils/ToolRegistry.ts
+  77 │ /Users/test/Downloads/kinode/kibitz/src/components/LlmChat/VoiceRecorder/index.tsx
+  78 │ /Users/test/Downloads/kinode/kibitz/src/components/SnapshotSettings.tsx
+  79 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/alert-dialog.tsx
+  80 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/alert.tsx
+  81 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/button.tsx
+  82 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/card.tsx
+  83 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/copy.tsx
+  84 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/dialog.tsx
+  85 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/dropdown-menu.tsx
+  86 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/input.tsx
+  87 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/spinner.tsx
+  88 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/switch.tsx
+  89 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/tabs.tsx
+  90 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/textarea.tsx
+  91 │ /Users/test/Downloads/kinode/kibitz/src/components/ui/visually-hidden.tsx
+  92 │ /Users/test/Downloads/kinode/kibitz/src/lib/autoBranchManager.ts
+  93 │ /Users/test/Downloads/kinode/kibitz/src/lib/autoCommitAgent.ts
+  94 │ /Users/test/Downloads/kinode/kibitz/src/lib/branchMetadata.ts
+  95 │ /Users/test/Downloads/kinode/kibitz/src/lib/branchNaming.ts
+  96 │ /Users/test/Downloads/kinode/kibitz/src/lib/branchService.ts
+  97 │ /Users/test/Downloads/kinode/kibitz/src/lib/checkpointRollbackService.ts
+  98 │ /Users/test/Downloads/kinode/kibitz/src/lib/checkpointService.ts
+  99 │ /Users/test/Downloads/kinode/kibitz/src/lib/commandThrottlingService.ts
+ 100 │ /Users/test/Downloads/kinode/kibitz/src/lib/conversationBranchService.ts
+ 101 │ /Users/test/Downloads/kinode/kibitz/src/lib/conversationMetadataService.ts
+ 102 │ /Users/test/Downloads/kinode/kibitz/src/lib/conversationWorkspaceManager.ts
+ 103 │ /Users/test/Downloads/kinode/kibitz/src/lib/conversationWorkspaceService.ts
+ 104 │ /Users/test/Downloads/kinode/kibitz/src/lib/db.ts
+ 105 │ /Users/test/Downloads/kinode/kibitz/src/lib/debugStorageService.ts
+ 106 │ /Users/test/Downloads/kinode/kibitz/src/lib/enhancedBranchPersistence.ts
+ 107 │ /Users/test/Downloads/kinode/kibitz/src/lib/enhancedConversationCommitService.ts
+ 108 │ /Users/test/Downloads/kinode/kibitz/src/lib/existingDatabaseIntegration.ts
+ 109 │ /Users/test/Downloads/kinode/kibitz/src/lib/fastBranchService.ts
+ 110 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitAutoInitService.ts
+ 111 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitCheckpointService.ts
+ 112 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitCommandOptimizer.ts
+ 113 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitDiffService.ts
+ 114 │ /Users/test/Downloads/kinode/kibitz/src/lib/githubSyncService.ts
+ 115 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitIntegrationService.ts
+ 116 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitService.ts
+ 117 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitSessionService.ts
+ 118 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitSnapshotService.ts
+ 119 │ /Users/test/Downloads/kinode/kibitz/src/lib/gitStateTracker.ts
+ 120 │ /Users/test/Downloads/kinode/kibitz/src/lib/llmAgentGitHandler.ts
+ 121 │ /Users/test/Downloads/kinode/kibitz/src/lib/llmCommitMessageGenerator.ts
+ 122 │ /Users/test/Downloads/kinode/kibitz/src/lib/localPersistenceService.ts
+ 123 │ /Users/test/Downloads/kinode/kibitz/src/lib/mcpToolOrchestrator.ts
+ 124 │ /Users/test/Downloads/kinode/kibitz/src/lib/optimizedGitService.ts
+ 125 │ /Users/test/Downloads/kinode/kibitz/src/lib/pathConfig.ts
+ 126 │ /Users/test/Downloads/kinode/kibitz/src/lib/persistentStorageService.ts
+ 127 │ /Users/test/Downloads/kinode/kibitz/src/lib/preRunBranchManager.ts
+ 128 │ /Users/test/Downloads/kinode/kibitz/src/lib/projectDataExtractor.ts
+ 129 │ /Users/test/Downloads/kinode/kibitz/src/lib/projectPathService.ts
+ 130 │ /Users/test/Downloads/kinode/kibitz/src/lib/rollbackIntegrationService.ts
+ 131 │ /Users/test/Downloads/kinode/kibitz/src/lib/rollbackSystem.ts
+ 132 │ /Users/test/Downloads/kinode/kibitz/src/lib/seamlessWorkflowIntegration.ts
+ 133 │ /Users/test/Downloads/kinode/kibitz/src/lib/sqliteStorage.ts
+ 134 │ /Users/test/Downloads/kinode/kibitz/src/lib/storageCoordinator.ts
+ 135 │ /Users/test/Downloads/kinode/kibitz/src/lib/systemDiagnostics.ts
+ 136 │ /Users/test/Downloads/kinode/kibitz/src/lib/utils.ts
+ 137 │ /Users/test/Downloads/kinode/kibitz/src/lib/wakeLock.ts
+ 138 │ /Users/test/Downloads/kinode/kibitz/src/lib/workspaceCleanupService.ts
+ 139 │ /Users/test/Downloads/kinode/kibitz/src/stores/autoCommitStore.ts
+ 140 │ /Users/test/Downloads/kinode/kibitz/src/stores/branchStore.ts
+ 141 │ /Users/test/Downloads/kinode/kibitz/src/stores/checkpointStore.ts
+ 142 │ /Users/test/Downloads/kinode/kibitz/src/stores/enhancedCheckpointStore.ts
+ 143 │ /Users/test/Downloads/kinode/kibitz/src/stores/rootStore.ts
+ 144 │ /Users/test/Downloads/kinode/kibitz/src/stores/snapshotStore.ts
+ 145 │ /Users/test/Downloads/kinode/kibitz/src/types/ApiKeys.ts
+ 146 │ /Users/test/Downloads/kinode/kibitz/src/types/Checkpoint.ts
+─────┴───────────────────────────────────────────────────────────────────────
+
+
+       Inspect the results and run npx unimported -u to update ignore lists

@@ -12,6 +12,7 @@ export async function GET(
   context: { params: Promise<{ projectId: string }> }
 ): Promise<NextResponse> {
   try {
+    const __t0 = Date.now();
     const { projectId } = await context.params;
     
     if (!projectId) {
@@ -23,16 +24,18 @@ export async function GET(
 
     const fs = require('fs');
     const path = require('path');
+  const { projectsBaseDir, findProjectPath } = await import('../../../../../lib/server/projectPaths');
     
-    // Calculate project path
-    const baseDir = '/Users/test/gitrepo/projects';
-    const projectPath = path.join(baseDir, `${projectId}_new-project`);
-    const branchesJsonPath = path.join(projectPath, '.kibitz', 'api', 'branches.json');
+  // Calculate project path (no hardcoded name suffix)
+  const baseDir = projectsBaseDir();
+    const existing = findProjectPath(projectId);
+    const resolvedProjectPath = existing || path.join(baseDir, `${projectId}_`);
+    const branchesJsonPath = path.join(resolvedProjectPath, '.kibitz', 'api', 'branches.json');
     
     console.log(`🌲 API: Checking branches for project ${projectId}...`);
     
     // Check if project directory exists
-    if (!fs.existsSync(projectPath)) {
+    if (!fs.existsSync(resolvedProjectPath)) {
       return NextResponse.json(
         { 
           projectId, 
@@ -50,7 +53,7 @@ export async function GET(
     if (!fs.existsSync(branchesJsonPath)) {
       console.log(`🌲 API: branches.json missing, checking project.json...`);
       
-      const projectJsonPath = path.join(projectPath, '.kibitz', 'api', 'project.json');
+      const projectJsonPath = path.join(resolvedProjectPath, '.kibitz', 'api', 'project.json');
       
       if (fs.existsSync(projectJsonPath)) {
         try {
@@ -82,11 +85,13 @@ export async function GET(
     // Read existing branches.json
     try {
       const branchesData = JSON.parse(fs.readFileSync(branchesJsonPath, 'utf8'));
-      return NextResponse.json({
+      const response = {
         ...branchesData,
         lastUpdated: Date.now(),
         source: 'branches-json'
-      });
+      };
+      console.log(`⏱️ Branches GET total time: ${Date.now() - __t0}ms for ${projectId}`);
+      return NextResponse.json(response);
     } catch (error) {
       console.error('❌ Failed to read branches.json:', error);
       return NextResponse.json(
