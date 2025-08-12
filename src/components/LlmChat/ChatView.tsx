@@ -17,7 +17,7 @@ import { MessagesLoadingIndicator } from './components/MessagesLoadingIndicator'
 import { useCommitTracking } from './hooks/useCommitTracking';
 import { CommitDisplay } from './components/CommitDisplay';
 import { FileChangeCounter } from './components/FileChangeCounter';
-import GitSessionService from '../../lib/gitSessionService';
+import GitSessionService from '@/lib/gitSessionService';
 import { ensureProjectDirectory } from '../../lib/projectPathService';
 import { autoInitializeGitForProject } from '../../lib/gitAutoInitService';
 import { getProjectPath } from '../../lib/projectPathService';
@@ -438,22 +438,7 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
 
         {/* 🔒 DISABLED: Commit messages suppressed from Chat UI as requested */}
         {/* Temporary debug section for testing commit association */}
-        {hasAutoCommit && lastCommitHash && (
-          <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="text-sm">
-                <div className="font-medium">Debug: Last commit hash</div>
-                <div className="text-gray-600 dark:text-gray-400 font-mono text-xs">{lastCommitHash}</div>
-              </div>
-              <button
-                onClick={manuallyAssociateLastCommit}
-                className="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
-              >
-                Associate with Last Message
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Removed debug commit banner */}
         
         {/* Display recent commits if auto-commit is enabled */}
         {false && hasAutoCommit && (

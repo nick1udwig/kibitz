@@ -75,7 +75,7 @@ export function GitHubSyncToggle({ className = '' }: GitHubSyncToggleProps) {
           projectId: activeProjectId,
           projectName: activeProject.name,
           enabled,
-          syncBranches: ['main', 'step-*'],
+          syncBranches: ['main', 'conv-*'],
           authentication: {
             type: 'token',
             configured: enabled
@@ -126,7 +126,9 @@ export function GitHubSyncToggle({ className = '' }: GitHubSyncToggleProps) {
         },
         body: JSON.stringify({
           projectId: activeProjectId,
-          immediate: true
+          immediate: true,
+          // Force allows a manual sync even if server hasn't yet persisted enabled flag
+          force: true
         }),
       });
 

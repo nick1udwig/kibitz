@@ -40,6 +40,12 @@ GITHUB_USERNAME=
 GIT_USER_NAME=
 GIT_USER_EMAIL=
 
+# Encrypted server-config persistence
+# Strong secret to encrypt kibitz/data/server-config.json.enc on the server
+KIBITZ_CONFIG_SECRET=
+# Optional override for where the encrypted file lives
+# KIBITZ_SERVER_CONFIG_PATH=/app/data/server-config.json.enc
+
 # Development Configuration
 NODE_ENV=production
 DEBUG=false

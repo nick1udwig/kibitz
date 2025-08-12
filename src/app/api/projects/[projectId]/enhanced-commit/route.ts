@@ -5,20 +5,12 @@ import fs from 'fs';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import * as Pjm from '../../../../../../project-json-manager.js';
-import { getProjectsBaseDir } from '../../../../../lib/pathConfig';
+import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../../lib/server/projectPaths';
 
-const BASE_DIR = getProjectsBaseDir();
+const BASE_DIR = projectsBaseDir();
 
 function findProjectPath(projectId: string): string | null {
-  try {
-    const entries = fs.readdirSync(BASE_DIR, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith(`${projectId}_`)) {
-        return path.join(BASE_DIR, entry.name);
-      }
-    }
-  } catch {}
-  return null;
+  return findExistingProjectPath(projectId);
 }
 
 export async function POST(

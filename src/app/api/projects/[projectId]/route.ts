@@ -11,9 +11,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
-import { getProjectsBaseDir } from '../../../../lib/pathConfig';
+import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../lib/server/projectPaths';
 
-const BASE_PROJECTS_DIR = getProjectsBaseDir();
+const BASE_PROJECTS_DIR = projectsBaseDir();
 
 export async function GET(
   request: NextRequest,
@@ -34,7 +34,7 @@ export async function GET(
     console.log(`📋 API: Fetching project data for projectId: ${projectId}`);
     
     // Find project directory
-    const projectPath = await findProjectPath(projectId);
+    const projectPath = findExistingProjectPath(projectId);
     if (!projectPath) {
       console.error(`❌ API: Project directory not found for projectId: ${projectId}`);
       return NextResponse.json(
@@ -52,20 +52,40 @@ export async function GET(
     // 🚫 REMOVED: No more hardcoded JSON creation!
     // If JSON files don't exist, return error to force real git data extraction
     if (!fs.existsSync(jsonFilePath)) {
-      console.warn(`⚠️ API: JSON file missing for ${projectId} - project needs initialization`);
-      console.warn(`⚠️ API: Expected location: ${jsonFilePath}`);
-      
-      return NextResponse.json(
-        { 
-          error: `Project ${projectId} data not initialized`,
-          projectId,
-          projectPath,
-          expectedJsonPath: jsonFilePath,
-          needsInitialization: true,
-          message: 'Run git operations to generate project data'
-        },
-        { status: 404 }
-      );
+      console.warn(`⚠️ API: JSON file missing for ${projectId} - attempting on-demand generation`);
+      try {
+        // Attempt on-demand generation of project JSON
+        const res = await fetch(`${request.nextUrl.origin}/api/projects/${projectId}/generate`, { method: 'POST' });
+        if (res.ok && fs.existsSync(jsonFilePath)) {
+          console.log(`✅ API: Generated JSON on demand for ${projectId}`);
+        } else {
+          console.warn(`⚠️ API: On-demand generation failed or file still missing`);
+          return NextResponse.json(
+            { 
+              error: `Project ${projectId} data not initialized`,
+              projectId,
+              projectPath,
+              expectedJsonPath: jsonFilePath,
+              needsInitialization: true,
+              message: 'Run git operations to generate project data'
+            },
+            { status: 404 }
+          );
+        }
+      } catch (e) {
+        console.warn(`⚠️ API: On-demand generation threw, returning 404`, e);
+        return NextResponse.json(
+          { 
+            error: `Project ${projectId} data not initialized`,
+            projectId,
+            projectPath,
+            expectedJsonPath: jsonFilePath,
+            needsInitialization: true,
+            message: 'Run git operations to generate project data'
+          },
+          { status: 404 }
+        );
+      }
     }
     
     // Read existing JSON files
@@ -113,7 +133,7 @@ async function findProjectPath(projectId: string): Promise<string | null> {
     const entries = fs.readdirSync(BASE_PROJECTS_DIR);
     
     for (const entry of entries) {
-      if (entry.startsWith(`${projectId}_`) && entry.includes('project')) {
+      if (entry.startsWith(`${projectId}_`)) {
         const fullPath = path.join(BASE_PROJECTS_DIR, entry);
         const stats = fs.statSync(fullPath);
         

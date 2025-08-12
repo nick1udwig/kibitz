@@ -24,7 +24,7 @@ import { ConversationCheckpointManager } from '@/components/CheckpointManager/Co
 import { GitHubSyncToggle } from '../../GitHubSyncToggle';
 
 export const AdminView = () => {
-  const { projects, activeProjectId, updateProjectSettings, servers, apiKeys, saveApiKeysToServer } = useStore();
+  const { projects, activeProjectId, updateProjectSettings, servers, apiKeys, saveApiKeysToServer, updateApiKeys } = useStore();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
   const [showSavePromptDialog, setShowSavePromptDialog] = useState(false);
@@ -240,6 +240,37 @@ export const AdminView = () => {
               />
             </div>
 
+            {/* GitHub Credentials (masked) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">GitHub Token</label>
+                <Input
+                  type="password"
+                  value={apiKeys.githubToken ? '••••••••' + (apiKeys.githubToken?.slice(-4) || '') : ''}
+                  onChange={(e) => updateApiKeys({ githubToken: e.target.value })}
+                  placeholder="Paste your GitHub token"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">GitHub Username</label>
+                <Input
+                  type="text"
+                  value={apiKeys.githubUsername || ''}
+                  onChange={(e) => updateApiKeys({ githubUsername: e.target.value })}
+                  placeholder="your-github-username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Git Email (for commits)</label>
+                <Input
+                  type="email"
+                  value={apiKeys.githubEmail || ''}
+                  onChange={(e) => updateApiKeys({ githubEmail: e.target.value })}
+                  placeholder="you@company.com"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">
                 Model
@@ -421,6 +452,28 @@ export const AdminView = () => {
                       messageWindowSize: value
                     });
                   }
+                }}
+                min="1"
+                className="w-32"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Minimum Files Before Auto Commit/Push
+              </label>
+              <p className="text-sm text-muted-foreground mb-2">
+                Automatic commit and push will only run when at least this many files are changed. Manual commits are unaffected.
+              </p>
+              <Input
+                type="number"
+                value={activeProject.settings.minFilesForAutoCommitPush ?? 2}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value);
+                  const clamped = isNaN(value) ? 1 : Math.max(1, value);
+                  handleSettingsChange({
+                    minFilesForAutoCommitPush: clamped
+                  });
                 }}
                 min="1"
                 className="w-32"

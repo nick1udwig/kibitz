@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllProjectsWithGitHub } from '../../../../../project-json-manager.js';
+import { hasPersistedAuth, resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +14,13 @@ export async function GET(request: NextRequest) {
     
     console.log(`Found ${totalProjects} total projects, ${enabledProjects.length} with GitHub enabled`);
     
+    const auth = resolveServerAuthFromAnySource();
+    const health = {
+      enabled: enabledProjects.length > 0,
+      authenticated: Boolean(auth.githubToken && (auth.source === 'env' || auth.source === 'vault' || auth.source === 'persisted')),
+      source: auth.source,
+    };
+
     return NextResponse.json({
       success: true,
       status: 'GitHub Sync API is working',
@@ -21,6 +29,7 @@ export async function GET(request: NextRequest) {
         withGitHub: enabledProjects.length,
         enabled: enabledProjects.length
       },
+      health,
       enabledProjects: enabledProjects.map(p => ({
         projectId: (p as any).projectId,
         projectName: (p as any).projectName,

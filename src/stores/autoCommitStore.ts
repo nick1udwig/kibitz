@@ -4,7 +4,7 @@ import { useCheckpointStore } from './checkpointStore';
 // 🔓 RESTORED: Branch creation imports for automatic branching integration
 import { useBranchStore } from './branchStore';
 // import { shouldCreateCheckpoint, createAutoCheckpoint } from '../lib/checkpointRollbackService';
-import { pushToRemote, autoSetupGitHub, executeGitCommand } from '../lib/gitService';
+import { executeGitCommand } from '../lib/versionControl/git';
 import { persistentStorage } from '../lib/persistentStorageService';
 import { getProjectPath } from '../lib/projectPathService';
 import { Checkpoint } from '../types/Checkpoint';
@@ -14,6 +14,8 @@ import {
   updateConversationJSON,
   type ConversationBranchInfo 
 } from '../lib/conversationBranchService';
+import { prepareCommit, executeCommit, pushCurrentBranch } from '../lib/versionControl';
+import { isPushOrchestratorEnabled } from '../lib/featureFlags';
 
 export interface AutoCommitConfig {
   enabled: boolean;
@@ -204,31 +206,42 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
       } catch {}
     }
 
-    // Decide up front if we should create a step-* branch for this commit
+    // Decide up front if we should create a conv-<id>-step-N branch for this commit
     let targetBranchName: string | null = null;
-    if (config.branchManagement?.enabled) {
+    if (config.branchManagement?.enabled && context.conversationId) {
       const pendingFileCount = pendingChanges.size;
-      const threshold = config.branchManagement?.fileThreshold || 2;
+      // Respect project UI-configured minimum if higher
+      let threshold = config.branchManagement?.fileThreshold || 2;
+      try {
+        const rootStore = useStore.getState();
+        const activeProject = rootStore.projects.find(p => p.id === context.projectId);
+        const uiMin = activeProject?.settings?.minFilesForAutoCommitPush;
+        if (typeof uiMin === 'number' && uiMin > threshold) threshold = uiMin;
+      } catch {}
       if (pendingFileCount >= threshold) {
         try {
-          // Determine next step number by scanning existing step-* branches
+          const convPrefix = `conv-${context.conversationId}-step-`;
+          // Determine next step number by scanning existing conv-* branches for this conversation
           const listRes = await executeGitCommand(
             mcpServerId,
             'git for-each-ref refs/heads --format="%(refname:short)"',
             context.projectPath,
             rootStore.executeTool
           );
-          let nextStep = 1;
+          let highestStep = 0;
           if (listRes.success) {
             const names = listRes.output.split('\n').map(s => s.trim()).filter(Boolean);
             const stepNums = names
-              .map(n => (n.match(/^step-(\d+)$/)?.[1]))
+              .filter(n => n.startsWith(convPrefix))
+              .map(n => (n.match(/step-(\d+)$/)?.[1]))
               .filter(Boolean)
               .map(n => parseInt(n as string, 10));
-            if (stepNums.length > 0) nextStep = Math.max(...stepNums) + 1;
+            if (stepNums.length > 0) highestStep = Math.max(...stepNums);
           }
-          const baseBranch = nextStep === 1 ? 'main' : `step-${nextStep - 1}`;
-          // Checkout base branch (fallback to main if missing and step>1)
+          const baseBranch = highestStep === 0 
+            ? 'main' 
+            : `${convPrefix}${highestStep}`;
+          // Checkout base branch; if missing and this is not the first step, fall back to main
           let baseOk = true;
           const coBase = await executeGitCommand(
             mcpServerId,
@@ -250,7 +263,8 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
             }
           }
           if (baseOk) {
-            targetBranchName = `step-${nextStep}`;
+            const nextStep = highestStep + 1;
+            targetBranchName = `${convPrefix}${nextStep}`;
             await executeGitCommand(
               mcpServerId,
               `git checkout -b ${targetBranchName}`,
@@ -262,17 +276,32 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
       }
     }
 
-    // Local commit (on target step branch if created, otherwise current branch)
-    const commitMessage = generateCommitMessage(context, config, targetBranchName);
-    const commitHash = await checkpointStore.createGitCommit(
-      context.projectPath,
-      commitMessage,
-      mcpServerId,
-      rootStore.executeTool
-    );
-    if (!commitHash || commitHash === 'no_changes' || commitHash === 'failed' || commitHash.startsWith('error:')) {
-      return { commitHash: null, branchName: targetBranchName, commitMessage };
+    // Prepare commit (stage + diff + LLM message) and execute
+    const prep = await prepareCommit({
+      projectPath: context.projectPath,
+      serverId: mcpServerId,
+      executeTool: rootStore.executeTool,
+      projectSettings: activeProject.settings,
+      branchName: targetBranchName,
+      conversationId: context.conversationId || null
+    });
+    if (!prep.success) {
+      return { commitHash: null, branchName: targetBranchName, commitMessage: '' };
     }
+    const exec = await executeCommit({
+      projectPath: context.projectPath,
+      serverId: mcpServerId,
+      executeTool: rootStore.executeTool,
+      projectSettings: activeProject.settings,
+      branchName: targetBranchName,
+      conversationId: context.conversationId || null
+    }, prep.commitMessage);
+    if (!exec.success || !exec.commitHash || exec.commitHash === 'failed' || exec.commitHash.startsWith('error:')) {
+      console.warn('❌ createLocalCommit: commit failed or returned error:', exec.commitHash);
+      return { commitHash: null, branchName: targetBranchName, commitMessage: prep.commitMessage };
+    }
+    const commitHash = exec.commitHash;
+    const commitMessage = prep.commitMessage;
 
     // Ensure we report the actual current branch if Git auto-switched
     try {
@@ -310,8 +339,9 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
           originalMessage: payload.commitMessage,
           projectSettings: activeProject.settings,
           serverId: mcpServerId,
-          executeTool: rootStore.executeTool
-        });
+          executeTool: rootStore.executeTool,
+          projectId: context.projectId
+        }, { enableLLMGeneration: false });
       } catch (err) {
         console.warn('⚠️ enqueueEnhanceAndSync: failed to enqueue enhanced processing:', err);
       }
@@ -441,8 +471,22 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
         break;
     }
     
-    // Check minimum changes
-    console.log(`🔍 Checking minimum changes: ${pendingChanges.size} >= ${config.conditions.minimumChanges}`);
+    // Authoritative minimum files check from project settings if available
+    try {
+      const rootStore = useStore.getState();
+      const activeProject = rootStore.projects.find(p => p.id === context.projectId);
+      const uiMin = activeProject?.settings?.minFilesForAutoCommitPush;
+      if (typeof uiMin === 'number' && uiMin > 0) {
+        console.log(`🔍 Checking UI minFilesForAutoCommitPush: ${pendingChanges.size} >= ${uiMin}`);
+        if (pendingChanges.size < uiMin) {
+          console.log('❌ shouldAutoCommit: below UI-configured min files threshold');
+          return false;
+        }
+      }
+    } catch {}
+
+    // Legacy minimum changes from auto-commit config (kept for compatibility)
+    console.log(`🔍 Checking minimum changes (legacy): ${pendingChanges.size} >= ${config.conditions.minimumChanges}`);
     if (pendingChanges.size < config.conditions.minimumChanges) {
       console.log('❌ shouldAutoCommit: not enough pending changes');
       logDebug('warn', 'auto-commit', 'Not enough pending changes for auto-commit', {
@@ -588,6 +632,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
           return false;
         }
         console.log(`✅ local commit ${commitHash.slice(0,7)} on ${branchName || 'main'}`);
+        // Schedule enhance+sync. If orchestrator is disabled, we may still do a best-effort push below.
         get().enqueueEnhanceAndSync(context, { commitHash, branchName, commitMessage });
 
         // 💾 NEW: Save auto-commit to persistent storage
@@ -655,7 +700,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
           }
         }
         
-        // 🚀 AUTO-TRIGGER GITHUB SYNC AFTER SUCCESSFUL COMMIT
+        // 🚀 AUTO-TRIGGER GITHUB SYNC AFTER SUCCESSFUL COMMIT (delay to avoid pushing empty repos)
         setTimeout(async () => {
           try {
             console.log('🔄 Starting GitHub sync process after auto-commit...');
@@ -672,8 +717,8 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
             if (generateResponse.ok) {
               console.log('✅ Project JSON file generated successfully');
               
-              // Step 2: Wait a bit more for file system to sync
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              // Step 2: Wait a bit more for file system to sync and to avoid race with first commit
+              await new Promise(resolve => setTimeout(resolve, 2000));
 
               // Step 2.5: Ensure GitHub sync is enabled before triggering
               try {
@@ -708,16 +753,18 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
               }
 
               // Step 3: Now trigger GitHub sync with JSON file guaranteed to exist
-              console.log('🚀 Triggering GitHub sync with JSON file ready...');
+              console.log('🚀 Triggering server push orchestrator with JSON file ready...');
+              const orchestratorEnabled = isPushOrchestratorEnabled();
               const syncResponse = await fetch('/api/github-sync/trigger', {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   projectId: context.projectId,
                   immediate: true,
-                  force: true
+                  force: true,
+                  // Carry commit context for dedupe and drift checks
+                  branchName: branchName || undefined,
+                  commitHash: commitHash || undefined
                 }),
               });
               
@@ -727,11 +774,9 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
                 if (result.remoteUrl) {
                   console.log('🔗 Pushed to repository:', result.remoteUrl);
                 }
-
-                // 👉 Reordered: Only push after successful sync/remote ensure
-                if (config.autoPushToRemote) {
+                // When orchestrator is enabled, do not push client-side. Otherwise, fallback to client push.
+                if (!orchestratorEnabled && config.autoPushToRemote) {
                   try {
-                    // Prefer pushing only the current branch for performance
                     const currentBranchRes = await executeGitCommand(
                       mcpServerId,
                       'git branch --show-current',
@@ -743,7 +788,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
                       : 'main';
 
                     const { pushToRemote, pushAllBranches } = await import('../lib/gitService');
-                    console.log(`📤 AUTO-PUSH AFTER SYNC: Pushing current branch '${currentBranch}'...`);
+                    console.log(`📤 AUTO-PUSH AFTER SYNC (fallback): Pushing current branch '${currentBranch}'...`);
                     let pushResult = await pushToRemote(
                       context.projectPath,
                       mcpServerId,
@@ -752,11 +797,10 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
                     );
 
                     if (!pushResult.success) {
-                      console.warn('⚠️ AUTO-PUSH AFTER SYNC: Branch push failed:', pushResult.error || pushResult.output);
-                      // Fallback once to batch push
+                      console.warn('⚠️ AUTO-PUSH AFTER SYNC (fallback): Branch push failed:', pushResult.error || pushResult.output);
                       try {
                         await new Promise(r => setTimeout(r, 800));
-                        console.log('🔁 AUTO-PUSH AFTER SYNC: Falling back to pushAllBranches...');
+                        console.log('🔁 AUTO-PUSH AFTER SYNC (fallback): Falling back to pushAllBranches...');
                         const batchResult = await pushAllBranches(
                           context.projectPath,
                           mcpServerId,
@@ -764,18 +808,18 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
                         );
                         pushResult = { success: batchResult.success, output: batchResult.output, error: batchResult.error } as any;
                       } catch (retryErr) {
-                        console.warn('⚠️ AUTO-PUSH AFTER SYNC: Batch push error:', retryErr);
+                        console.warn('⚠️ AUTO-PUSH AFTER SYNC (fallback): Batch push error:', retryErr);
                       }
                     }
 
                     if (pushResult.success) {
-                      console.log('✅ AUTO-PUSH AFTER SYNC: Push successful');
+                      console.log('✅ AUTO-PUSH AFTER SYNC (fallback): Push successful');
                       set({ lastPushTimestamp: Date.now() });
                     } else {
-                      console.warn('⚠️ AUTO-PUSH AFTER SYNC: Push ultimately failed:', pushResult.error || pushResult.output);
+                      console.warn('⚠️ AUTO-PUSH AFTER SYNC (fallback): Push ultimately failed:', pushResult.error || pushResult.output);
                     }
                   } catch (pushErr) {
-                    console.warn('⚠️ AUTO-PUSH AFTER SYNC: Exception pushing:', pushErr);
+                    console.warn('⚠️ AUTO-PUSH AFTER SYNC (fallback): Exception pushing:', pushErr);
                   }
                 }
 
@@ -786,7 +830,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
                 } catch {}
               } else {
                 const errorText = await syncResponse.text();
-                console.log('⚠️ GitHub sync failed:', errorText);
+              console.log('⚠️ GitHub sync failed:', errorText);
               }
               
             } else {
@@ -849,7 +893,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
           console.warn('⚠️ executeAutoCommit: Failed to dispatch auto-commit event:', eventError);
         }
         
-        // Auto-push now happens inside the sync completion block above
+        // Auto-push handled by server orchestrator (or fallback client push above)
         
         console.log(`⏱️ executeAutoCommit total time: ${Date.now() - __t0}ms for project ${context.projectId}`);
         return true;

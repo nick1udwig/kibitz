@@ -17,6 +17,10 @@ export interface ProjectSettings extends LegacyProviderSettings {
   provider?: LegacyProviderType;  // Optional for backward compatibility
   providerConfig?: ProviderConfig;  // New provider configuration
   model: string;
+  // Commit-specific LLM configuration (optional). When provided, these override provider/model
+  // for commit message generation only. If missing, the general provider/model are used.
+  commitProvider?: LegacyProviderType;
+  commitModel?: string;
   groqApiKey?: string;  // API key for GROQ services
   systemPrompt: string;
   savedPrompts?: SavedPrompt[];  // Collection of saved system prompts
@@ -24,6 +28,9 @@ export interface ProjectSettings extends LegacyProviderSettings {
   elideToolResults: boolean;
   messageWindowSize: number;  // Number of messages to show in truncated view
   enableGitHub: boolean;  // Enable GitHub integration (default: false)
+  // Authoritative threshold: minimum number of files that must change before
+  // any automatic commit/push logic runs. Manual commits are not affected.
+  minFilesForAutoCommitPush?: number;
 }
 
 // 🌟 NEW: Workspace status enumeration for conversation workspaces

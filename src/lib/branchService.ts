@@ -810,36 +810,9 @@ export const autoCreateBranchIfNeeded = async (
       }
     }
     
-    if (!existingAutoBranch) {
-      // Create new auto branch only if no existing one found
-      const now = new Date();
-      const timestamp = now.toISOString()
-        .slice(0, 19)
-        .replace(/[-:]/g, '')
-        .replace('T', '-');
-      
-      branchName = `auto/${timestamp}`;
-      
-      console.log(`🌿 autoCreateBranchIfNeeded: Creating NEW auto branch ${branchName} for ${changeResult.filesChanged} files changed`);
-      
-      // Create the new branch
-      const createBranchResult = await executeGitCommand(
-        serverId,
-        `git checkout -b ${branchName}`,
-        projectPath,
-        executeTool
-      );
-      
-      if (!createBranchResult.success) {
-        console.error('❌ autoCreateBranchIfNeeded: Failed to create branch:', createBranchResult.error);
-        return {
-          branchCreated: false,
-          reason: `Failed to create branch: ${createBranchResult.error}`
-        };
-      }
-      
-      branchCreated = true;
-    }
+    // DO NOT create new auto branches; keep current branch
+    branchName = currentBranch;
+    branchCreated = false;
     
     // Get current commit hash
     const commitHashResult = await executeGitCommand(
@@ -864,7 +837,7 @@ export const autoCreateBranchIfNeeded = async (
       isActive: true
     };
     
-    console.log(`✅ autoCreateBranchIfNeeded: Successfully created branch: ${branchName}`);
+    console.log(`✅ autoCreateBranchIfNeeded: Using current branch: ${branchName}`);
     
     // 🚀 IMMEDIATE JSON GENERATION - Create .kibitz/api/project.json at the END
     try {

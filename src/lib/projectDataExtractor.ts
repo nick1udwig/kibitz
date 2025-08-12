@@ -193,23 +193,17 @@ export class ProjectDataExtractor {
     const cached = ProjectDataExtractor.threadCache.get(key);
     if (cached) return cached;
 
-    // Respect global init cache to avoid duplicate Initialize
+    // Always acquire the real thread id via Initialize exactly once per key
     const g: any = globalThis as any;
-    if (g.__kibitzInitCache && g.__kibitzInitCache.has(key)) {
-      const fallback = 'git-operations';
-      ProjectDataExtractor.threadCache.set(key, fallback);
-      return fallback;
-    }
-
     if (ProjectDataExtractor.initGuard.has(key)) {
-      // Another call is initializing; use fallback for now
+      // Another call is initializing; provide a stable fallback until cached
       return 'git-operations';
     }
     ProjectDataExtractor.initGuard.add(key);
 
     try {
       const tentative = 'git-operations';
-      console.log(`🔧 ProjectDataExtractor: Initializing MCP thread once for ${key}`);
+      console.log(`🔧 ProjectDataExtractor: Initializing MCP thread for ${key}`);
       const result = await executeTool(mcpServerId, 'Initialize', {
         type: 'first_call',
         any_workspace_path: projectPath,
@@ -328,7 +322,7 @@ export class ProjectDataExtractor {
         linesAdded: commitInfo.linesAdded,
         linesRemoved: commitInfo.linesRemoved,
         isMainBranch: branchName === 'main' || branchName === 'master',
-        tags: branchName.startsWith('auto/') ? ['auto'] : ['manual']
+        tags: ['manual']
       });
     }
 

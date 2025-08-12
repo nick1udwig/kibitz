@@ -5,7 +5,7 @@ import { loadState, saveState, loadMcpServers, saveMcpServers, loadWorkspaceMapp
 import { WsTool } from '../components/LlmChat/types/toolTypes';
 import { autoInitializeGitForProject } from '../lib/gitAutoInitService';
 import { ensureProjectDirectory, getProjectPath } from '../lib/projectPathService';
-import { recordSystemError, shouldThrottleOperation } from '../lib/systemDiagnostics';
+import { recordSystemError, shouldThrottleOperation } from '@/lib/systemDiagnostics';
 import { createWorkspaceMapping } from '../lib/conversationWorkspaceService';
 import { initializeAutoCommitAgent, stopAutoCommitAgent, getAutoCommitAgent } from '../lib/autoCommitAgent';
 
@@ -25,6 +25,32 @@ export const getDefaultModelForProvider = (provider?: string): string => {
   }
 };
 
+// Small, fast commit-model defaults per provider (used only to seed settings)
+const getSmallCommitModelForProvider = (provider?: string): string => {
+  switch (provider) {
+    case 'openai':
+      return 'gpt-4o-mini';
+    case 'openrouter':
+      return 'openai/gpt-4o-mini';
+    case 'anthropic':
+    default:
+      return 'claude-3-5-haiku-20241022';
+  }
+};
+
+// Ensure commit-specific settings exist without overriding explicit user choices
+const ensureCommitDefaults = (settings: ProjectSettings): ProjectSettings => {
+  const commitProvider = settings.commitProvider || settings.provider;
+  const commitModel = settings.commitModel && settings.commitModel.trim()
+    ? settings.commitModel
+    : getSmallCommitModelForProvider(commitProvider);
+  return {
+    ...settings,
+    commitProvider,
+    commitModel
+  };
+};
+
 const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
@@ -36,11 +62,16 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   },
   provider: 'anthropic' as const,  // ensure TypeScript treats this as a literal type
   model: DEFAULT_MODEL,
+  // Default commit settings use the small/fast model for the current provider
+  commitProvider: 'anthropic',
+  commitModel: getSmallCommitModelForProvider('anthropic'),
   systemPrompt: '',
   elideToolResults: false,
   mcpServerIds: [],
-  messageWindowSize: 30,  // default number of messages in truncated view
+  messageWindowSize: 30,  // legacy 
   enableGitHub: true,  // GitHub integration enabled by default
+  // Default threshold: require at least 2 changed files before auto commit/push
+  minFilesForAutoCommitPush: 2,
   savedPrompts: [
     {
       id: 'kibitz',
@@ -204,6 +235,7 @@ interface RootState extends ProjectState, McpState {
   apiKeys: Record<string, string>;
   hasLoadedApiKeysFromServer: boolean;
   saveApiKeysToServer: (keys: Record<string, string>) => void;
+  updateApiKeys: (keys: Record<string, string>) => void;
   initialize: () => Promise<void>;
   // Project methods
   createProject: (name: string, settings?: Partial<ProjectSettings>) => void;
@@ -252,7 +284,7 @@ export const useStore = create<RootState>((set, get) => {
   const initializationThrottleRef = new Map<string, number>();
   const INITIALIZATION_THROTTLE_MS = 1000; // Reduced from 5000ms to 1000ms for better responsiveness
 
-  // Helper function to save API keys to server
+  // Helper function to save API keys to server (masked persistence channel)
   const saveApiKeysToServer = (keys: Record<string, string>) => {
     console.log(`saving ${JSON.stringify({ keys })}`);
     const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
@@ -582,6 +614,14 @@ export const useStore = create<RootState>((set, get) => {
     apiKeys: {},
     hasLoadedApiKeysFromServer: false,
     saveApiKeysToServer,
+    updateApiKeys: (keys: Record<string, string>) => {
+      set(state => {
+        const merged = { ...state.apiKeys, ...keys };
+        // Immediately persist to server so secrets don't linger only in memory
+        saveApiKeysToServer(merged);
+        return { apiKeys: merged } as Partial<RootState> as any;
+      });
+    },
 
     // Initialization
     initialize: async () => {
@@ -666,9 +706,12 @@ export const useStore = create<RootState>((set, get) => {
         const hasProjects = state.projects.length > 0;
         console.log('Loading projects from IndexedDB:', JSON.stringify(state));
 
-        if (hasProjects) {
+      if (hasProjects) {
           set({
-            projects: state.projects,
+            projects: state.projects.map(p => ({
+              ...p,
+              settings: ensureCommitDefaults(p.settings)
+            })),
             activeProjectId: state.activeProjectId,
             activeConversationId: state.activeProjectId && state.activeConversationId
               ? state.activeConversationId
@@ -752,6 +795,8 @@ export const useStore = create<RootState>((set, get) => {
       const defaultSettings: ProjectSettings = {
         provider: 'anthropic' as const,
         model: 'claude-3-5-sonnet-20241022',
+        commitProvider: 'anthropic',
+        commitModel: getSmallCommitModelForProvider('anthropic'),
         systemPrompt: '',
         mcpServerIds: [],
         elideToolResults: false,
@@ -759,7 +804,7 @@ export const useStore = create<RootState>((set, get) => {
         enableGitHub: true  // Default to true - GitHub sync enabled by default
       };
 
-      const mergedSettings = { ...defaultSettings, ...settings };
+      const mergedSettings = ensureCommitDefaults({ ...defaultSettings, ...settings } as ProjectSettings);
 
       const newProject: Project = {
         id: projectId,
@@ -863,8 +908,8 @@ export const useStore = create<RootState>((set, get) => {
                           projectId,
                           projectName: name,
                           enabled: true,
-                          // Include step-* by default; keep others during transition
-                          syncBranches: ['main', 'step-*', 'auto/*', 'conv-*'],
+                          // Only main and conversation step branches
+                          syncBranches: ['main', 'conv-*'],
                           authentication: { type: 'token', configured: true }
                         })
                       }).then(() => {
@@ -925,9 +970,11 @@ export const useStore = create<RootState>((set, get) => {
       
       const projectId = generateId();
       
-             const defaultSettings: ProjectSettings = {
+       const defaultSettings: ProjectSettings = {
          provider: 'anthropic' as const,
          model: 'claude-3-5-sonnet-20241022',
+         commitProvider: 'anthropic',
+         commitModel: getSmallCommitModelForProvider('anthropic'),
          systemPrompt: '',
          mcpServerIds: [mcpServerId],
          elideToolResults: false,
@@ -1005,17 +1052,37 @@ export const useStore = create<RootState>((set, get) => {
               });
             }
 
-            return {
-              ...p,
-              settings: updates.settings
-                ? {
+            // Merge settings and ensure commit defaults remain populated (without overriding explicit values)
+            const merged = updates.settings
+              ? {
                   ...p.settings,
                   ...updates.settings,
                   mcpServerIds: updates.settings.mcpServerIds !== undefined
                     ? updates.settings.mcpServerIds
                     : p.settings.mcpServerIds
                 }
-                : p.settings,
+              : p.settings;
+
+            // If provider changed and commitModel not explicitly provided in updates, preserve existing commitModel if present,
+            // otherwise seed with the small model for the (new) provider.
+            const providerChanged = !!updates.settings?.provider && updates.settings?.provider !== p.settings.provider;
+            let nextSettings = merged as ProjectSettings;
+            if (providerChanged && !updates.settings?.commitModel) {
+              nextSettings = {
+                ...nextSettings,
+                commitProvider: nextSettings.commitProvider || nextSettings.provider,
+                commitModel: nextSettings.commitModel && nextSettings.commitModel.trim()
+                  ? nextSettings.commitModel
+                  : getSmallCommitModelForProvider(updates.settings!.provider)
+              } as ProjectSettings;
+            }
+
+            // Ensure commit defaults exist generally
+            nextSettings = ensureCommitDefaults(nextSettings);
+
+            return {
+              ...p,
+              settings: nextSettings,
               conversations: updatedConversations,
               updatedAt: new Date()
             };
@@ -1657,17 +1724,17 @@ export const useStore = create<RootState>((set, get) => {
             console.log(`🔒 Redirected external path to project: ${filePath}`);
           }
           
-          // Handle subdirectory attempts - flatten to project root
+          // Handle subdirectory attempts - flatten to project root, except .kibitz/* metadata
           if (filePath.includes('/') && filePath.startsWith(projectPath)) {
             const pathParts = filePath.split('/');
             const fileName = pathParts.pop() || 'file.txt';
-            // 🚀 FIX: Allow .kibitz subdirectories for API files
-            const isKibitzApiFile = filePath.includes('.kibitz/api/');
-            if (pathParts.length > projectPath.split('/').length && !isKibitzApiFile) {
+            // ✅ Allow any files inside .kibitz/ (api, checkpoints, config, etc.)
+            const isKibitzFile = filePath.includes('/.kibitz/');
+            if (pathParts.length > projectPath.split('/').length && !isKibitzFile) {
               filePath = `${projectPath}/${fileName}`;
               console.log(`🔒 Flattened subdirectory path to: ${filePath}`);
-            } else if (isKibitzApiFile) {
-              console.log(`✅ Allowing .kibitz/api file: ${filePath}`);
+            } else if (isKibitzFile) {
+              console.log(`✅ Allowing .kibitz file: ${filePath}`);
             }
           }
           

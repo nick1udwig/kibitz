@@ -6,6 +6,7 @@
  */
 
 import { LocalPersistenceService, CheckpointMetadata } from './localPersistenceService';
+import { getProjectPath } from './projectPathService';
 import { Checkpoint } from '../types/Checkpoint';
 import { useStore } from '../stores/rootStore';
 
@@ -37,8 +38,8 @@ class PersistentStorageService {
       
       const mcpServerId = activeMcpServers[0].id;
       
-      // Get project path (assumes standard path format)
-      const projectPath = `/Users/test/gitrepo/projects/${checkpoint.projectId}_${project.name.toLowerCase().replace(/\s+/g, '-')}`;
+      // Resolve project path using shared config (no hardcoded base paths)
+      const projectPath = getProjectPath(checkpoint.projectId, project.name);
       
       // Convert Checkpoint to CheckpointMetadata format
       const checkpointMetadata: CheckpointMetadata = {
@@ -95,7 +96,7 @@ class PersistentStorageService {
       }
       
       const mcpServerId = activeMcpServers[0].id;
-      const projectPath = `/Users/test/gitrepo/projects/${projectId}_${project.name.toLowerCase().replace(/\s+/g, '-')}`;
+      const projectPath = getProjectPath(projectId, project.name);
       
       // Get checkpoints from LocalPersistenceService
       const checkpointMetadata = await LocalPersistenceService.getCheckpoints(
@@ -145,7 +146,7 @@ class PersistentStorageService {
       }
       
       const mcpServerId = activeMcpServers[0].id;
-      const projectPath = `/Users/test/gitrepo/projects/${projectId}_${project.name.toLowerCase().replace(/\s+/g, '-')}`;
+      const projectPath = getProjectPath(projectId, project.name);
       
       // Initialize using LocalPersistenceService
       const result = await LocalPersistenceService.initializeProjectPersistence(

@@ -23,8 +23,8 @@ export async function GET(
     const path = require('path');
     
     // Try to find the actual project directory
-    const { getProjectsBaseDir } = await import('../../../../../../lib/pathConfig');
-    const baseProjectsPath = getProjectsBaseDir();
+    const { projectsBaseDir, findProjectPath } = await import('../../../../../../lib/server/projectPaths');
+    const baseProjectsPath = projectsBaseDir();
     const possiblePaths = [
       path.join(baseProjectsPath, `${projectId}_new-project`),
       path.join(baseProjectsPath, `${projectId}_new-project`),
@@ -37,6 +37,10 @@ export async function GET(
         projectPath = testPath;
         break;
       }
+    }
+    if (!projectPath) {
+      const existing = findProjectPath(projectId);
+      if (existing) projectPath = existing;
     }
     
     if (!projectPath) {

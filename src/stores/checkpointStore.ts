@@ -10,10 +10,9 @@ import {
 } from '../lib/checkpointService';
 import { 
   initGitRepository, 
-  createGitHubRepository, 
-  createCommit,
-  executeGitCommand
+  createGitHubRepository
 } from '../lib/gitService';
+import { createCommit, executeGitCommand } from '../lib/versionControl/git';
 import { Project } from '../components/LlmChat/context/types';
 import { ensureProjectDirectory, getGitHubRepoName } from '../lib/projectPathService';
 
@@ -315,6 +314,15 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
     
     try {
       console.log(`Creating Git commit at ${projectPath} with message: "${message}"`);
+
+      // Pre-flight: ensure git user.name and user.email are configured somewhere
+      try {
+        const nameRes = await executeGitCommand(mcpServerId, 'git config --get user.name', projectPath, executeTool);
+        const emailRes = await executeGitCommand(mcpServerId, 'git config --get user.email', projectPath, executeTool);
+        if (!nameRes.success || !nameRes.output.trim() || !emailRes.success || !emailRes.output.trim()) {
+          console.warn('Git identity not configured. Configure GIT_USER_NAME and GIT_USER_EMAIL in .env/.env.local or set global git config.');
+        }
+      } catch {}
 
       // Check if this is a Git repository and initialize if needed (using cached git executor)
       try {

@@ -59,6 +59,10 @@ services:
       - GITHUB_USERNAME=malikrohail
       - GIT_USER_NAME=malikrohail
       - GIT_USER_EMAIL=malikrohail525@gmail.com
+      # Encrypted server-config persistence (optional in dev)
+      - KIBITZ_CONFIG_SECRET=${KIBITZ_CONFIG_SECRET:-}
+      - KIBITZ_SERVER_CONFIG_PATH=/app/kibitz/data/server-config.json.enc
+      - KIBITZ_DATA_DIR=/app/kibitz/data
       
     # No resource limits in development for flexibility
     

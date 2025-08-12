@@ -79,13 +79,16 @@ export class GitService {
         thread_id: `git-init-${this.projectId}`
       });
 
-      // Set up initial configuration with user info from environment
-      const gitUserName = process.env.GIT_USER_NAME || 'malikrohail';
-      const gitUserEmail = process.env.GIT_USER_EMAIL || 'malikrohail525@gmail.com';
-      await this.executeTool(this.mcpServerId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git config user.name "${gitUserName}" && git config user.email "${gitUserEmail}"`,
-        thread_id: `git-config-${this.projectId}`
-      });
+      // Do not set identity here; rely on repo/global git config or env-provided values
+      // Ensure HEAD references main without creating a commit
+      try {
+        await this.executeTool(this.mcpServerId, 'BashCommand', {
+          action_json: {
+            command: `cd "${this.projectPath}" && git symbolic-ref HEAD refs/heads/main || true`
+          },
+          thread_id: `git-head-main-${this.projectId}`
+        });
+      } catch {}
 
       console.log(`✅ GitService: Git repository initialized at ${this.projectPath}`);
       return true;
@@ -366,15 +369,10 @@ export class GitService {
         thread_id: `git-stage-${this.projectId}`
       });
 
-      // Always set Git user configuration before commit
+      // Do not assume identity; only set if explicit author provided
       let authorConfig = '';
       if (options.author) {
         authorConfig = `git config user.name "${options.author.name}" && git config user.email "${options.author.email}" && `;
-      } else {
-        // Use environment variables or defaults if no author provided
-        const gitUserName = process.env.GIT_USER_NAME || 'malikrohail';
-        const gitUserEmail = process.env.GIT_USER_EMAIL || 'malikrohail525@gmail.com';
-        authorConfig = `git config user.name "${gitUserName}" && git config user.email "${gitUserEmail}" && `;
       }
 
       // Commit changes

@@ -4,12 +4,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
-import { getProjectsBaseDir } from '../../../../../lib/pathConfig';
+import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../../lib/server/projectPaths';
 
-const BASE_PROJECTS_DIR = getProjectsBaseDir();
+const BASE_PROJECTS_DIR = projectsBaseDir();
 
 export async function POST(
   request: NextRequest,
@@ -29,7 +30,7 @@ export async function POST(
     console.log(`📋 Generate API: Creating JSON for project ${projectId}`);
     
     // Find project directory
-    const projectPath = await findProjectPath(projectId);
+    const projectPath = findExistingProjectPath(projectId);
     if (!projectPath) {
       return NextResponse.json(
         { error: `Project ${projectId} not found` },
@@ -255,7 +256,7 @@ export async function POST(
       author: mainBranch?.author || 'Unknown',
       date: mainBranch?.timestamp ? new Date(mainBranch.timestamp).toISOString() : new Date().toISOString(),
       message: mainBranch?.commitMessage || 'No commit message',
-      remote_url: `https://github.com/malikrohail/${projectId}-project.git`, // Set GitHub remote URL
+      remote_url: null,
       is_dirty: false,
       
       // Extended project metadata
@@ -271,10 +272,10 @@ export async function POST(
       // GitHub sync configuration (v2 schema)
       github: {
         enabled: gitHubEnabled, // Use the read GitHub enabled state
-        remoteUrl: `https://github.com/malikrohail/${projectId}-project.git`,
+        remoteUrl: null,
         syncInterval: 300000, // 5 minutes
-        // Include step-* by default (also keep legacy patterns during transition)
-        syncBranches: ['main', 'step-*', 'auto/*', 'conv-*'],
+         // Only main and conversation step branches
+         syncBranches: ['main', 'conv-*'],
         lastSync: null,
         syncStatus: 'idle',
         authentication: {

@@ -7,7 +7,7 @@
  * Enhanced with git diff generation and LLM-powered commit messages.
  */
 
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 import { generateCommitDiff, GitDiffResult } from './gitDiffService';
 import { generateLLMCommitMessage, CommitMessageRequest, CommitMessageResult } from './llmCommitMessageGenerator';
 import { ProjectSettings } from '../components/LlmChat/context/types';

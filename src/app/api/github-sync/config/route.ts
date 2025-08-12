@@ -1,29 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 import { updateGitHubConfig, readProjectJson } from '../../../../../project-json-manager.js';
 import path from 'path';
 import fs from 'fs';
-import { getProjectsBaseDir } from '../../../../lib/pathConfig';
+import { projectsBaseDir, findProjectPath as findExistingProjectPath, resolveOrCreateProjectPath, sanitizeProjectName } from '../../../../lib/server/projectPaths';
+import { resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
 
-const BASE_PROJECTS_DIR = getProjectsBaseDir();
+const BASE_PROJECTS_DIR = projectsBaseDir();
 
 /**
  * Find project directory by scanning for {projectId}_* pattern
  */
 async function findProjectPath(projectId: string): Promise<string | null> {
-  try {
-    const entries = fs.readdirSync(BASE_PROJECTS_DIR, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith(`${projectId}_`)) {
-        const fullPath = path.join(BASE_PROJECTS_DIR, entry.name);
-        console.log(`📁 Found project directory: ${fullPath}`);
-        return fullPath;
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error('❌ Error finding project path:', error);
-    return null;
-  }
+  return findExistingProjectPath(projectId);
 }
 
 export async function POST(request: NextRequest) {
@@ -43,11 +32,10 @@ export async function POST(request: NextRequest) {
     
     if (!projectPath) {
       // If the project directory hasn't been created yet, try to create it using provided projectName
-      const safeName = (projectName || 'project').toString().toLowerCase().replace(/[^a-z0-9\-_]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-      projectPath = path.join(BASE_PROJECTS_DIR, `${projectId}_${safeName}`);
       try {
-        fs.mkdirSync(projectPath, { recursive: true });
-        console.log(`📁 Created project directory for config at: ${projectPath}`);
+        const { path: createdPath } = resolveOrCreateProjectPath(projectId, sanitizeProjectName(projectName || 'project'));
+        projectPath = createdPath;
+        console.log(`📁 Prepared project directory for config at: ${projectPath}`);
       } catch (mkdirErr) {
         console.error(`❌ Failed to create project directory for ${projectId}:`, mkdirErr);
         return NextResponse.json(
@@ -57,18 +45,28 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Compute effective remoteUrl using provided value or derived from resolved username
+    let effectiveRemoteUrl = remoteUrl;
+    try {
+      const resolved = resolveServerAuthFromAnySource();
+      if (!effectiveRemoteUrl && resolved.githubUsername) {
+        const repoName = `${projectId}-project`;
+        effectiveRemoteUrl = `https://github.com/${resolved.githubUsername}/${repoName}.git`;
+      }
+    } catch {}
+
     console.log(`🔄 Updating GitHub config for project ${projectId}:`, {
       enabled,
-      remoteUrl,
+      remoteUrl: effectiveRemoteUrl,
       projectPath
     });
 
     // Update GitHub configuration (fast, I/O only)
     await updateGitHubConfig(projectPath, {
       enabled,
-      remoteUrl,
-      // Include step-* by default; keep legacy patterns temporarily
-      syncBranches: syncBranches || ['main', 'step-*', 'auto/*', 'conv-*'],
+      remoteUrl: effectiveRemoteUrl,
+      // Only main and conversation step branches
+      syncBranches: syncBranches || ['main', 'conv-*'],
       syncStatus: enabled ? 'idle' : 'disabled',
       authentication: authentication || {
         type: 'token',

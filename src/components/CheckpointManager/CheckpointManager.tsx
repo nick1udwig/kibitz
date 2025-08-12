@@ -337,16 +337,16 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
         // Automatically connect the local repository to GitHub
         try {
           console.log(`About to connect to GitHub remote with:`, {
-            projectPath,
-            repoName,
-            username: "malikrohail",
-            mcpServerId
+          projectPath,
+          repoName,
+          username: process.env.NEXT_PUBLIC_GITHUB_USERNAME || 'unset',
+          mcpServerId
           });
           
           const connectResult = await connectToGitHubRemote(
             projectPath,
             repoName,
-            "malikrohail", // You can make this dynamic by getting from git config
+            process.env.NEXT_PUBLIC_GITHUB_USERNAME || 'unknown-username',
             mcpServerId,
             executeTool
           );

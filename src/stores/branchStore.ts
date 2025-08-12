@@ -73,7 +73,7 @@ interface BranchState {
  * Default configuration
  */
 const DEFAULT_BRANCH_CONFIG: BranchConfig = {
-  autoCreateBranches: true,
+  autoCreateBranches: false,
   changeThreshold: 2, // Trigger at 2+ files changed (matches user requirement)
   enableSmartNaming: true,
   defaultBranchType: 'iteration',

@@ -8,7 +8,7 @@
  * - Survives app restarts by scanning project directories
  */
 
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 import { ensureProjectDirectory } from './projectPathService';
 import { getProjectsBaseDir } from './pathConfig';
 import { Checkpoint } from '../types/Checkpoint';

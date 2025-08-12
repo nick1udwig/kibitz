@@ -30,6 +30,7 @@ export interface EnhancedCommitRequest {
   projectSettings: ProjectSettings;
   serverId: string;
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>;
+  projectId?: string; // Ensure server route receives the correct project id for JSON updates
 }
 
 export interface EnhancedCommitResult {
@@ -93,9 +94,12 @@ export async function processEnhancedCommit(
       model: request.projectSettings?.model
     });
 
-    // Step 1: Create the enhanced commit with diff and LLM generation
-    console.log('📝 Step 1: Creating enhanced commit with diff and LLM generation...');
-    const commitResult = await createConversationCommitWithRetry(request, opts, warnings);
+    // Step 1: Create commit info
+    // If enableLLMGeneration is false, skip LLM generation and only collect metadata/diff
+    console.log('📝 Step 1: Creating enhanced commit metadata' + (opts.enableLLMGeneration ? ' with LLM generation...' : ' (metadata-only)...'));
+    const commitResult = opts.enableLLMGeneration
+      ? await createConversationCommitWithRetry(request, opts, warnings)
+      : await createCommitInfoWithoutLLM(request);
     console.log('📝 Step 1 result:', commitResult.success ? 'SUCCESS' : 'FAILED', commitResult.error || '');
     
     if (!commitResult.success) {
@@ -115,8 +119,8 @@ export async function processEnhancedCommit(
     
     // Calculate metrics
     const metrics = {
-      diffGenerationTime: commitResult.diffGenerationTime,
-      llmGenerationTime: commitResult.llmGenerationTime,
+      diffGenerationTime: (commitResult as any).diffGenerationTime,
+      llmGenerationTime: (commitResult as any).llmGenerationTime,
       totalProcessingTime: Date.now() - startTime,
       filesChanged: commitInfo.filesChanged.length,
       linesChanged: commitInfo.linesAdded + commitInfo.linesRemoved
@@ -133,7 +137,7 @@ export async function processEnhancedCommit(
     try {
       console.log('📝 Step 2: Sending enhanced commit data to server for JSON update...');
       // If API is not yet ready, buffer and retry to keep UI smooth
-      const projectId = (request as any).projectId || 'unknown';
+      const projectId = request.projectId || 'unknown';
       const apiUrl = `/api/projects/${encodeURIComponent(projectId)}/enhanced-commit`;
       const payload = { branchName: request.branchName, commitInfo };
 
@@ -199,27 +203,29 @@ export function enqueueEnhancedProcessing(
         return;
       }
 
-      // Opportunistic amend only if HEAD has not moved
-      try {
-        const { executeGitCommand } = await import('./gitService');
-        const headRes = await executeGitCommand(
-          request.serverId,
-          'git rev-parse HEAD',
-          request.projectPath,
-          request.executeTool
-        );
-        const headHash = headRes.success ? headRes.output.trim() : '';
-        const llmMsg = result.commitInfo?.llmGeneratedMessage;
-        if (llmMsg && headHash === request.commitHash) {
-          await executeGitCommand(
+      // Skip amend in metadata-only mode; only attempt amend if LLM generation was enabled
+      if ((options.enableLLMGeneration ?? DEFAULT_OPTIONS.enableLLMGeneration)) {
+        try {
+          const { executeGitCommand } = await import('./versionControl/git');
+          const headRes = await executeGitCommand(
             request.serverId,
-            `git commit --amend -m "${llmMsg.replace(/"/g, '\\"')}"`,
+            'git rev-parse HEAD',
             request.projectPath,
             request.executeTool
           );
+          const headHash = headRes.success ? headRes.output.trim() : '';
+          const llmMsg = result.commitInfo?.llmGeneratedMessage;
+          if (llmMsg && headHash === request.commitHash) {
+            await executeGitCommand(
+              request.serverId,
+              `git commit --amend -m "${llmMsg.replace(/"/g, '\\"')}"`,
+              request.projectPath,
+              request.executeTool
+            );
+          }
+        } catch (amendErr) {
+          console.warn('⚠️ enqueueEnhancedProcessing: Amend skipped/failed:', amendErr);
         }
-      } catch (amendErr) {
-        console.warn('⚠️ enqueueEnhancedProcessing: Amend skipped/failed:', amendErr);
       }
     } catch (err) {
       console.error('❌ enqueueEnhancedProcessing: Unexpected error:', err);
@@ -304,6 +310,65 @@ async function createConversationCommitWithRetry(
     success: false,
     error: `All ${options.maxRetries} attempts failed. Last error: ${lastError}`
   };
+}
+
+/**
+ * Create commit info without LLM generation (metadata and diff only)
+ */
+async function createCommitInfoWithoutLLM(
+  request: EnhancedCommitRequest
+): Promise<{
+  success: boolean;
+  commitInfo?: ConversationCommitInfo;
+  error?: string;
+}> {
+  try {
+    // Generate git diff for this commit
+    const diffResult = await generateCommitDiff(
+      request.projectPath,
+      request.commitHash,
+      request.serverId,
+      request.executeTool
+    );
+
+    // Get commit metadata
+    const commitMetaResult = await request.executeTool(
+      request.serverId,
+      'BashCommand',
+      {
+        action_json: {
+          command: `cd "${request.projectPath}" && git show --format="%H|%P|%an|%aI" --no-patch ${request.commitHash}`
+        },
+        thread_id: `commit-meta-${Date.now()}`
+      }
+    );
+
+    // Parse output from executeTool wrapper
+    const metaOutput = typeof commitMetaResult === 'string' ? commitMetaResult : String(commitMetaResult);
+    const parsed = metaOutput.includes('"content"')
+      ? (() => {
+          try { const j = JSON.parse(metaOutput); return j.content?.[0]?.text || ''; } catch { return metaOutput; }
+        })()
+      : metaOutput;
+    const line = parsed.trim().split('\n')[0];
+    const [hash, parentHash, author, timestamp] = line.split('|');
+
+    const commitInfo: ConversationCommitInfo = {
+      hash,
+      parentHash: parentHash || '',
+      message: request.originalMessage,
+      author,
+      timestamp,
+      diff: diffResult.success ? diffResult.diff : '',
+      filesChanged: diffResult.success ? diffResult.filesChanged : [],
+      linesAdded: diffResult.success ? diffResult.linesAdded : 0,
+      linesRemoved: diffResult.success ? diffResult.linesRemoved : 0,
+    } as ConversationCommitInfo;
+
+    return { success: true, commitInfo };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Unknown error' };
+  }
 }
 
 /**

@@ -7,7 +7,7 @@
  *
  * Optimized for production with dynamic path detection.
  */
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 import { getProjectPath } from './projectPathService';
 
 // 🚀 PREVENT REPETITIVE OPERATIONS - Cache initialization results

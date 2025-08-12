@@ -195,9 +195,20 @@ export async function createEnhancedSnapshot(
       }
     }
 
-    // Auto-push if enabled
+    // Auto-push if enabled: delegate to server orchestrator to avoid duplicates
     if (config.autoPushEnabled) {
-      await pushSnapshotToRemote(projectPath, branchName, serverId, executeTool);
+      try {
+        if (typeof fetch !== 'undefined') {
+          // Derive projectId from directory name
+          const dirName = projectPath.split('/').pop() || '';
+          const projectId = dirName.split('_')[0] || '';
+          await fetch('/api/github-sync/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId, immediate: true, force: true, branchName })
+          }).catch(() => {});
+        }
+      } catch {}
     }
 
     const snapshot: GitSnapshot = {

@@ -4,7 +4,7 @@
  * 🚀 DIRECT APPROACH: Uses git data and conversation data to create comprehensive metadata
  */
 
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 import { getProjectPath } from './projectPathService';
 
 interface ConversationMetadata {
@@ -103,7 +103,7 @@ async function captureGitSnapshot(
     );
     const branchesCreated = branchesResult.success 
       ? branchesResult.output.split('\n')
-          .filter(line => line.includes('auto/') || line.includes('conversation/'))
+          .filter(line => line.includes('conversation/'))
           .map(line => line.replace(/^\*?\s+/, '').trim())
       : [];
 

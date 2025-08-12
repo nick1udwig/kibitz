@@ -34,3 +34,12 @@ Notes
 - If gh CLI is available, it may be used; otherwise REST fallback is used. Errors will surface as HTTP 500 from the sync API instead of reporting success.
 
 
+Server credential persistence
+- Set `KIBITZ_CONFIG_SECRET` to enable AES-256-GCM encryption for persisted server credentials.
+- On save via `/api/keys`, the server writes `data/server-config.json.enc` (or `KIBITZ_SERVER_CONFIG_PATH`).
+- On boot, the server restores credentials using precedence: environment > in-memory vault > persisted file.
+- Optional overrides:
+  - `KIBITZ_SERVER_CONFIG_PATH`: absolute path to encrypted file
+  - `KIBITZ_DATA_DIR`: base directory for data files (default: `<repo>/data` if present)
+
+

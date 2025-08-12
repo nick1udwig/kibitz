@@ -24,17 +24,18 @@ export async function GET(
 
     const fs = require('fs');
     const path = require('path');
-  const { getProjectsBaseDir } = await import('../../../../../lib/pathConfig');
+  const { projectsBaseDir, findProjectPath } = await import('../../../../../lib/server/projectPaths');
     
-  // Calculate project path
-  const baseDir = getProjectsBaseDir();
-    const projectPath = path.join(baseDir, `${projectId}_new-project`);
-    const branchesJsonPath = path.join(projectPath, '.kibitz', 'api', 'branches.json');
+  // Calculate project path (no hardcoded name suffix)
+  const baseDir = projectsBaseDir();
+    const existing = findProjectPath(projectId);
+    const resolvedProjectPath = existing || path.join(baseDir, `${projectId}_`);
+    const branchesJsonPath = path.join(resolvedProjectPath, '.kibitz', 'api', 'branches.json');
     
     console.log(`🌲 API: Checking branches for project ${projectId}...`);
     
     // Check if project directory exists
-    if (!fs.existsSync(projectPath)) {
+    if (!fs.existsSync(resolvedProjectPath)) {
       return NextResponse.json(
         { 
           projectId, 
@@ -52,7 +53,7 @@ export async function GET(
     if (!fs.existsSync(branchesJsonPath)) {
       console.log(`🌲 API: branches.json missing, checking project.json...`);
       
-      const projectJsonPath = path.join(projectPath, '.kibitz', 'api', 'project.json');
+      const projectJsonPath = path.join(resolvedProjectPath, '.kibitz', 'api', 'project.json');
       
       if (fs.existsSync(projectJsonPath)) {
         try {
