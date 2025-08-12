@@ -6,11 +6,11 @@
 
 import fs from 'fs';
 import path from 'path';
-import { getProjectsBaseDir } from '../pathConfig';
+import { getServerProjectsBaseDir } from './pathConfigServer';
 
 /** Returns the absolute base directory for projects. */
 export function projectsBaseDir(): string {
-  return getProjectsBaseDir();
+  return getServerProjectsBaseDir();
 }
 
 /**

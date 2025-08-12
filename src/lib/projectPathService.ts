@@ -7,6 +7,7 @@
 
 import { Project } from '../components/LlmChat/context/types';
 import { getProjectsBaseDir } from './pathConfig';
+import { getServerProjectsBaseDir } from './server/pathConfigServer';
 
 /**
  * Cache to prevent multiple simultaneous directory creation attempts
@@ -72,10 +73,17 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
     return projectPathCache.get(cacheKey)!;
   }
   
-  // If custom path is provided (for cloned repos), use that
+  // If custom path is provided (for cloned repos or UI override), normalize and use that
   if (cleanCustomPath && cleanCustomPath !== 'undefined' && cleanCustomPath.trim() !== '') {
-    projectPathCache.set(cacheKey, cleanCustomPath);
-    return cleanCustomPath;
+    let normalizedCustom = cleanCustomPath.trim();
+    // Strip masked bullets and trailing slashes
+    normalizedCustom = normalizedCustom.replace(/[•\u2022]+/g, '').replace(/\/+$/g, '');
+    // If it looks like a macOS path missing leading slash (e.g., "Users/..."), add it
+    if (!normalizedCustom.startsWith('/') && /^Users\//.test(normalizedCustom)) {
+      normalizedCustom = '/' + normalizedCustom;
+    }
+    projectPathCache.set(cacheKey, normalizedCustom);
+    return normalizedCustom;
   }
   
   // 🚨 VALIDATION: Ensure project data is valid
@@ -85,9 +93,16 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
   }
   
   // Create project-specific subdirectories in the base projects directory  
-  const baseDir = getCurrentWorkingDirectory();
+  // Prefer server-only resolution to include persisted UI override when available
+  const baseDir = (typeof process !== 'undefined' && (process as any).versions?.node)
+    ? getServerProjectsBaseDir()
+    : getCurrentWorkingDirectory();
   const sanitizedName = cleanProjectName ? sanitizeProjectName(cleanProjectName) : 'project';
-  const fullPath = `${baseDir}/${cleanProjectId}_${sanitizedName}`;
+  let fullPath = `${baseDir}/${cleanProjectId}_${sanitizedName}`;
+  // Fix accidental loss of leading slash if baseDir came in as "Users/..."
+  if (!fullPath.startsWith('/')) {
+    fullPath = '/' + fullPath;
+  }
   
   // 🚨 VALIDATION: Ensure generated path is correct
   if (fullPath === baseDir || fullPath === `${baseDir}/`) {
@@ -302,22 +317,22 @@ export const ensureProjectDirectory = async (
   const projectPath = getProjectPath(project.id, project.name, project.customPath);
   console.log(`🔧 ensureProjectDirectory: Generated project path: ${projectPath}`);
   
-  // 🚨 CRITICAL: Validate project path is absolute and complete
-  const baseDir = getProjectsBaseDir();
-  if (!projectPath.startsWith(`${baseDir}/`) || projectPath.length < baseDir.length + 5) {
+  // 🚨 CRITICAL: Validate project path is absolute and complete.
+  // Use server base dir when available for strict validation.
+  const baseDir = (typeof process !== 'undefined' && (process as any).versions?.node)
+    ? getServerProjectsBaseDir()
+    : getProjectsBaseDir();
+  // If a customPath was provided, only require an absolute path
+  const hasCustom = !!(project.customPath && String(project.customPath).trim());
+  const pathIsAbsolute = projectPath.startsWith('/');
+  if ((hasCustom && !pathIsAbsolute) || (!hasCustom && (!projectPath.startsWith(`${baseDir}/`) || projectPath.length < baseDir.length + 5))) {
     console.error(`❌ Invalid project path detected: "${projectPath}"`);
     console.error(`❌ Expected format: ${baseDir}/{projectId}_{projectName}`);
     throw new Error(`Invalid project path: ${projectPath}`);
   }
   
-  // 🚨 UPDATED: Trust that project directory exists (as per new system design)
-  console.log(`✅ Trusting project directory exists: ${projectPath}`);
-  
-  // Skip directory existence check and creation - directories are managed by the system
-  // This prevents the manual directory creation loops that were causing issues
-  
-  // 🚀 CRITICAL: Initialize MCP environment with the specific project directory
-  // Only if the connected server supports Initialize
+  // 🚀 CRITICAL: Initialize MCP environment with the specific project directory FIRST
+  // Many MCP servers require Initialize before any BashCommand on a given thread
   console.log(`🔧 Preparing MCP environment for project directory: ${projectPath}`);
   // Initialize at most once per (server, projectPath)
   const initKey = `${mcpServerId}|${projectPath}`;
@@ -351,8 +366,13 @@ export const ensureProjectDirectory = async (
       g.__kibitzInitCache.add(initKey);
     }
   }
-  
+
+  // Ensure directory exists (mkdir -p) AFTER Initialize so thread is ready
+  try {
+    await createProjectDirectory(projectPath, mcpServerId, executeTool);
+  } catch {}
   console.log(`✅ ensureProjectDirectory: Using project path: ${projectPath}`);
+  
   return projectPath;
 };
 

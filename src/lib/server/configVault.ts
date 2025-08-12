@@ -8,6 +8,8 @@
 export type PersistedServerConfig = {
   githubToken?: string;
   githubUsername?: string;
+  // Optional server-wide override for projects base directory
+  projectsBaseDir?: string;
   updatedAt?: string;
 };
 
@@ -22,17 +24,17 @@ type EncryptedBlobV1 = {
 const isNode = typeof process !== 'undefined' && !!(process as any).versions?.node;
 
 function getDataDir(): string {
-  const path = require('path') as typeof import('path');
+  const path = require('node:path') as typeof import('node:path');
   const cwd = process.cwd();
   const custom = process.env.KIBITZ_DATA_DIR;
-  const base = custom && custom.trim() ? custom.trim() : (require('fs') as typeof import('fs')).existsSync(path.join(cwd, 'data'))
+  const base = custom && custom.trim() ? custom.trim() : (require('node:fs') as typeof import('node:fs')).existsSync(path.join(cwd, 'data'))
     ? path.join(cwd, 'data')
     : cwd; // fallback to CWD if data/ not present
   return base;
 }
 
 function getConfigPath(): string {
-  const path = require('path') as typeof import('path');
+  const path = require('node:path') as typeof import('node:path');
   const custom = process.env.KIBITZ_SERVER_CONFIG_PATH;
   if (custom && custom.trim()) return custom.trim();
   return path.join(getDataDir(), 'server-config.json.enc');
@@ -45,13 +47,13 @@ function getSecret(): string | null {
 }
 
 function deriveKey(secret: string, salt: Buffer): Buffer {
-  const crypto = require('crypto') as typeof import('crypto');
+  const crypto = require('node:crypto') as typeof import('node:crypto');
   // scrypt: interactive params by default; Node scryptSync uses N=16384, r=8, p=1 under the hood
   return crypto.scryptSync(secret, salt, 32);
 }
 
 function encryptJson(obj: object, secret: string): EncryptedBlobV1 {
-  const crypto = require('crypto') as typeof import('crypto');
+  const crypto = require('node:crypto') as typeof import('node:crypto');
   const salt = crypto.randomBytes(16);
   const key = deriveKey(secret, salt);
   const nonce = crypto.randomBytes(12);
@@ -69,7 +71,7 @@ function encryptJson(obj: object, secret: string): EncryptedBlobV1 {
 }
 
 function decryptJson(blob: EncryptedBlobV1, secret: string): any {
-  const crypto = require('crypto') as typeof import('crypto');
+  const crypto = require('node:crypto') as typeof import('node:crypto');
   const salt = Buffer.from(blob.s, 'base64');
   const nonce = Buffer.from(blob.n, 'base64');
   const tag = Buffer.from(blob.t, 'base64');
@@ -82,8 +84,8 @@ function decryptJson(blob: EncryptedBlobV1, secret: string): any {
 }
 
 function atomicWriteFileSync(targetPath: string, contents: string) {
-  const fs = require('fs') as typeof import('fs');
-  const path = require('path') as typeof import('path');
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
   const dir = path.dirname(targetPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -99,7 +101,7 @@ function atomicWriteFileSync(targetPath: string, contents: string) {
 // Load persisted config (sync, best-effort). Returns empty object if not available.
 export function loadPersistedServerConfig(): PersistedServerConfig {
   if (!isNode) return {};
-  const fs = require('fs') as typeof import('fs');
+  const fs = require('node:fs') as typeof import('node:fs');
   const secret = getSecret();
   if (!secret) {
     // No secret configured; skip persistence for safety
@@ -116,6 +118,7 @@ export function loadPersistedServerConfig(): PersistedServerConfig {
     const out: PersistedServerConfig = {};
     if (typeof (decrypted as any).githubToken === 'string') out.githubToken = (decrypted as any).githubToken;
     if (typeof (decrypted as any).githubUsername === 'string') out.githubUsername = (decrypted as any).githubUsername;
+    if (typeof (decrypted as any).projectsBaseDir === 'string') out.projectsBaseDir = (decrypted as any).projectsBaseDir;
     if (typeof (decrypted as any).updatedAt === 'string') out.updatedAt = (decrypted as any).updatedAt;
     return out;
   } catch (e) {

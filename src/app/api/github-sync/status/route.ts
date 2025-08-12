@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 import { getAllProjectsWithGitHub } from '../../../../../project-json-manager.js';
 import { hasPersistedAuth, resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
 

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 import { resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
 
 export async function GET(_request: NextRequest) {

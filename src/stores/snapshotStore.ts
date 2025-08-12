@@ -130,7 +130,7 @@ export const useSnapshotStore = create<SnapshotState>((set, get) => ({
     
     try {
       // Get project path using the project path service
-      const projectPath = project.customPath || `/Users/test/gitrepo/projects/${projectId}_${project.name}`;
+      const projectPath = project.customPath || `${process.env.NEXT_PUBLIC_PROJECTS_DIR || ''}/${projectId}_${project.name}`;
       
       const result = await createEnhancedSnapshot(
         projectPath,

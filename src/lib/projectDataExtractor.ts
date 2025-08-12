@@ -282,15 +282,20 @@ export class ProjectDataExtractor {
       thread_id: threadId
     });
 
-    const branchLines = this.extractCommandOutput(branchesResult).split('\n').filter(line => line.trim());
+    const branchLines = this.extractCommandOutput(branchesResult)
+      .split('\n')
+      // Drop echoed command or noise lines
+      .filter(line => line.trim() && !/cd "/.test(line) && !/git\s+for-each-ref/.test(line) && !/status =/.test(line) && !/^---/.test(line));
     const branches: BranchSnapshot[] = [];
 
     // Deduplicate by normalized branch name
     const seenBranches = new Set<string>();
     for (const line of branchLines) {
       if (line.includes('no_branches') || !line.includes('|')) continue;
-      
-      const [rawBranchName, commitHash, timestamp, message] = line.split('|');
+      const parts = line.split('|');
+      // Require exactly 4 parts from the format string; otherwise skip malformed lines
+      if (parts.length < 4) continue;
+      const [rawBranchName, commitHash, timestamp, message] = parts;
       if (!rawBranchName || !commitHash) continue;
 
       const branchName = rawBranchName
@@ -424,10 +429,21 @@ export class ProjectDataExtractor {
       thread_id: threadId
     });
 
-    // Save main project API data
+    // Save main project API data (include GitHub compatibility block expected by server orchestrator)
+    const projectJsonWithGithub = {
+      ...apiData,
+      github: {
+        enabled: true,
+        syncInterval: 300000,
+        syncBranches: ['main', 'conv-*'],
+        lastSync: null,
+        syncStatus: 'idle',
+        authentication: { type: 'token', configured: true }
+      }
+    } as const;
     await this.saveJsonFile(
       `${projectPath}/.kibitz/api/project.json`,
-      apiData,
+      projectJsonWithGithub,
       executeTool,
       mcpServerId,
       threadId
@@ -485,24 +501,45 @@ export class ProjectDataExtractor {
     const jsonContent = JSON.stringify(data, null, 2);
     
     try {
-      // Use FileWriteOrEdit to save the file
-      await executeTool(mcpServerId, 'FileWriteOrEdit', {
-        file_path: filePath,
-        content: jsonContent,
-        thread_id: threadId
-      });
-    } catch (error) {
-      console.warn(`⚠️ Failed to save ${filePath} with FileWriteOrEdit, trying BashCommand`);
-      
-      // Fallback to echo command
-      const escapedContent = jsonContent.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+      // Prefer BashCommand here for maximum compatibility with MCP servers that
+      // validate FileWriteOrEdit args strictly (observed: "Additional properties 'content'")
+      const escaped = jsonContent
+        .replace(/\\/g, '\\\\')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '')
+        .replace(/\"/g, '\\\"')
+        .replace(/`/g, '\\`');
       await executeTool(mcpServerId, 'BashCommand', {
         action_json: {
-          command: `echo "${escapedContent}" > "${filePath}"`,
+          command: `cat > "${filePath}" <<'JSON'\n${jsonContent}\nJSON`,
           type: 'command'
         },
         thread_id: threadId
       });
+    } catch (_e1) {
+      try {
+        // Secondary fallback: echo with escaped content
+        const escapedContent = jsonContent.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+        await executeTool(mcpServerId, 'BashCommand', {
+          action_json: {
+            command: `echo "${escapedContent}" > "${filePath}"`,
+            type: 'command'
+          },
+          thread_id: threadId
+        });
+      } catch (_e2) {
+        // Final fallback: attempt FileWriteOrEdit minimal schema if supported
+        try {
+          await executeTool(mcpServerId, 'FileWriteOrEdit', {
+            file_path: filePath,
+            content: jsonContent,
+            thread_id: threadId
+          });
+        } catch (error) {
+          console.warn(`⚠️ Failed to save ${filePath} via all methods`, error);
+          throw error;
+        }
+      }
     }
   }
 

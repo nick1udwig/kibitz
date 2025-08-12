@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 import { loadPersistedServerConfig, persistServerConfig } from '../../../lib/server/configVault';
 
 // Simple in-memory storage for demo purposes
@@ -46,14 +47,16 @@ export async function PUT(request: NextRequest) {
     
     // Update the storage (overwrite per key). Accept the following fields:
     // - githubToken, githubUsername, githubEmail (for GitHub integration)
+    // - projectsBaseDir (server-wide base path override)
     // - anthropicApiKey, openaiApiKey, openRouterApiKey, groqApiKey (existing)
     apiKeysStorage = { ...apiKeysStorage, ...keys };
     // Persist minimal server auth, if provided
     try {
       const token = typeof apiKeysStorage.githubToken === 'string' ? apiKeysStorage.githubToken : '';
       const username = typeof apiKeysStorage.githubUsername === 'string' ? apiKeysStorage.githubUsername : '';
+      const projectsBaseDir = typeof apiKeysStorage.projectsBaseDir === 'string' ? apiKeysStorage.projectsBaseDir : undefined;
       // Persist even if empty to allow clearing; encryption requires KIBITZ_CONFIG_SECRET
-      persistServerConfig({ githubToken: token, githubUsername: username });
+      persistServerConfig({ githubToken: token, githubUsername: username, projectsBaseDir });
     } catch {}
     
     return NextResponse.json({ success: true, persisted: true });
@@ -62,3 +65,19 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to save API keys' }, { status: 500 });
   }
 } 
+
+// Optional GET for current persisted server config (mask secrets)
+export async function GET_CONFIG() {
+  try {
+    const cfg = loadPersistedServerConfig();
+    const masked = {
+      githubToken: cfg.githubToken ? '••••••••' + cfg.githubToken.slice(-4) : '',
+      githubUsername: cfg.githubUsername || '',
+      projectsBaseDir: cfg.projectsBaseDir || '',
+      updatedAt: cfg.updatedAt || ''
+    };
+    return NextResponse.json({ success: true, config: masked });
+  } catch (e) {
+    return NextResponse.json({ success: false }, { status: 500 });
+  }
+}

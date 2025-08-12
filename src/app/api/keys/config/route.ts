@@ -1,0 +1,45 @@
+import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'nodejs';
+import { loadPersistedServerConfig, persistServerConfig } from '../../../../lib/server/configVault';
+
+export async function GET(_request: NextRequest) {
+  try {
+    const cfg = loadPersistedServerConfig();
+    return NextResponse.json({
+      success: true,
+      config: {
+        githubToken: cfg.githubToken ? '••••••••' + cfg.githubToken.slice(-4) : '',
+        githubUsername: cfg.githubUsername || '',
+        projectsBaseDir: cfg.projectsBaseDir || '',
+        updatedAt: cfg.updatedAt || ''
+      }
+    });
+  } catch (e) {
+    return NextResponse.json({ success: false, error: 'failed-to-read-config' }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const projectsBaseDir = typeof body?.projectsBaseDir === 'string' ? body.projectsBaseDir.trim() : '';
+    if (!projectsBaseDir) {
+      return NextResponse.json({ success: false, error: 'projectsBaseDir-required' }, { status: 400 });
+    }
+    // 1) Persist (best-effort; requires KIBITZ_CONFIG_SECRET)
+    try { persistServerConfig({ projectsBaseDir }); } catch {}
+    // 2) Also update in-memory apiKeysStorage so server immediately honors it
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const keysModule = require('../../keys/route');
+      if (keysModule && keysModule.apiKeysStorage) {
+        keysModule.apiKeysStorage.projectsBaseDir = projectsBaseDir;
+      }
+    } catch {}
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ success: false, error: 'failed-to-save-config' }, { status: 500 });
+  }
+}
+
+

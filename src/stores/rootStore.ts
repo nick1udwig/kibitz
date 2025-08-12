@@ -4,7 +4,7 @@ import { McpServer } from '../components/LlmChat/types/mcp';
 import { loadState, saveState, loadMcpServers, saveMcpServers, loadWorkspaceMappings, saveWorkspaceMappings, getWorkspaceByConversationId, updateWorkspaceMapping, deleteWorkspaceMapping } from '../lib/db';
 import { WsTool } from '../components/LlmChat/types/toolTypes';
 import { autoInitializeGitForProject } from '../lib/gitAutoInitService';
-import { ensureProjectDirectory, getProjectPath } from '../lib/projectPathService';
+import { ensureProjectDirectory, getProjectPath, sanitizeProjectName } from '../lib/projectPathService';
 import { recordSystemError, shouldThrottleOperation } from '@/lib/systemDiagnostics';
 import { createWorkspaceMapping } from '../lib/conversationWorkspaceService';
 import { initializeAutoCommitAgent, stopAutoCommitAgent, getAutoCommitAgent } from '../lib/autoCommitAgent';
@@ -654,6 +654,26 @@ export const useStore = create<RootState>((set, get) => {
           }
         }
 
+        // Always load server config to get projectsBaseDir and set runtime hint early
+        try {
+          const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+          const resCfg = await fetch(`${BASE_PATH}/api/keys/config`).catch(() => null);
+          if (resCfg && resCfg.ok) {
+            const data = await resCfg.json();
+            const dir = data?.config?.projectsBaseDir as string | undefined;
+            if (dir && typeof dir === 'string' && dir.trim()) {
+              const cleaned = dir.trim().replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
+              set(state => ({ apiKeys: { ...state.apiKeys, projectsBaseDir: cleaned } } as any));
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = cleaned;
+              } catch {}
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to load server config (projectsBaseDir):', error);
+        }
+
         // Load workspace mappings
         try {
           workspaceMappings = await loadWorkspaceMappings();
@@ -806,6 +826,23 @@ export const useStore = create<RootState>((set, get) => {
 
       const mergedSettings = ensureCommitDefaults({ ...defaultSettings, ...settings } as ProjectSettings);
 
+      // Prefer a UI-configured base dir immediately to avoid fallback to hardcoded path
+      let uiBaseDir: string | undefined;
+      try {
+        // from in-memory apiKeys first
+        uiBaseDir = (state.apiKeys as any)?.projectsBaseDir as string | undefined;
+        // then from localStorage (persisted across reloads)
+        if (!uiBaseDir && typeof window !== 'undefined') {
+          uiBaseDir = window.localStorage?.getItem('kibitz_projects_base_dir') || undefined;
+        }
+        if (uiBaseDir) {
+          uiBaseDir = uiBaseDir.trim().replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
+          if (!uiBaseDir.startsWith('/') && /^Users\//.test(uiBaseDir)) uiBaseDir = '/' + uiBaseDir;
+          // expose runtime hint so client resolvers see it
+          try { (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBaseDir; } catch {}
+        }
+      } catch {}
+
       const newProject: Project = {
         id: projectId,
         name,
@@ -814,6 +851,11 @@ export const useStore = create<RootState>((set, get) => {
         createdAt: new Date(),
         updatedAt: new Date(),
         order: Math.max(...state.projects.map(p => p.order), 0) + 1,
+        // If we have a UI base dir, set a concrete customPath so downstream code
+        // never falls back to the hardcoded default for this project
+        ...(uiBaseDir
+          ? { customPath: `${uiBaseDir}/${projectId}_${sanitizeProjectName(name)}` }
+          : {})
       };
 
       const updatedState: ProjectState = {
@@ -1594,7 +1636,15 @@ export const useStore = create<RootState>((set, get) => {
       
       // 🚨 CRITICAL: Workspace enforcement for tools that support any_workspace_path
       if (project) {
-        const projectPath = getProjectPath(project.id, project.name);
+          const projectPath = getProjectPath(project.id, project.name);
+          // If user set a base path in Admin panel (apiKeys.projectsBaseDir), honor it immediately on client
+          try {
+            const uiBase = (get().apiKeys as any)?.projectsBaseDir as string | undefined;
+            if (uiBase && uiBase.trim()) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
+            }
+          } catch {}
         
         // Only tools that actually support any_workspace_path parameter
         const workspaceAwareTools = ['Initialize'];
@@ -1647,6 +1697,13 @@ export const useStore = create<RootState>((set, get) => {
       
       if (project && (toolName === 'BashCommand' || toolName === 'FileWriteOrEdit')) {
         const projectPath = getProjectPath(project.id, project.name);
+        try {
+          const uiBase = (get().apiKeys as any)?.projectsBaseDir as string | undefined;
+          if (uiBase && uiBase.trim()) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
+          }
+        } catch {}
         
         // For BashCommand: ensure commands use full project path, not just project ID
         if (toolName === 'BashCommand' && modifiedArgs.command) {

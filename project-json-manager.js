@@ -1,10 +1,51 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
-// Do not import TS from JS here. Read from environment directly to work in Node contexts
+// Do not import TS from JS here. Resolve base dir in priority order similar to server util:
+// 1) PROJECT_WORKSPACE_PATH/USER_PROJECTS_PATH
+// 2) In-memory UI override from apiKeysStorage.projectsBaseDir (if available)
+// 3) Persisted encrypted config
+// 4) NEXT_PUBLIC_PROJECTS_DIR
+// 5) Default
 function getEnvProjectsBaseDir() {
-  const value = process.env.PROJECT_WORKSPACE_PATH || process.env.USER_PROJECTS_PATH || process.env.NEXT_PUBLIC_PROJECTS_DIR || '/Users/test/gitrepo/projects';
-  return value.replace(/\/+$/, '');
+  const normalize = (v) => {
+    if (!v) return undefined;
+    let s = String(v).trim();
+    // Remove accidentally masked bullets and trailing slashes
+    s = s.replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
+    // If it looks like a macOS path missing leading slash, add it
+    if (!s.startsWith('/') && /^Users\//.test(s)) s = '/' + s;
+    return s;
+  };
+
+  // 1) Runtime env
+  const fromRuntime = normalize(process.env.PROJECT_WORKSPACE_PATH || process.env.USER_PROJECTS_PATH);
+  if (fromRuntime) return fromRuntime;
+
+  // 2) In-memory apiKeysStorage (set by /api/keys/config PUT)
+  try {
+    const keysModule = require('./src/app/api/keys/route');
+    const mem = keysModule && keysModule.apiKeysStorage && keysModule.apiKeysStorage.projectsBaseDir;
+    const fromMemory = normalize(mem);
+    if (fromMemory) return fromMemory;
+  } catch {}
+
+  // 3) Persisted encrypted config
+  try {
+    const { loadPersistedServerConfig } = require('./src/lib/server/configVault');
+    const cfg = loadPersistedServerConfig && loadPersistedServerConfig();
+    if (cfg && typeof cfg.projectsBaseDir === 'string' && cfg.projectsBaseDir.trim()) {
+      const fromPersisted = normalize(cfg.projectsBaseDir.trim());
+      if (fromPersisted) return fromPersisted;
+    }
+  } catch {}
+
+  // 4) Client env hint
+  const fromClient = normalize(process.env.NEXT_PUBLIC_PROJECTS_DIR);
+  if (fromClient) return fromClient;
+
+  // 5) Default
+  return '/Users/test/gitrepo/projects';
 }
 
 /**

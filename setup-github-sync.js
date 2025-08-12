@@ -27,7 +27,7 @@ const __dirname = dirname(__filename);
 
 class GitHubSyncSetup {
   constructor() {
-    this.baseProjectsDir = '/Users/test/gitrepo/projects/';
+    this.baseProjectsDir = (process.env.PROJECT_WORKSPACE_PATH || process.env.USER_PROJECTS_PATH || process.env.NEXT_PUBLIC_PROJECTS_DIR || '/Users/test/gitrepo/projects') + '/';
   }
 
   async checkSystemRequirements() {
@@ -233,7 +233,7 @@ class GitHubSyncSetup {
         autoCreateRepos: true
       },
       projects: {
-        basePath: '/Users/test/gitrepo/projects/',
+        basePath: (process.env.PROJECT_WORKSPACE_PATH || process.env.USER_PROJECTS_PATH || process.env.NEXT_PUBLIC_PROJECTS_DIR || '/Users/test/gitrepo/projects') + '/',
         syncBranches: ['main', 'auto/*'],
         excludePatterns: ['temp/*', 'backup/*']
       }

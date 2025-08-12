@@ -421,7 +421,8 @@ export class LlmAgentGitHandler {
           if (typeof fetch !== 'undefined') {
             const dirName = projectPath.split('/').pop() || '';
             const projectId = dirName.split('_')[0] || '';
-            await fetch('/api/github-sync/trigger', {
+            const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+            await fetch(`${BASE_PATH}/api/github-sync/trigger`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ projectId, immediate: true, force: true, branchName: currentBranch })

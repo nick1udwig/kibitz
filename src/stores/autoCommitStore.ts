@@ -755,7 +755,8 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
               // Step 3: Now trigger GitHub sync with JSON file guaranteed to exist
               console.log('🚀 Triggering server push orchestrator with JSON file ready...');
               const orchestratorEnabled = isPushOrchestratorEnabled();
-              const syncResponse = await fetch('/api/github-sync/trigger', {
+              const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+              const syncResponse = await fetch(`${BASE_PATH}/api/github-sync/trigger`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
