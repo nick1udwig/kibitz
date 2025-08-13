@@ -10,9 +10,9 @@ const generateId = () => Math.random().toString(36).substring(7);
 const HYPERGRID_LOCKED = !!process.env.NEXT_PUBLIC_HYPERGRID_LOCKED;
 const getShimEndpointPath = () =>
   process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT || '/operator:hypergrid:ware.hypr/shim/mcp';
-const buildSameNodeShimWsUri = (): string => {
-  const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
-  return `${wsProtocol}://${window.location.host}${getShimEndpointPath()}`;
+const buildSameNodeShimHttpUri = (): string => {
+  const httpProtocol = window.location.protocol.endsWith('s:') ? 'https' : 'http';
+  return `${httpProtocol}://${window.location.host}${getShimEndpointPath()}`;
 };
 
 export const getDefaultModelForProvider = (provider?: string): string => {
@@ -96,7 +96,7 @@ You are **Kibitz**, an expert AI programmer embedded in a persistent coding envi
 ## 🧾 Communication Guidelines
 
 - Assume the user is non-technical; speak plainly.
-- Confirm your actions using simple phrases like:  
+- Confirm your actions using simple phrases like:
   *"I've made the update. Let's see if it works now."*
 - Do not respond on behalf of platform support regarding billing or ethics; redirect the user appropriately.
 - Only answer user questions directly when they've asked for help or clarification.
@@ -118,23 +118,23 @@ You are **Kibitz**, an expert AI programmer embedded in a persistent coding envi
 
 ## 🚦 Sample Workflow
 
-**User:**  
+**User:**
 "Fix the bug in the payment route where it returns success even on failure."
 
-**Kibitz:**  
-- Plan: Read the file, find the return code logic, verify error condition, change response code.  
-- Change: Adjusted the response to correctly return an error on failure.  
-- Test: Simulated a request, and confirmed the new status code appears as expected.  
-- Message:  
+**Kibitz:**
+- Plan: Read the file, find the return code logic, verify error condition, change response code.
+- Change: Adjusted the response to correctly return an error on failure.
+- Test: Simulated a request, and confirmed the new status code appears as expected.
+- Message:
   *"I've updated the code to return the correct error status. Let me know if it behaves as expected."*
 
 ---
 
 ## ✅ Summary
 
-- Think before you act.  
-- Stay focused on user requests.  
-- Never make assumptions about environment, permissions, or data.  
+- Think before you act.
+- Stay focused on user requests.
+- Never make assumptions about environment, permissions, or data.
 - Be helpful, safe, and concise.`,
       createdAt: new Date()
     },
@@ -252,14 +252,22 @@ export const useStore = create<RootState>((set, get) => {
       reconnectTimeoutsRef.delete(serverId);
     }
 
-    const ws = connectionsRef.get(serverId);
-    if (ws) {
-      ws.close();
-      connectionsRef.delete(serverId);
+    // Only cleanup WebSocket connections in non-shim mode
+    if (!HYPERGRID_LOCKED) {
+      const ws = connectionsRef.get(serverId);
+      if (ws) {
+        ws.close();
+        connectionsRef.delete(serverId);
+      }
     }
   };
 
   const scheduleReconnect = (server: McpServer, delay: number = 5000) => {
+    // Skip reconnection logic in shim mode as we use HTTP requests
+    if (HYPERGRID_LOCKED) {
+      return;
+    }
+
     const existingTimeout = reconnectTimeoutsRef.get(server.id);
     if (existingTimeout) {
       clearTimeout(existingTimeout);
@@ -286,118 +294,189 @@ export const useStore = create<RootState>((set, get) => {
         )
       }));
 
-      const ws = new WebSocket(server.uri);
-
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          ws.close();
-          reject(new Error('Connection timeout'));
-        }, 10000);
-
-        ws.onopen = () => {
-          clearTimeout(timeout);
-          connectionsRef.set(server.id, ws);
-
-          ws.send(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'initialize',
-            params: {
-              protocolVersion: '0.1.0',
-              clientInfo: { name: 'llm-chat', version: '1.0.0' },
-              capabilities: { tools: {} }
-            },
-            id: 1
-          }));
-        };
-
-        ws.onclose = () => {
-          clearTimeout(timeout);
-          cleanupServer(server.id);
-
-          const updatedState = {
-            servers: get().servers.map(s => s.id === server.id
-              ? { ...s, status: 'disconnected' as const, error: 'Connection closed' }
-              : s
-            )
-          };
-          set(updatedState);
-
-          saveMcpServers(updatedState.servers).catch((err) => {
-            console.error('Error saving MCP servers on disconnect:', err);
-          });
-
-          scheduleReconnect(server);
-        };
-
-        ws.onerror = () => {
-          clearTimeout(timeout);
-          console.log('WebSocket error (trying to reconnect...)');
-          cleanupServer(server.id);
-
-          set(state => ({
-            servers: state.servers.map(s => s.id === server.id
-              ? { ...s, status: 'error', error: 'Connection error' }
-              : s
-            )
-          }));
-
-          scheduleReconnect(server, 0);
-          reject(new Error('WebSocket connection error'));
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const response = JSON.parse(event.data);
-
-            if (response.id === 1) {
-              ws.send(JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'notifications/initialized',
-              }));
-
-              ws.send(JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'tools/list',
-                id: 2
-              }));
-            } else if (response.id === 2) {
-              if (response.error) {
-                console.log('Received unexpected WS-MCP message:', response.results);
-                return server;
-              }
-              const tools = response.result.tools.map((tool: WsTool) => ({
-                ...tool,
-                input_schema: tool.inputSchema,
-              }));
-              const connectedServer = {
-                ...server,
-                status: 'connected' as const,
-                error: undefined,
-                tools,
-                connection: ws
-              };
-
-              const updatedState = {
-                servers: get().servers.map(s => s.id === server.id ? connectedServer : s)
-              };
-              set(updatedState);
-
-              saveMcpServers(updatedState.servers).catch((err) => {
-                console.error('Error saving MCP servers:', err);
-              });
-
-              resolve(connectedServer);
+      if (HYPERGRID_LOCKED) {
+        // In shim mode, we don't actually connect to a WebSocket
+        // Instead, we define the three tools that will make HTTP requests
+        const tools = [
+          {
+            name: 'authorize',
+            description: 'Configure the Hypergrid MCP shim with authentication credentials',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                url: { type: 'string', description: 'The base URL for the Hypergrid API' },
+                token: { type: 'string', description: 'The authentication token' },
+                client_id: { type: 'string', description: 'The unique client ID' },
+                node: { type: 'string', description: 'The Hyperware node name' }
+              },
+              required: ['url', 'token', 'client_id', 'node']
             }
-          } catch {
-            console.error('Error parsing WebSocket message');
-            return {
-              ...server,
-              status: 'error',
-              error: 'Error parsing WebSocket message'
-            };
+          },
+          {
+            name: 'search-registry',
+            description: 'Search through all listed providers to find relevant data sources',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                query: { type: 'string', description: 'Search query for providers' }
+              },
+              required: ['query']
+            }
+          },
+          {
+            name: 'call-provider',
+            description: 'Make a request to a previously discovered Provider',
+            input_schema: {
+              type: 'object' as const,
+              properties: {
+                providerId: { type: 'string', description: 'The provider ID' },
+                providerName: { type: 'string', description: 'The provider name' },
+                callArgs: {
+                  type: 'array',
+                  items: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    minItems: 2,
+                    maxItems: 2
+                  },
+                  description: 'Array of [key, value] pairs for provider arguments'
+                }
+              },
+              required: ['providerId', 'providerName', 'callArgs']
+            }
           }
+        ];
+
+        const connectedServer = {
+          ...server,
+          status: 'connected' as const,
+          error: undefined,
+          tools
         };
-      });
+
+        const updatedState = {
+          servers: get().servers.map(s => s.id === server.id ? connectedServer : s)
+        };
+        set(updatedState);
+        saveMcpServers(updatedState.servers).catch((err) => {
+          console.error('Error saving MCP servers:', err);
+        });
+        return connectedServer;
+      } else {
+        // Original WebSocket logic for non-shim mode
+        const ws = new WebSocket(server.uri);
+
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            ws.close();
+            reject(new Error('Connection timeout'));
+          }, 10000);
+
+          ws.onopen = () => {
+            clearTimeout(timeout);
+            connectionsRef.set(server.id, ws);
+
+            ws.send(JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'initialize',
+              params: {
+                protocolVersion: '0.1.0',
+                clientInfo: { name: 'llm-chat', version: '1.0.0' },
+                capabilities: { tools: {} }
+              },
+              id: 1
+            }));
+          };
+
+          ws.onclose = () => {
+            clearTimeout(timeout);
+            cleanupServer(server.id);
+
+            const updatedState = {
+              servers: get().servers.map(s => s.id === server.id
+                ? { ...s, status: 'disconnected' as const, error: 'Connection closed' }
+                : s
+              )
+            };
+            set(updatedState);
+
+            saveMcpServers(updatedState.servers).catch((err) => {
+              console.error('Error saving MCP servers on disconnect:', err);
+            });
+
+            scheduleReconnect(server);
+          };
+
+          ws.onerror = () => {
+            clearTimeout(timeout);
+            console.log('WebSocket error (trying to reconnect...)');
+            cleanupServer(server.id);
+
+            set(state => ({
+              servers: state.servers.map(s => s.id === server.id
+                ? { ...s, status: 'error', error: 'Connection error' }
+                : s
+              )
+            }));
+
+            scheduleReconnect(server, 0);
+            reject(new Error('WebSocket connection error'));
+          };
+
+          ws.onmessage = (event) => {
+            try {
+              const response = JSON.parse(event.data);
+
+              if (response.id === 1) {
+                ws.send(JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'notifications/initialized',
+                }));
+
+                ws.send(JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'tools/list',
+                  id: 2
+                }));
+              } else if (response.id === 2) {
+                if (response.error) {
+                  console.log('Received unexpected WS-MCP message:', response.results);
+                  return server;
+                }
+                const tools = response.result.tools.map((tool: WsTool) => ({
+                  ...tool,
+                  input_schema: tool.inputSchema,
+                }));
+                const connectedServer = {
+                  ...server,
+                  status: 'connected' as const,
+                  error: undefined,
+                  tools,
+                  connection: ws
+                };
+
+                const updatedState = {
+                  servers: get().servers.map(s => s.id === server.id ? connectedServer : s)
+                };
+                set(updatedState);
+
+                saveMcpServers(updatedState.servers).catch((err) => {
+                  console.error('Error saving MCP servers:', err);
+                });
+
+                resolve(connectedServer);
+              }
+            } catch {
+              console.error('Error parsing WebSocket message');
+              return {
+                ...server,
+                status: 'error',
+                error: 'Error parsing WebSocket message'
+              };
+            }
+          };
+        });
+      }
     } catch {
       console.error(`Failed to connect to server ${server.name}`);
       return {
@@ -449,7 +528,7 @@ export const useStore = create<RootState>((set, get) => {
           const hypergridServer = {
             id: 'hypergrid',
             name: 'Hypergrid',
-            uri: buildSameNodeShimWsUri(),
+            uri: buildSameNodeShimHttpUri(),
             status: 'disconnected' as const,
           } as McpServer;
 
@@ -974,46 +1053,139 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     executeTool: async (serverId: string, toolName: string, args: Record<string, unknown>): Promise<string> => {
-      const ws = connectionsRef.get(serverId);
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        throw new Error('Server not connected');
-      }
+      if (HYPERGRID_LOCKED) {
+        // In shim mode, make HTTP requests to the API
+        const server = get().servers.find(s => s.id === serverId);
+        if (!server) {
+          throw new Error('Server not found');
+        }
 
-      return new Promise((resolve, reject) => {
-        const requestId = Math.random().toString(36).substring(7);
-
-        const messageHandler = (event: MessageEvent) => {
+        // Handle the authorize tool specially to update server config
+        if (toolName === 'authorize') {
+          const { url, token, client_id, node } = args as any;
           try {
-            const response = JSON.parse(event.data);
-            if (response.id === requestId) {
-              ws.removeEventListener('message', messageHandler);
-              if (response.error) {
-                reject(new Error(response.error.message));
-              } else {
-                resolve(response.result.content[0].text as string);
-              }
+            // Test the new config
+            const testHeaders = {
+              'Content-Type': 'application/json',
+              'X-Client-ID': client_id,
+              'X-Token': token
+            };
+
+            const testResponse = await fetch(url, {
+              method: 'POST',
+              headers: testHeaders,
+              body: JSON.stringify({ SearchRegistry: 'test' })
+            });
+
+            if (!testResponse.ok && testResponse.status !== 404) {
+              throw new Error(`Configuration test failed: ${testResponse.status} ${testResponse.statusText}`);
             }
-          } catch {
-            console.error('Error parsing tool response');
-            reject(new Error('Failed to parse tool response'));
+
+            // Update server configuration
+            const updatedServer = {
+              ...server,
+              uri: url,
+              clientId: client_id,
+              token: token
+            };
+
+            set(state => ({
+              servers: state.servers.map(s => s.id === serverId ? updatedServer : s)
+            }));
+            await saveMcpServers(get().servers);
+
+            return `✅ Successfully authorized! Configuration saved.\n\nThe MCP server is now configured and ready to use with:\n- Node: ${node}\n- Client ID: ${client_id}\n- URL: ${url}\n\nYou can now use the search-registry and call-provider tools.`;
+          } catch (error: any) {
+            return `❌ Authorization failed: ${error.message}\n\nPlease check your credentials and try again.`;
           }
+        }
+
+        // Check if we have authentication configured
+        if (!server.clientId || !server.token) {
+          return '⚠️ This MCP server is not configured yet. Please use the "authorize" tool first with your Hypergrid credentials.\n\nExample: Use the authorize tool with url "...", token "...", client_id "...", and node "..."';
+        }
+
+        // Prepare the request body based on the tool
+        let body: any;
+        if (toolName === 'search-registry') {
+          body = { SearchRegistry: args.query };
+        } else if (toolName === 'call-provider') {
+          const { providerId, providerName, callArgs } = args as any;
+          body = {
+            CallProvider: {
+              providerId,
+              providerName,
+              arguments: callArgs
+            }
+          };
+        } else {
+          throw new Error(`Unknown tool: ${toolName}`);
+        }
+
+        // Make the HTTP request
+        const headers = {
+          'Content-Type': 'application/json',
+          'X-Client-ID': server.clientId,
+          'X-Token': server.token
         };
 
-        ws.addEventListener('message', messageHandler);
+        try {
+          const response = await fetch(server.uri, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body)
+          });
 
-        ws.send(JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'tools/call',
-          params: { name: toolName, arguments: args },
-          id: requestId
-        }));
-      });
+          const responseText = await response.text();
+          console.error(`${toolName}: Response received (status ${response.status})`);
+          return responseText;
+        } catch (error: any) {
+          console.error(`${toolName}: Request failed:`, error);
+          return `{"error": "Request Failed: ${error.message}"}`;
+        }
+      } else {
+        // Original WebSocket logic for non-shim mode
+        const ws = connectionsRef.get(serverId);
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          throw new Error('Server not connected');
+        }
+
+        return new Promise((resolve, reject) => {
+          const requestId = Math.random().toString(36).substring(7);
+
+          const messageHandler = (event: MessageEvent) => {
+            try {
+              const response = JSON.parse(event.data);
+              if (response.id === requestId) {
+                ws.removeEventListener('message', messageHandler);
+                if (response.error) {
+                  reject(new Error(response.error.message));
+                } else {
+                  resolve(response.result.content[0].text as string);
+                }
+              }
+            } catch {
+              console.error('Error parsing tool response');
+              reject(new Error('Failed to parse tool response'));
+            }
+          };
+
+          ws.addEventListener('message', messageHandler);
+
+          ws.send(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'tools/call',
+            params: { name: toolName, arguments: args },
+            id: requestId
+          }));
+        });
+      }
     },
 
     attemptLocalMcpConnection: async () => {
       const id = HYPERGRID_LOCKED ? 'hypergrid' : 'localhost-mcp';
       const defaultWsUri = HYPERGRID_LOCKED
-        ? buildSameNodeShimWsUri()
+        ? buildSameNodeShimHttpUri()
         : (() => {
             const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
             const isOnKinode = process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT;
