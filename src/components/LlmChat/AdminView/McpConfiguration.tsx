@@ -6,6 +6,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Trash2, RefreshCw } from 'lucide-react';
 import { useStore } from '@/stores/rootStore';
 
+const HYPERGRID_LOCKED = !!process.env.NEXT_PUBLIC_HYPERGRID_LOCKED;
+
 interface McpConfigurationProps {
   serverIds: string[];
   onServerIdsChange: (serverIds: string[]) => void;
@@ -64,7 +66,7 @@ export const McpConfiguration = ({
   return (
     <Card>
       <CardContent className="p-6">
-        <h3 className="text-lg font-medium mb-4">WebSocket MCP Servers</h3>
+        <h3 className="text-lg font-medium mb-4">{HYPERGRID_LOCKED ? 'Hypergrid (Single MCP)' : 'WebSocket MCP Servers'}</h3>
 
         {/* Server List */}
         <div className="space-y-3 mb-4">
@@ -85,61 +87,73 @@ export const McpConfiguration = ({
                   <div className="text-sm text-red-500 mt-1">{server.error}</div>
                 )}
               </div>
-              <div className="flex gap-2 ml-2">
-                {server.status !== 'connected' && (
+              {!HYPERGRID_LOCKED && (
+                <div className="flex gap-2 ml-2">
+                  {server.status !== 'connected' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => reconnectServer(server.id)}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => reconnectServer(server.id)}
+                    onClick={() => handleRemoveServer(server.id)}
                   >
-                    <RefreshCw className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4" />
                   </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRemoveServer(server.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+                </div>
+              )}
             </div>
             );
           })}
         </div>
 
         {/* Add New Server Form */}
-        <div className="space-y-2">
-          <div>
-            <Input
-              placeholder="Server name"
-              value={newServer.name}
-              onChange={e => setNewServer({...newServer, name: e.target.value})}
-              className="mb-2"
-            />
-            <Input
-              placeholder="WebSocket URI (e.g. ws://localhost:3000)"
-              value={newServer.uri}
-              onChange={e => setNewServer({...newServer, uri: e.target.value})}
-            />
+        {!HYPERGRID_LOCKED && (
+          <div className="space-y-2">
+            <div>
+              <Input
+                placeholder="Server name"
+                value={newServer.name}
+                onChange={e => setNewServer({...newServer, name: e.target.value})}
+                className="mb-2"
+              />
+              <Input
+                placeholder="WebSocket URI (e.g. ws://localhost:3000)"
+                value={newServer.uri}
+                onChange={e => setNewServer({...newServer, uri: e.target.value})}
+              />
+            </div>
+            <Button
+              onClick={handleAddServer}
+              disabled={!newServer.name || !newServer.uri}
+              className="w-full"
+            >
+              Add Server
+            </Button>
           </div>
-          <Button
-            onClick={handleAddServer}
-            disabled={!newServer.name || !newServer.uri}
-            className="w-full"
-          >
-            Add Server
-          </Button>
-        </div>
+        )}
 
         {/* Help Text */}
         <div className="mt-4">
-          <Alert>
-            <AlertDescription>
-              Connect to WebSocket MCP servers to extend Claude&apos;s capabilities with custom tools.
-              Each server should implement the MCP protocol.
-            </AlertDescription>
-          </Alert>
+          {!HYPERGRID_LOCKED ? (
+            <Alert>
+              <AlertDescription>
+                Connect to WebSocket MCP servers to extend Claude&apos;s capabilities with custom tools.
+                Each server should implement the MCP protocol.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert>
+              <AlertDescription>
+                Hypergrid is preconfigured as the only MCP in this build.
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       </CardContent>
     </Card>

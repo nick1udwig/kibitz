@@ -6,6 +6,15 @@ import { WsTool } from '../components/LlmChat/types/toolTypes';
 
 const generateId = () => Math.random().toString(36).substring(7);
 
+// Shim-mode: lock Kibitz to a single Hypergrid MCP running on the same node
+const HYPERGRID_LOCKED = !!process.env.NEXT_PUBLIC_HYPERGRID_LOCKED;
+const getShimEndpointPath = () =>
+  process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT || '/operator:hypergrid:ware.hypr/shim/mcp';
+const buildSameNodeShimWsUri = (): string => {
+  const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
+  return `${wsProtocol}://${window.location.host}${getShimEndpointPath()}`;
+};
+
 export const getDefaultModelForProvider = (provider?: string): string => {
   switch (provider) {
     case 'openai':
@@ -432,42 +441,58 @@ export const useStore = create<RootState>((set, get) => {
           }
         }
 
-        // Always try to load saved servers first
+        // Load any previously saved servers
         const savedServers = await loadMcpServers();
 
-        const connectedServers: McpServerConnection[] = [];
+        // Shim-locked mode: force exactly one server, Hypergrid on the same node
+        if (HYPERGRID_LOCKED) {
+          const hypergridServer = {
+            id: 'hypergrid',
+            name: 'Hypergrid',
+            uri: buildSameNodeShimWsUri(),
+            status: 'disconnected' as const,
+          } as McpServer;
 
-        // Attempt to connect to each saved server
-        for (const server of savedServers) {
+          let connected: McpServerConnection;
           try {
-            const connectedServer = await connectToServer(server);
-            connectedServers.push(connectedServer);
+            connected = await connectToServer(hypergridServer);
           } catch (err) {
-            console.error(`Initial connection failed for ${server.name}:`, err);
-            connectedServers.push({
-              ...server,
-              status: 'error',
-              error: 'Failed to connect'
-            });
+            console.error('Failed to connect to Hypergrid MCP:', err);
+            connected = { ...hypergridServer, status: 'error', error: 'Failed to connect' } as McpServerConnection;
           }
-        }
-
-        // Update state with loaded servers
-        set({ servers: connectedServers });
-
-        // Only attempt local MCP connection if no saved servers exist
-        if (savedServers.length === 0) {
-          try {
-            const localServer = await get().attemptLocalMcpConnection();
-            if (localServer) {
-              console.log('Connected to local MCP server');
-              await saveMcpServers([...connectedServers, localServer]);
-            }
-          } catch (err) {
-            console.error('Failed to connect to local MCP:', err);
-          }
+          set({ servers: [connected] });
+          await saveMcpServers([connected]);
         } else {
-          await saveMcpServers(connectedServers);
+          const connectedServers: McpServerConnection[] = [];
+          for (const server of savedServers) {
+            try {
+              const connectedServer = await connectToServer(server);
+              connectedServers.push(connectedServer);
+            } catch (err) {
+              console.error(`Initial connection failed for ${server.name}:`, err);
+              connectedServers.push({
+                ...server,
+                status: 'error',
+                error: 'Failed to connect'
+              } as McpServerConnection);
+            }
+          }
+          set({ servers: connectedServers });
+
+          // Only attempt local MCP connection if no saved servers exist
+          if (savedServers.length === 0) {
+            try {
+              const localServer = await get().attemptLocalMcpConnection();
+              if (localServer) {
+                console.log('Connected to local MCP server');
+                await saveMcpServers([...connectedServers, localServer]);
+              }
+            } catch (err) {
+              console.error('Failed to connect to local MCP:', err);
+            }
+          } else {
+            await saveMcpServers(connectedServers);
+          }
         }
 
         // Initialize project state
@@ -476,8 +501,15 @@ export const useStore = create<RootState>((set, get) => {
         console.log('Loading projects from IndexedDB:', JSON.stringify(state));
 
         if (hasProjects) {
+          // In shim-locked mode, ensure project MCP linkage is Hypergrid-only
+          const projects = HYPERGRID_LOCKED
+            ? state.projects.map(p => ({
+                ...p,
+                settings: { ...p.settings, mcpServerIds: ['hypergrid'] }
+              }))
+            : state.projects;
           set({
-            projects: state.projects,
+            projects,
             activeProjectId: state.activeProjectId,
             activeConversationId: state.activeProjectId && state.activeConversationId
               ? state.activeConversationId
@@ -500,7 +532,8 @@ export const useStore = create<RootState>((set, get) => {
               ...DEFAULT_PROJECT_SETTINGS,
               apiKey: apiKeys.apiKey ?? '',
               groqApiKey: apiKeys.groqApiKey ?? '',
-              mcpServers: []
+              mcpServers: [],
+              ...(HYPERGRID_LOCKED ? { mcpServerIds: ['hypergrid'] } : {})
             },
             conversations: [defaultConversation],
             createdAt: new Date(),
@@ -867,6 +900,10 @@ export const useStore = create<RootState>((set, get) => {
 
     // MCP methods
     addServer: async (server: McpServer) => {
+      if (HYPERGRID_LOCKED && server.id !== 'hypergrid') {
+        console.warn('Shim mode: adding additional MCP servers is disabled');
+        return undefined;
+      }
       set(state => ({
         servers: [...state.servers, { ...server, status: 'connecting', error: undefined }]
       }));
@@ -895,6 +932,10 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     removeServer: (serverId: string) => {
+      if (HYPERGRID_LOCKED) {
+        console.warn('Shim mode: removing MCP servers is disabled');
+        return;
+      }
       cleanupServer(serverId);
       const updatedState = {
         servers: get().servers.filter(s => s.id !== serverId)
@@ -906,6 +947,9 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     reconnectServer: async (serverId: string) => {
+      if (HYPERGRID_LOCKED && serverId !== 'hypergrid') {
+        throw new Error('Shim mode: only Hypergrid server can be reconnected');
+      }
       const server = get().servers.find(s => s.id === serverId);
       if (!server) {
         throw new Error('Server not found');
@@ -967,15 +1011,20 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     attemptLocalMcpConnection: async () => {
-      const id = 'localhost-mcp';
-      const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
-      const isOnKinode = process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT;
-      const isOnLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const defaultWsUri = !isOnKinode || isOnLocalhost ? 'ws://localhost:10125'
-        : `${wsProtocol}://${window.location.host}${process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT}`;
+      const id = HYPERGRID_LOCKED ? 'hypergrid' : 'localhost-mcp';
+      const defaultWsUri = HYPERGRID_LOCKED
+        ? buildSameNodeShimWsUri()
+        : (() => {
+            const wsProtocol = window.location.protocol.endsWith('s:') ? 'wss' : 'ws';
+            const isOnKinode = process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT;
+            const isOnLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            return !isOnKinode || isOnLocalhost
+              ? 'ws://localhost:10125'
+              : `${wsProtocol}://${window.location.host}${process.env.NEXT_PUBLIC_DEFAULT_WS_ENDPOINT}`;
+          })();
       const server: McpServer = {
-        id: id,
-        name: 'Local MCP',
+        id,
+        name: HYPERGRID_LOCKED ? 'Hypergrid' : 'Local MCP',
         uri: defaultWsUri,
         status: 'disconnected',
       };
