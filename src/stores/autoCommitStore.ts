@@ -625,7 +625,19 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
         
         // 🔍 Streamlined commit process - helper functions (minimal logs)
         console.log('💾 executeAutoCommit: local commit → enqueue background enhance+sync');
-        const { commitHash, branchName, commitMessage } = await get().createLocalCommit(context);
+        
+        // Phase 0: Use safeCommit to prevent racing commits
+        const commitResult = await rootStore.safeCommit(context.projectId, 'auto-commit', async () => {
+          return await get().createLocalCommit(context);
+        });
+        
+        if (commitResult.skipped) {
+          console.log('⏭️ executeAutoCommit: Commit skipped due to concurrent operation:', commitResult.reason);
+          console.log(`⏱️ executeAutoCommit total time (skipped): ${Date.now() - __t0}ms for project ${context.projectId}`);
+          return false;
+        }
+        
+        const { commitHash, branchName, commitMessage } = commitResult;
         if (!commitHash) {
           console.log('⚠️ executeAutoCommit: Auto-commit skipped or failed');
           console.log(`⏱️ executeAutoCommit total time (no commit): ${Date.now() - __t0}ms for project ${context.projectId}`);

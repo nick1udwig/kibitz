@@ -7,7 +7,7 @@ import { useStore } from '../../../stores/rootStore';
  * 🚀 ENHANCED: Now also captures and stores conversation metadata
  */
 export const useConversationGitHandler = () => {
-  const { activeProjectId, activeConversationId, projects, executeTool } = useStore();
+  const { activeProjectId, activeConversationId, projects, executeTool, safeCommit } = useStore();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastConversationActivity = useRef<number>(Date.now());
   
@@ -44,19 +44,28 @@ export const useConversationGitHandler = () => {
 
     try {
       console.log('🔄 ConversationGitHandler: Triggering end-of-conversation git operations...');
-      const { triggerEndOfLlmCycleGit } = await import('../../../lib/llmAgentGitHandler');
       
-      const gitResult = await triggerEndOfLlmCycleGit(
-        activeProject.id,
-        activeProject.name,
-        activeProject.settings.mcpServerIds?.[0] || 'localhost-mcp',
-        executeTool,
-        {
-          autoCommit: true,
-          commitMessage: 'Initial commit',
-          forceInit: false
-        }
-      );
+      // Phase 0: Use safeCommit to prevent racing commits
+      const gitResult = await safeCommit(activeProject.id, 'conversation-end', async () => {
+        const { triggerEndOfLlmCycleGit } = await import('../../../lib/llmAgentGitHandler');
+        
+        return await triggerEndOfLlmCycleGit(
+          activeProject.id,
+          activeProject.name,
+          activeProject.settings.mcpServerIds?.[0] || 'localhost-mcp',
+          executeTool,
+          {
+            autoCommit: true,
+            commitMessage: 'Initial commit',
+            forceInit: false
+          }
+        );
+      });
+      
+      if (gitResult.skipped) {
+        console.log('⏭️ ConversationGitHandler: Git operations skipped due to concurrent operation:', gitResult.reason);
+        return;
+      }
       
       console.log('✅ ConversationGitHandler: Git operations result:', gitResult);
       if (gitResult.success) {
@@ -75,7 +84,7 @@ export const useConversationGitHandler = () => {
     } catch (gitError) {
       console.warn('⚠️ ConversationGitHandler: Failed to trigger git operations:', gitError);
     }
-  }, [activeProject, activeConversationId, executeTool, captureConversationMetadata]);
+  }, [activeProject, activeConversationId, executeTool, safeCommit, captureConversationMetadata]);
 
   const scheduleGitOperations = useCallback((immediate = false) => {
     // Clear any existing timeout

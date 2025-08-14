@@ -264,6 +264,8 @@ interface RootState extends ProjectState, McpState {
   attemptLocalMcpConnection: () => Promise<McpServerConnection | null>;
   // New methods
   ensureActiveProjectDirectory: () => Promise<void>;
+  // Phase 0: Commit coordination
+  safeCommit: (projectId: string, source: string, commitFn: () => Promise<any>) => Promise<any>;
 }
 
 export const useStore = create<RootState>((set, get) => {
@@ -277,6 +279,9 @@ export const useStore = create<RootState>((set, get) => {
     args?: Record<string, unknown>;
     serverId?: string;
   }>();
+  
+  // Phase 0: Per-project commit locks to prevent racing commits
+  const commitLocksRef = new Map<string, Promise<any>>();
   
   // Circuit breaker removed - let MCP handle its own error management
   
@@ -2068,6 +2073,37 @@ export const useStore = create<RootState>((set, get) => {
       } catch {
         console.log('Local MCP not available');
         return null;
+      }
+    },
+
+    // Phase 0: Safe commit coordination to prevent racing commits
+    safeCommit: async (projectId: string, source: string, commitFn: () => Promise<any>) => {
+      const existing = commitLocksRef.get(projectId);
+      if (existing) {
+        console.log(`🔒 Phase 0: Skipping ${source} commit - already in progress for project ${projectId}`);
+        return { skipped: true, reason: `Another commit already in progress` };
+      }
+
+      console.log(`🚀 Phase 0: Starting ${source} commit for project ${projectId}`);
+      const commitPromise = (async () => {
+        try {
+          return await commitFn();
+        } finally {
+          // Always clean up the lock
+          commitLocksRef.delete(projectId);
+          console.log(`🧹 Phase 0: Cleaned up commit lock for project ${projectId}`);
+        }
+      })();
+
+      commitLocksRef.set(projectId, commitPromise);
+
+      try {
+        const result = await commitPromise;
+        console.log(`✅ Phase 0: ${source} commit completed for project ${projectId}`);
+        return result;
+      } catch (error) {
+        console.error(`❌ Phase 0: ${source} commit failed for project ${projectId}:`, error);
+        throw error;
       }
     },
   };
