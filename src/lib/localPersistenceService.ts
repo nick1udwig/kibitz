@@ -8,13 +8,14 @@
  * - Survives app restarts by scanning project directories
  */
 
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 import { ensureProjectDirectory } from './projectPathService';
+import { getProjectsBaseDir } from './pathConfig';
 import { Checkpoint } from '../types/Checkpoint';
 import { BranchInfo } from './branchService';
 
 // Base directory for all projects
-const BASE_PROJECTS_DIR = '/Users/test/gitrepo/projects';
+const BASE_PROJECTS_DIR = getProjectsBaseDir();
 
 /**
  * Checkpoint metadata stored in .kibitz/checkpoints.json
@@ -247,15 +248,41 @@ export class LocalPersistenceService {
       const content = JSON.stringify(data, null, 2);
       const filePath = `.kibitz/${filename}`;
       
-      // Use FileWriteOrEdit tool for robust file writing
-      const result = await executeTool(serverId, 'FileWriteOrEdit', {
-        file_path: filePath,
-        content: content,
-        thread_id: "kibitz-persistence"
-      });
-      
-      if (result.includes('Error:') || result.includes('error')) {
-        return { success: false, error: result };
+      // Preferred: write via BashCommand with heredoc for maximum compatibility
+      try {
+        const writeResult = await executeTool(serverId, 'BashCommand', {
+          action_json: {
+            command: `cd "${projectPath}" && mkdir -p .kibitz && cat > "${filePath}" <<'JSON'\n${content}\nJSON`,
+            type: 'command'
+          },
+          thread_id: "kibitz-persistence"
+        });
+        if (writeResult.includes('Error:')) {
+          throw new Error(writeResult);
+        }
+      } catch (_e1) {
+        // Fallback: echo with escaped content
+        const escaped = content.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+        const echoResult = await executeTool(serverId, 'BashCommand', {
+          action_json: {
+            command: `cd "${projectPath}" && mkdir -p .kibitz && echo "${escaped}" > "${filePath}"`,
+            type: 'command'
+          },
+          thread_id: "kibitz-persistence"
+        });
+        if (echoResult.includes('Error:')) {
+          // Last resort: attempt FileWriteOrEdit minimal schema (may not be supported)
+          try {
+            const feResult = await executeTool(serverId, 'FileWriteOrEdit', {
+              file_path: filePath,
+              content: content,
+              thread_id: "kibitz-persistence"
+            });
+            if (feResult.includes('Error:')) return { success: false, error: feResult };
+          } catch (err) {
+            return { success: false, error: err instanceof Error ? err.message : String(err) };
+          }
+        }
       }
       
       // Verify file was written correctly

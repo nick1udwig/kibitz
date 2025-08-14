@@ -19,13 +19,13 @@ import { ThemeToggle } from '../ThemeToggle';
 import { useStore } from '@/stores/rootStore';
 import { getDefaultModelForProvider } from '@/stores/rootStore';
 import { ConversationCheckpointManager } from '@/components/CheckpointManager/ConversationCheckpointManager';
-import { ProjectAnalysisTestButton } from '../../ProjectAnalysisTestButton';
-import { RepoTestInstructions } from '../../RepoTestInstructions';
-import { RecoveryPanel } from '../../RecoveryPanel';
+
+
 import { GitHubSyncToggle } from '../../GitHubSyncToggle';
 
 export const AdminView = () => {
-  const { projects, activeProjectId, updateProjectSettings, servers, apiKeys, saveApiKeysToServer } = useStore();
+  const { projects, activeProjectId, updateProjectSettings, servers, apiKeys, saveApiKeysToServer, updateApiKeys } = useStore();
+  const [projectsBaseDir, setProjectsBaseDir] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
   const [showSavePromptDialog, setShowSavePromptDialog] = useState(false);
@@ -35,6 +35,30 @@ export const AdminView = () => {
   const [customPromptName, setCustomPromptName] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+
+  // One-time fetch of persisted server config (projects base dir)
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+        const res = await fetch(`${BASE_PATH}/api/keys`);
+        if (res.ok) {
+          const data = await res.json();
+          // api/keys returns { keys, source } for secrets; we also added GET_CONFIG but keep this minimal
+          void data;
+        }
+      } catch {}
+      try {
+        const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+        const res = await fetch(`${BASE_PATH}/api/keys/config`).catch(() => null);
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data?.config?.projectsBaseDir) setProjectsBaseDir(data.config.projectsBaseDir);
+        }
+      } catch {}
+    };
+    fetchConfig();
+  }, []);
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
@@ -99,6 +123,8 @@ export const AdminView = () => {
     }
   };
 
+  
+
   return (
     <div className="space-y-6">
       {/* Floating theme toggle */}
@@ -112,8 +138,6 @@ export const AdminView = () => {
             <TabsTrigger value="config">Configuration</TabsTrigger>
             <TabsTrigger value="tools">Tools</TabsTrigger>
             <TabsTrigger value="checkpoints">Checkpoints</TabsTrigger>
-            <TabsTrigger value="recovery">🔧 Recovery</TabsTrigger>
-            <TabsTrigger value="repo-test">🧪 Repo Analysis</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -122,19 +146,51 @@ export const AdminView = () => {
         <ToolsView />
       ) : activeTab === 'checkpoints' ? (
                       <ConversationCheckpointManager projectId={activeProjectId || ''} />
-      ) : activeTab === 'recovery' ? (
-        <RecoveryPanel />
-      ) : activeTab === 'repo-test' ? (
-        <div className="space-y-6">
-          <ProjectAnalysisTestButton />
-          <RepoTestInstructions />
-        </div>
       ) : (
         <>
           <Card>
         <CardContent className="p-6">
           <h3 className="text-lg font-medium mb-4">API Settings</h3>
           <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Projects Base Directory</label>
+              <p className="text-sm text-muted-foreground mb-2">
+                Overrides environment. All projects will be created under this absolute path.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  value={projectsBaseDir}
+                  onChange={(e) => setProjectsBaseDir(e.target.value)}
+                  placeholder="/absolute/path/for/kibitz-projects"
+                />
+                <Button
+                  onClick={async () => {
+                    let val = (projectsBaseDir || '').trim();
+                    if (!val) return;
+                    // Normalize: strip bullets, trailing slashes, ensure leading slash for macOS paths
+                    val = val.replace(/[•\u2022]+/g, '').replace(/\/+$/g, '');
+                    if (!val.startsWith('/') && /^Users\//.test(val)) val = '/' + val;
+                    try {
+                      const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
+                      await fetch(`${BASE_PATH}/api/keys/config`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ projectsBaseDir: val })
+                      });
+                      // Also set a runtime hint for client-only code to consume immediately
+                      try {
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = val;
+                        // Update local apiKeys so other code paths can read it synchronously
+                        try { updateApiKeys({ projectsBaseDir: val }); } catch {}
+                        try { localStorage.setItem('kibitz_projects_base_dir', val); } catch {}
+                      } catch {}
+                    } catch {}
+                  }}
+                >Save</Button>
+              </div>
+            </div>
             <div>
               <label className="block text-sm font-medium mb-1">
                 Provider
@@ -248,6 +304,37 @@ export const AdminView = () => {
                 }}
                 placeholder="Enter your GROQ API key for voice transcription"
               />
+            </div>
+
+            {/* GitHub Credentials (masked) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">GitHub Token</label>
+                <Input
+                  type="password"
+                  value={apiKeys.githubToken ? '••••••••' + (apiKeys.githubToken?.slice(-4) || '') : ''}
+                  onChange={(e) => updateApiKeys({ githubToken: e.target.value })}
+                  placeholder="Paste your GitHub token"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">GitHub Username</label>
+                <Input
+                  type="text"
+                  value={apiKeys.githubUsername || ''}
+                  onChange={(e) => updateApiKeys({ githubUsername: e.target.value })}
+                  placeholder="your-github-username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Git Email (for commits)</label>
+                <Input
+                  type="email"
+                  value={apiKeys.githubEmail || ''}
+                  onChange={(e) => updateApiKeys({ githubEmail: e.target.value })}
+                  placeholder="you@company.com"
+                />
+              </div>
             </div>
 
             <div>
@@ -431,6 +518,28 @@ export const AdminView = () => {
                       messageWindowSize: value
                     });
                   }
+                }}
+                min="1"
+                className="w-32"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Minimum Files Before Auto Commit/Push
+              </label>
+              <p className="text-sm text-muted-foreground mb-2">
+                Automatic commit and push will only run when at least this many files are changed. Manual commits are unaffected.
+              </p>
+              <Input
+                type="number"
+                value={activeProject.settings.minFilesForAutoCommitPush ?? 2}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value);
+                  const clamped = isNaN(value) ? 1 : Math.max(1, value);
+                  handleSettingsChange({
+                    minFilesForAutoCommitPush: clamped
+                  });
                 }}
                 min="1"
                 className="w-32"

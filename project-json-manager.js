@@ -1,6 +1,56 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
+// Do not import TS from JS here. Resolve base dir in priority order similar to server util:
+// 1) PROJECT_WORKSPACE_PATH/USER_PROJECTS_PATH
+// 2) In-memory UI override from apiKeysStorage.projectsBaseDir (if available)
+// 3) Persisted encrypted config
+// 4) NEXT_PUBLIC_PROJECTS_DIR
+// 5) Default
+function getEnvProjectsBaseDir() {
+  const normalize = (v) => {
+    if (!v) return undefined;
+      let s = String(v).trim();
+      // Remove accidentally masked bullets, invisible/zero-width chars, control chars, and trailing slashes
+      s = s
+        .replace(/[•\u2022]+/g, '')
+        .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00A0\u202F]+/g, '')
+        .replace(/[\u0000-\u001F\u007F]+/g, '')
+        .replace(/\/+$/, '');
+      // If it looks like a macOS path missing leading slash, add it
+      if (!s.startsWith('/') && /^Users\//.test(s)) s = '/' + s;
+      return s;
+  };
+
+  // 1) Runtime env
+  const fromRuntime = normalize(process.env.PROJECT_WORKSPACE_PATH || process.env.USER_PROJECTS_PATH);
+  if (fromRuntime) return fromRuntime;
+
+  // 2) In-memory apiKeysStorage (set by /api/keys/config PUT)
+  try {
+    const keysModule = require('./src/app/api/keys/route');
+    const mem = keysModule && keysModule.apiKeysStorage && keysModule.apiKeysStorage.projectsBaseDir;
+    const fromMemory = normalize(mem);
+    if (fromMemory) return fromMemory;
+  } catch {}
+
+  // 3) Persisted encrypted config
+  try {
+    const { loadPersistedServerConfig } = require('./src/lib/server/configVault');
+    const cfg = loadPersistedServerConfig && loadPersistedServerConfig();
+    if (cfg && typeof cfg.projectsBaseDir === 'string' && cfg.projectsBaseDir.trim()) {
+      const fromPersisted = normalize(cfg.projectsBaseDir.trim());
+      if (fromPersisted) return fromPersisted;
+    }
+  } catch {}
+
+  // 4) Client env hint
+  const fromClient = normalize(process.env.NEXT_PUBLIC_PROJECTS_DIR);
+  if (fromClient) return fromClient;
+
+  // 5) Default
+  return '/Users/test/gitrepo/projects';
+}
 
 /**
  * Default GitHub configuration for new projects
@@ -9,7 +59,7 @@ const DEFAULT_GITHUB_CONFIG = {
   enabled: false,
   remoteUrl: null,
   syncInterval: 300000, // 5 minutes
-  syncBranches: ['main', 'auto/*'],
+  syncBranches: ['main', 'step-*'],
   lastSync: null,
   syncStatus: 'idle',
   authentication: {
@@ -42,7 +92,7 @@ const DEFAULT_BRANCH_SYNC = {
 /**
  * Base projects directory
  */
-const BASE_PROJECTS_DIR = '/Users/test/gitrepo/projects/';
+const BASE_PROJECTS_DIR = `${getEnvProjectsBaseDir()}/`;
 
 /**
  * Logger utility for debugging
@@ -51,7 +101,8 @@ const logger = {
   info: (msg, ...args) => console.log(`[INFO] ${msg}`, ...args),
   warn: (msg, ...args) => console.warn(`[WARN] ${msg}`, ...args),
   error: (msg, ...args) => console.error(`[ERROR] ${msg}`, ...args),
-  debug: (msg, ...args) => process.env.DEBUG && console.log(`[DEBUG] ${msg}`, ...args)
+  // Always log debug messages to measure real latency end-to-end
+  debug: (msg, ...args) => console.log(`[DEBUG] ${msg}`, ...args)
 };
 
 /**
@@ -157,6 +208,63 @@ export async function readProjectJson(projectPath) {
 }
 
 /**
+ * Derive project identity (id and name) from a project path
+ * Directory format: {projectId}_{projectName}
+ */
+function deriveProjectIdentity(projectPath) {
+  const dirName = path.basename(projectPath);
+  const parts = dirName.split('_');
+  const projectId = parts[0] || 'unknown';
+  const projectName = parts.length > 1 ? parts.slice(1).join('_') : 'project';
+  return { projectId, projectName };
+}
+
+/**
+ * Creates a minimal, valid project.json structure in memory
+ */
+function buildDefaultProjectData(projectPath) {
+  const { projectId, projectName } = deriveProjectIdentity(projectPath);
+  const now = Date.now();
+  return {
+    // Basic git-like fields (placeholders)
+    commit_hash: 'unknown',
+    branch: 'main',
+    author: 'Unknown',
+    date: new Date(now).toISOString(),
+    message: 'Initialized project metadata',
+    remote_url: null,
+    is_dirty: false,
+
+    // Required project info
+    projectId,
+    projectName,
+    projectPath,
+
+    // Minimal repository and branches info
+    repository: {
+      defaultBranch: 'main',
+      totalBranches: 0,
+      totalCommits: 0,
+      lastActivity: now,
+      size: 0,
+      languages: {}
+    },
+    branches: [],
+    conversations: [],
+
+    // v2 schema sections with defaults
+    github: { ...DEFAULT_GITHUB_CONFIG },
+    sync: { ...DEFAULT_SYNC_CONFIG },
+
+    metadata: {
+      generated: now,
+      version: '2.0',
+      source: 'auto-init'
+    }
+  };
+}
+
+/**
  * Writes updated project.json with proper formatting and locking
  * @param {string} projectPath - Path to the project directory
  * @param {Object} data - Project data to write
@@ -214,7 +322,15 @@ export async function updateGitHubConfig(projectPath, config) {
   logger.debug(`Updating GitHub config for project: ${projectPath}`);
   
   try {
-    const data = await readProjectJson(projectPath);
+    let data;
+    try {
+      data = await readProjectJson(projectPath);
+    } catch (readErr) {
+      // If project.json doesn't exist or is invalid, initialize a minimal valid one
+      logger.warn(`project.json missing or invalid at ${projectPath}, creating a default one:`, readErr?.message || readErr);
+      await ensureKibitzDirectory(projectPath);
+      data = buildDefaultProjectData(projectPath);
+    }
     
     // Merge with existing GitHub config
     data.github = {

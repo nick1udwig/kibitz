@@ -667,7 +667,45 @@ export class ConversationWorkspaceManager {
         };
       }
 
-      const targetBranch = branchName || workspace.currentBranch || 'main';
+      // Skip push when repo has no commits or no current branch
+      try {
+        const headCheck = await this.executeTool!(this.mcpServerId, 'BashCommand', {
+          action_json: { command: `cd "${workspace.workspacePath}" && git rev-parse --verify HEAD`, type: 'command' },
+          thread_id: `git-head-check-${Date.now()}`
+        });
+        const headText = (headCheck || '').toString().toLowerCase();
+        if (headText.includes('fatal') || headText.includes('unknown revision')) {
+          return {
+            success: false,
+            command: '',
+            output: '',
+            error: 'Repository has no commits; skipping push',
+            timestamp: new Date(),
+            workspaceId: workspace.workspaceId
+          };
+        }
+      } catch {
+        return {
+          success: false,
+          command: '',
+          output: '',
+          error: 'Repository has no commits; skipping push',
+          timestamp: new Date(),
+          workspaceId: workspace.workspaceId
+        };
+      }
+
+      const targetBranch = branchName || workspace.currentBranch || '';
+      if (!targetBranch) {
+        return {
+          success: false,
+          command: '',
+          output: '',
+          error: 'No current branch; skipping push',
+          timestamp: new Date(),
+          workspaceId: workspace.workspaceId
+        };
+      }
       const command = setUpstream 
         ? GIT_COMMANDS.PUSH_SET_UPSTREAM(targetBranch)
         : GIT_COMMANDS.PUSH_ORIGIN(targetBranch);
@@ -893,21 +931,19 @@ export class ConversationWorkspaceManager {
         return initResult;
       }
 
-      // Configure git user (basic setup)
-      await this.executeGitCommand(workspacePath, 'git config user.name "Kibitz User"');
-      await this.executeGitCommand(workspacePath, 'git config user.email "kibitz@example.com"');
+      // Do not set identity here; rely on repo/global config or env-provided values
 
-      // Create initial commit
+      // Ensure HEAD points to main without creating a commit
+      await this.executeGitCommand(workspacePath, 'git symbolic-ref HEAD refs/heads/main || true');
+
+      // Create initial commit only if caller performs it later; here we just drop a README file
       const createFileResult = await this.executeTool(this.mcpServerId, 'FileWriteOrEdit', {
         file_path: `${workspacePath}/README.md`,
         content: `# Workspace for Conversation\n\nThis is a conversation workspace created by Kibitz.\n\nCreated: ${new Date().toISOString()}\n`,
         thread_id: `init-readme-${Date.now()}`
       });
 
-      if (createFileResult) {
-        await this.executeGitCommand(workspacePath, GIT_COMMANDS.ADD_ALL);
-        await this.executeGitCommand(workspacePath, GIT_COMMANDS.COMMIT('Initial commit'));
-      }
+      // Do not auto-commit; commits will be created explicitly by workflow
 
       // Create specified branch if not main
       if (branchName !== 'main') {

@@ -487,9 +487,22 @@ export class MCPToolOrchestrator {
         );
       }
 
-      // Create auto-commit if threshold met
-      if (filesChanged.length >= 2) {
-        await this.createAutoCommit(context, filesChanged);
+      // Create auto-commit if UI-configured threshold met
+      try {
+        const { useStore } = await import('../stores/rootStore');
+        const st = useStore.getState();
+        const project = st.projects.find(p => p.id === context.projectId);
+        const minFiles = (project?.settings?.minFilesForAutoCommitPush ?? 2) as number;
+        if (filesChanged.length >= Math.max(1, minFiles)) {
+          await this.createAutoCommit(context, filesChanged);
+        } else {
+          console.log(`ℹ️ MCP Orchestrator: Skipping auto-commit (changed ${filesChanged.length} < min ${minFiles})`);
+        }
+      } catch (_err) {
+        // Fallback to legacy behavior if store not available
+        if (filesChanged.length >= 2) {
+          await this.createAutoCommit(context, filesChanged);
+        }
       }
       
     } catch (error) {

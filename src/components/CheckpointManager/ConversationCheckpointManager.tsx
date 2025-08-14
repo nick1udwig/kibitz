@@ -25,16 +25,21 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
     error,
     revertToCommit,
     availableBranches,
-    recentCommits
+    recentCommits,
+    loadProjectMetadata
   } = useConversationMetadata();
 
   const { 
     switchToBranch, 
     isProcessing: isSwitchingBranch, 
     currentBranch,
-    listProjectBranches 
+    listProjectBranches,
+    refreshCurrentBranch,
+    startAutoRefresh,
+    stopAutoRefresh 
   } = useBranchStore();
   const [isReverting, setIsReverting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Get current branch for this project
   const currentProjectBranch = currentBranch[projectId] || 'main';
@@ -43,8 +48,32 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
   useEffect(() => {
     if (projectId) {
       listProjectBranches(projectId).catch(console.error);
+      refreshCurrentBranch(projectId).catch(console.error);
+      startAutoRefresh(projectId);
     }
-  }, [projectId, listProjectBranches]);
+    return () => {
+      stopAutoRefresh();
+    };
+  }, [projectId, listProjectBranches, refreshCurrentBranch, startAutoRefresh, stopAutoRefresh]);
+
+  // Generate project metadata on demand when missing
+  const handleGenerateProjectData = async () => {
+    try {
+      if (!projectId) return;
+      setIsGenerating(true);
+      const res = await fetch(`/api/projects/${projectId}/generate`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.warn('Failed to generate project data', data);
+        return;
+      }
+      await listProjectBranches(projectId);
+      await refreshCurrentBranch(projectId);
+      await loadProjectMetadata(projectId);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   // Handle revert by switching to the branch instead of checking out the commit
   const handleRevert = async (commit: any) => {
@@ -94,14 +123,30 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
 
   if (error) {
     return (
-      <Card className="p-6 border-red-200 bg-red-50">
-        <div className="flex items-center space-x-2 text-red-600">
-          <span className="font-medium">⚠️ Project data not available</span>
+      <Card className="p-6 border-amber-200 bg-amber-50">
+        <div className="flex items-center space-x-2 text-amber-800">
+          <span className="font-medium">Project data not available</span>
         </div>
-        <p className="text-sm text-red-500 mt-2">{error}</p>
-        <p className="text-sm text-gray-600 mt-2">
-          Start a conversation to generate project data and enable checkpoints.
+        <p className="text-sm text-amber-700 mt-2">
+          {error}
         </p>
+        <p className="text-sm text-gray-600 mt-2">
+          Start a conversation or generate project data to enable checkpoints.
+        </p>
+        <div className="mt-4 p-3 bg-white rounded border">
+          <div className="flex items-center space-x-2">
+            <GitBranch className="w-4 h-4 text-blue-600" />
+            <span className="text-sm text-gray-700">Current Branch:</span>
+            <span className="text-sm font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded">
+              {formatBranchName(currentProjectBranch)}
+            </span>
+          </div>
+          <div className="mt-3">
+            <Button size="sm" onClick={handleGenerateProjectData} disabled={isGenerating}>
+              {isGenerating ? 'Generating…' : 'Generate project data'}
+            </Button>
+          </div>
+        </div>
       </Card>
     );
   }
@@ -257,15 +302,24 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
 
       {/* Empty State */}
       {!projectMetadata && !isLoading && (
-        <Card className="p-8 text-center">
+        <Card className="p-8 text-center border-gray-200 bg-white">
           <GitBranch className="w-12 h-12 mx-auto text-gray-400 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No Project Data Available
+            No project data yet
           </h3>
           <p className="text-gray-600 mb-4">
-            Start a conversation to automatically generate project checkpoints and enable version control.
+            Generate initial project data to enable checkpoints and branch insights.
           </p>
-          <div className="text-sm text-gray-500">
+          <div className="flex items-center justify-center space-x-2 mb-4">
+            <span className="text-sm text-gray-700">Current Branch:</span>
+            <span className="text-sm font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded">
+              {formatBranchName(currentProjectBranch)}
+            </span>
+          </div>
+          <Button onClick={handleGenerateProjectData} disabled={isGenerating}>
+            {isGenerating ? 'Generating…' : 'Generate project data'}
+          </Button>
+          <div className="text-sm text-gray-500 mt-3">
             Each conversation creates its own branch with automatic commits.
           </div>
         </Card>

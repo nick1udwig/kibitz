@@ -7,6 +7,7 @@ import { useStore } from '@/stores/rootStore';
 import { wakeLock } from '@/lib/wakeLock';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '../types/genericMessage';
 import { useAutoCommit, detectToolSuccess, detectFileChanges, detectBuildSuccess, detectTestSuccess } from './useAutoCommit';
+import { useAutoCommitStore } from '../../../stores/autoCommitStore';
 import { getProjectPath } from '../../../lib/projectPathService';
 import { useDelayedJSONGeneration } from './useDelayedJSONGeneration';
 
@@ -46,69 +47,20 @@ export const useMessageSender = () => {
   const [conversationFileCount, setConversationFileCount] = useState(0);
   const [lastActivityTime, setLastActivityTime] = useState(Date.now());
 
-  // Track files created in this conversation
+  // Track files created in this conversation (analytics only; branching handled elsewhere)
   const trackConversationFile = useCallback((filename: string) => {
     setConversationFileCount(prev => prev + 1);
     setLastActivityTime(Date.now());
     console.log(`🌿 Conversation file tracker: ${conversationFileCount + 1} files created in this conversation`);
   }, [conversationFileCount]);
 
-  // Simple branch creation at conversation end
+  // Legacy simple branch creation is disabled to avoid conflicts with conv-step branches
   const createConversationBranch = useCallback(async () => {
-    if (!activeProject || conversationFileCount < 2) {
-      console.log(`🌿 Not creating branch: ${conversationFileCount} files (need 2+)`);
-      return;
-    }
+    console.log('🌿 Legacy conversation/timestamp branch creation is disabled; using conv-<id>-step-<n> at turn end.');
+  }, []);
 
-    try {
-      const timestamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
-      const branchName = `conversation/${timestamp}`;
-      
-      console.log(`🌿 Creating conversation branch: ${branchName} for ${conversationFileCount} files`);
-      
-      // Simple git branch creation
-      const result = await executeTool('localhost-mcp', 'BashCommand', {
-        action_json: {
-          command: `cd "${getProjectPath(activeProject.id, activeProject.name)}" && git checkout -b ${branchName}`
-        },
-        thread_id: 'conversation-branch'
-      });
-
-      if (!result.includes('error')) {
-        console.log(`✅ Successfully created conversation branch: ${branchName}`);
-        
-        // Dispatch event for UI update
-        window.dispatchEvent(new CustomEvent('conversationBranchCreated', {
-          detail: {
-            projectId: activeProject.id,
-            branchName,
-            fileCount: conversationFileCount,
-            timestamp: Date.now()
-          }
-        }));
-      } else {
-        console.warn(`⚠️ Failed to create conversation branch:`, result);
-      }
-    } catch (error) {
-      console.error('❌ Error creating conversation branch:', error);
-    }
-  }, [activeProject, conversationFileCount, executeTool]);
-
-  // Auto-trigger branch creation after inactivity
-  useEffect(() => {
-    if (conversationFileCount < 2) return;
-
-    const timeout = setTimeout(() => {
-      const timeSinceLastActivity = Date.now() - lastActivityTime;
-      // Create branch after 30 seconds of inactivity with 2+ files
-      if (timeSinceLastActivity >= 30000) {
-        console.log(`🌿 Auto-creating branch after 30s inactivity with ${conversationFileCount} files`);
-        createConversationBranch();
-      }
-    }, 31000);
-
-    return () => clearTimeout(timeout);
-  }, [conversationFileCount, lastActivityTime, createConversationBranch]);
+  // Disabled legacy auto-trigger; conv-step branching happens at turn end
+  useEffect(() => { /* no-op */ }, []);
 
   // 🌿 Expose manual branch creation for testing
   const manualCreateBranch = useCallback(() => {
@@ -509,41 +461,21 @@ Format: Only output the title, no quotes or explanation`
                 currentMessages.push(toolResultMessage);
                 updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-                // Trigger auto-commit after successful tool execution
+                // Track changes only; defer commit to end-of-turn
                 try {
                   const toolSuccess = detectToolSuccess(unsanitizedTool.name as string, result);
                   if (toolSuccess) {
                     const changedFiles = detectFileChanges(unsanitizedTool.name as string, result);
-                    console.log(`Tool execution successful, triggering auto-commit for ${unsanitizedTool.name}`);
-                    console.log(`Detected changed files:`, changedFiles);
-                    
-                    // 🔧 CRITICAL FIX: Track each detected file change in pending changes
-                    // This ensures the 2-file threshold works properly for auto-branch creation
                     if (changedFiles.length > 0) {
-                      console.log(`📁 Tracking ${changedFiles.length} changed files for auto-commit threshold`);
+                      console.log(`📁 Tracking ${changedFiles.length} changed files for end-of-turn commit`);
                       changedFiles.forEach(filePath => {
                         trackFileChange(filePath);
-                        console.log(`📁 Tracked file change: ${filePath}`);
-                        
-                        // 🌿 NEW: Also track for simple conversation branch creation
                         trackConversationFile(filePath);
                       });
                     }
-                    
-                    // Prioritize build and test success over general tool execution
-                    if (detectBuildSuccess(unsanitizedTool.name as string, result)) {
-                      console.log('Detected build success, triggering build success auto-commit');
-                      await onBuildSuccess(result);
-                    } else if (detectTestSuccess(unsanitizedTool.name as string, result)) {
-                      console.log('Detected test success, triggering test success auto-commit');
-                      await onTestSuccess(result);
-                    } else {
-                      await onToolExecution(unsanitizedTool.name as string, result);
-                    }
                   }
                 } catch (autoCommitError) {
-                  console.warn('Auto-commit failed after tool execution:', autoCommitError);
-                  // Don't fail the whole operation for auto-commit failures
+                  console.warn('Change tracking failed after tool execution:', autoCommitError);
                 }
 
               } catch (toolError) {
@@ -744,41 +676,21 @@ Format: Only output the title, no quotes or explanation`
               currentMessages.push(toolResultMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
 
-              // Trigger auto-commit after successful tool execution
+              // Track changes only; defer commit to end-of-turn
               try {
                 const toolSuccess = detectToolSuccess(toolUseContent.name, result);
                 if (toolSuccess) {
                   const changedFiles = detectFileChanges(toolUseContent.name, result);
-                  console.log(`Tool execution successful, triggering auto-commit for ${toolUseContent.name}`);
-                  console.log(`Detected changed files:`, changedFiles);
-                  
-                  // 🔧 CRITICAL FIX: Track each detected file change in pending changes
-                  // This ensures the 2-file threshold works properly for auto-branch creation
                   if (changedFiles.length > 0) {
-                    console.log(`📁 Tracking ${changedFiles.length} changed files for auto-commit threshold`);
+                    console.log(`📁 Tracking ${changedFiles.length} changed files for end-of-turn commit`);
                     changedFiles.forEach(filePath => {
                       trackFileChange(filePath);
-                      console.log(`📁 Tracked file change: ${filePath}`);
-                      
-                      // 🌿 NEW: Also track for simple conversation branch creation
                       trackConversationFile(filePath);
                     });
                   }
-                  
-                  // Prioritize build and test success over general tool execution
-                  if (detectBuildSuccess(toolUseContent.name, result)) {
-                    console.log('Detected build success, triggering build success auto-commit');
-                    await onBuildSuccess(result);
-                  } else if (detectTestSuccess(toolUseContent.name, result)) {
-                    console.log('Detected test success, triggering test success auto-commit');
-                    await onTestSuccess(result);
-                  } else {
-                    await onToolExecution(toolUseContent.name, result);
-                  }
                 }
               } catch (autoCommitError) {
-                console.warn('Auto-commit failed after tool execution:', autoCommitError);
-                // Don't fail the whole operation for auto-commit failures
+                console.warn('Change tracking failed after tool execution:', autoCommitError);
               }
 
               if (!shouldCancelRef.current) continue;
@@ -842,9 +754,44 @@ Format: Only output the title, no quotes or explanation`
       setIsLoading(false);
       streamRef.current = null;
       
-      // 🚀 TRIGGER JSON GENERATION 1 MINUTE AFTER ASSISTANT FINISHES
+      // 🚀 End-of-turn: schedule JSON generation and perform one conversation-step commit
       console.log('✅ Assistant finished responding, scheduling JSON generation for 1 minute...');
       scheduleJSONGeneration();
+
+      try {
+        if (activeProject && activeConversationId) {
+          const projectPath = getProjectPath(activeProject.id, activeProject.name);
+          console.log('🌿 End-of-turn commit starting on conversation step branch...');
+          const success = await useAutoCommitStore.getState().executeAutoCommit({
+            projectId: activeProject.id,
+            projectPath,
+            conversationId: activeConversationId,
+            trigger: 'tool_execution',
+            toolName: 'turn_end',
+            summary: 'conversation turn end'
+          });
+          if (!success) {
+            try {
+              const cfgRes = await fetch(`/api/github-sync/config?projectId=${activeProject.id}`);
+              if (cfgRes.ok) {
+                const cfg = await cfgRes.json();
+                if (cfg.github?.enabled) {
+                  console.log('🚀 End-of-turn: No commit; pushing new step branch only (sync enabled)');
+                  await fetch('/api/github-sync/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ projectId: activeProject.id, immediate: true, force: false })
+                  });
+                }
+              }
+            } catch (pushErr) {
+              console.warn('⚠️ End-of-turn branch-only push failed:', pushErr);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ End-of-turn commit failed (continuing):', e);
+      }
       
       await wakeLock.release();
     }

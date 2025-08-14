@@ -30,6 +30,7 @@ export interface EnhancedCommitRequest {
   projectSettings: ProjectSettings;
   serverId: string;
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>;
+  projectId?: string; // Ensure server route receives the correct project id for JSON updates
 }
 
 export interface EnhancedCommitResult {
@@ -93,9 +94,12 @@ export async function processEnhancedCommit(
       model: request.projectSettings?.model
     });
 
-    // Step 1: Create the enhanced commit with diff and LLM generation
-    console.log('📝 Step 1: Creating enhanced commit with diff and LLM generation...');
-    const commitResult = await createConversationCommitWithRetry(request, opts, warnings);
+    // Step 1: Create commit info
+    // If enableLLMGeneration is false, skip LLM generation and only collect metadata/diff
+    console.log('📝 Step 1: Creating enhanced commit metadata' + (opts.enableLLMGeneration ? ' with LLM generation...' : ' (metadata-only)...'));
+    const commitResult = opts.enableLLMGeneration
+      ? await createConversationCommitWithRetry(request, opts, warnings)
+      : await createCommitInfoWithoutLLM(request);
     console.log('📝 Step 1 result:', commitResult.success ? 'SUCCESS' : 'FAILED', commitResult.error || '');
     
     if (!commitResult.success) {
@@ -115,8 +119,8 @@ export async function processEnhancedCommit(
     
     // Calculate metrics
     const metrics = {
-      diffGenerationTime: commitResult.diffGenerationTime,
-      llmGenerationTime: commitResult.llmGenerationTime,
+      diffGenerationTime: (commitResult as any).diffGenerationTime,
+      llmGenerationTime: (commitResult as any).llmGenerationTime,
       totalProcessingTime: Date.now() - startTime,
       filesChanged: commitInfo.filesChanged.length,
       linesChanged: commitInfo.linesAdded + commitInfo.linesRemoved
@@ -129,154 +133,36 @@ export async function processEnhancedCommit(
       - LLM Message: ${commitInfo.llmGeneratedMessage ? '✓' : '✗'}
       - Processing Time: ${metrics.totalProcessingTime}ms`);
 
-    // Step 2: Store enhanced commit data in project JSON
+    // Step 2: Store enhanced commit data in project JSON via server route to avoid concurrent writes
     try {
-      console.log('📝 Step 2: Storing enhanced commit data in project JSON...');
+      console.log('📝 Step 2: Sending enhanced commit data to server for JSON update...');
+      // If API is not yet ready, buffer and retry to keep UI smooth
+      const projectId = request.projectId || 'unknown';
+      const apiUrl = `/api/projects/${encodeURIComponent(projectId)}/enhanced-commit`;
+      const payload = { branchName: request.branchName, commitInfo };
+
+      const doPost = async () => fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      let response: Response | null = null;
+      try {
+        response = await doPost();
+      } catch {}
       
-      // Use Node.js built-in modules for better reliability
-      const path = require('path');
-      const fs = require('fs');
-      const jsonFilePath = path.join(request.projectPath, '.kibitz', 'api', 'project.json');
-      
-      console.log('📝 Looking for project JSON at:', jsonFilePath);
-      
-      if (fs.existsSync(jsonFilePath)) {
-        console.log('📝 Found existing project JSON, updating with enhanced commit data...');
-        
-        try {
-          const projectDataRaw = fs.readFileSync(jsonFilePath, 'utf8');
-          const projectData = JSON.parse(projectDataRaw);
-          console.log('📝 Successfully read project JSON, size:', projectDataRaw.length, 'bytes');
-          console.log('📝 Project has', projectData.branches?.length || 0, 'branches');
-          
-          // Initialize branches array if it doesn't exist
-          if (!projectData.branches) {
-            projectData.branches = [];
-            console.log('📝 Initialized empty branches array');
-          }
-          
-          // Find the branch and update it with enhanced commit data
-          let branchIndex = -1;
-          if (request.branchName) {
-            branchIndex = projectData.branches.findIndex((b: any) => b.branchName === request.branchName);
-          }
-          if (branchIndex < 0 && request.commitHash) {
-            branchIndex = projectData.branches.findIndex((b: any) => b.commitHash === request.commitHash);
-          }
-          
-          if (branchIndex >= 0) {
-            console.log('📝 Found branch at index', branchIndex, ':', projectData.branches[branchIndex].branchName);
-            const branch = projectData.branches[branchIndex];
-            
-            // Update branch with enhanced commit data
-            if (commitInfo.llmGeneratedMessage) {
-              const oldMessage = branch.commitMessage;
-              branch.commitMessage = commitInfo.llmGeneratedMessage;
-              console.log('📝 Updated commit message from:', oldMessage, 'to:', commitInfo.llmGeneratedMessage);
-            }
-            
-            // Add to commits array
-            if (!branch.commits) {
-              branch.commits = [];
-              console.log('📝 Initialized commits array for branch');
-            }
-            
-            // Check if this commit already exists
-            const existingCommitIndex = branch.commits.findIndex((c: any) => c.hash === commitInfo.hash);
-            
-            if (existingCommitIndex >= 0) {
-              // Update existing commit
-              branch.commits[existingCommitIndex] = commitInfo;
-              console.log('📝 Updated existing commit at index', existingCommitIndex);
-            } else {
-              // Add new commit
-              branch.commits.push(commitInfo);
-              console.log('📝 Added new commit to array, total commits:', branch.commits.length);
-            }
-            
-            // Update diffData
-            branch.diffData = {
-              gitDiff: commitInfo.diff,
-              llmProvider: commitInfo.llmProvider,
-              llmModel: commitInfo.llmModel,
-              llmGeneratedMessage: commitInfo.llmGeneratedMessage,
-              llmError: commitInfo.llmError
-            };
-            console.log('📝 Updated diffData with LLM info');
-            
-            // Update other branch metadata
-            branch.filesChanged = commitInfo.filesChanged;
-            branch.linesAdded = commitInfo.linesAdded;
-            branch.linesRemoved = commitInfo.linesRemoved;
-            branch.timestamp = new Date(commitInfo.timestamp).getTime();
-            
-            // Save updated project JSON with better error handling
-            const updatedJson = JSON.stringify(projectData, null, 2);
-            fs.writeFileSync(jsonFilePath, updatedJson, 'utf8');
-            
-            // Verify the write
-            if (fs.existsSync(jsonFilePath)) {
-              const verifySize = fs.statSync(jsonFilePath).size;
-              console.log('✅ Successfully updated project JSON with enhanced commit data, new size:', verifySize, 'bytes');
-            } else {
-              throw new Error('File disappeared after write');
-            }
-            
-          } else {
-            console.warn('⚠️ Could not find branch in project JSON to update');
-            console.log('📝 Available branches:', projectData.branches.map((b: any) => b.branchName));
-            console.log('📝 Looking for branch:', request.branchName, 'or commit:', request.commitHash?.substring(0, 8));
-            
-            // Create a new branch entry if it doesn't exist
-            const newBranch = {
-              branchName: request.branchName || `unknown-${Date.now()}`,
-              commitHash: request.commitHash,
-              commitMessage: commitInfo.llmGeneratedMessage || commitInfo.message,
-              timestamp: new Date(commitInfo.timestamp).getTime(),
-              author: commitInfo.author,
-              filesChanged: commitInfo.filesChanged,
-              linesAdded: commitInfo.linesAdded,
-              linesRemoved: commitInfo.linesRemoved,
-              isMainBranch: false,
-              tags: [],
-              sync: {
-                lastPushed: null,
-                pushedHash: null,
-                needsSync: false,
-                syncError: null
-              },
-              commits: [commitInfo],
-              diffData: {
-                gitDiff: commitInfo.diff,
-                llmProvider: commitInfo.llmProvider,
-                llmModel: commitInfo.llmModel,
-                llmGeneratedMessage: commitInfo.llmGeneratedMessage,
-                llmError: commitInfo.llmError
-              }
-            };
-            
-            projectData.branches.push(newBranch);
-            console.log('📝 Created new branch entry:', newBranch.branchName);
-            
-            // Save the updated JSON
-            const updatedJson = JSON.stringify(projectData, null, 2);
-            fs.writeFileSync(jsonFilePath, updatedJson, 'utf8');
-            console.log('✅ Successfully added new branch to project JSON');
-          }
-          
-        } catch (parseError) {
-          console.error('❌ Failed to parse/update project JSON:', parseError);
-          warnings.push(`Failed to parse project JSON file: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
-        }
-        
-      } else {
-        console.log('📝 Project JSON not found, enhanced data will be included in next generation');
-        warnings.push('Project JSON file not found for immediate update');
+      if (!response || !response.ok) {
+        console.log('🕒 Buffering enhanced-commit update for retry');
+        // Buffer in-memory; a later call to generate API will flush via server
+        (window as any).__kibitzBufferedEnhancedCommits = (window as any).__kibitzBufferedEnhancedCommits || {};
+        const list = (window as any).__kibitzBufferedEnhancedCommits[projectId] || [];
+        list.push(payload);
+        (window as any).__kibitzBufferedEnhancedCommits[projectId] = list;
       }
-      
     } catch (jsonError) {
-      console.error('❌ Failed to integrate enhanced commit data with project JSON:', jsonError);
-      warnings.push(`Failed to store enhanced commit data in project JSON: ${jsonError instanceof Error ? jsonError.message : 'Unknown error'}`);
+      console.error('❌ Failed to send enhanced commit data to server:', jsonError);
+      warnings.push('Failed to send enhanced commit data to server');
     }
 
     return {
@@ -299,6 +185,52 @@ export async function processEnhancedCommit(
       }
     };
   }
+}
+
+/**
+ * Enqueue enhanced processing in the background without blocking the caller.
+ * Performs safe amend: only when HEAD equals the original commit hash.
+ */
+export function enqueueEnhancedProcessing(
+  request: EnhancedCommitRequest,
+  options: CommitProcessingOptions = {}
+): void {
+  setTimeout(async () => {
+    try {
+      const result = await processEnhancedCommit(request, options);
+      if (!result.success) {
+        console.warn('⚠️ enqueueEnhancedProcessing: Enhanced processing failed:', result.error);
+        return;
+      }
+
+      // Skip amend in metadata-only mode; only attempt amend if LLM generation was enabled
+      if ((options.enableLLMGeneration ?? DEFAULT_OPTIONS.enableLLMGeneration)) {
+        try {
+          const { executeGitCommand } = await import('./versionControl/git');
+          const headRes = await executeGitCommand(
+            request.serverId,
+            'git rev-parse HEAD',
+            request.projectPath,
+            request.executeTool
+          );
+          const headHash = headRes.success ? headRes.output.trim() : '';
+          const llmMsg = result.commitInfo?.llmGeneratedMessage;
+          if (llmMsg && headHash === request.commitHash) {
+            await executeGitCommand(
+              request.serverId,
+              `git commit --amend -m "${llmMsg.replace(/"/g, '\\"')}"`,
+              request.projectPath,
+              request.executeTool
+            );
+          }
+        } catch (amendErr) {
+          console.warn('⚠️ enqueueEnhancedProcessing: Amend skipped/failed:', amendErr);
+        }
+      }
+    } catch (err) {
+      console.error('❌ enqueueEnhancedProcessing: Unexpected error:', err);
+    }
+  }, 0);
 }
 
 /**
@@ -378,6 +310,65 @@ async function createConversationCommitWithRetry(
     success: false,
     error: `All ${options.maxRetries} attempts failed. Last error: ${lastError}`
   };
+}
+
+/**
+ * Create commit info without LLM generation (metadata and diff only)
+ */
+async function createCommitInfoWithoutLLM(
+  request: EnhancedCommitRequest
+): Promise<{
+  success: boolean;
+  commitInfo?: ConversationCommitInfo;
+  error?: string;
+}> {
+  try {
+    // Generate git diff for this commit
+    const diffResult = await generateCommitDiff(
+      request.projectPath,
+      request.commitHash,
+      request.serverId,
+      request.executeTool
+    );
+
+    // Get commit metadata
+    const commitMetaResult = await request.executeTool(
+      request.serverId,
+      'BashCommand',
+      {
+        action_json: {
+          command: `cd "${request.projectPath}" && git show --format="%H|%P|%an|%aI" --no-patch ${request.commitHash}`
+        },
+        thread_id: `commit-meta-${Date.now()}`
+      }
+    );
+
+    // Parse output from executeTool wrapper
+    const metaOutput = typeof commitMetaResult === 'string' ? commitMetaResult : String(commitMetaResult);
+    const parsed = metaOutput.includes('"content"')
+      ? (() => {
+          try { const j = JSON.parse(metaOutput); return j.content?.[0]?.text || ''; } catch { return metaOutput; }
+        })()
+      : metaOutput;
+    const line = parsed.trim().split('\n')[0];
+    const [hash, parentHash, author, timestamp] = line.split('|');
+
+    const commitInfo: ConversationCommitInfo = {
+      hash,
+      parentHash: parentHash || '',
+      message: request.originalMessage,
+      author,
+      timestamp,
+      diff: diffResult.success ? diffResult.diff : '',
+      filesChanged: diffResult.success ? diffResult.filesChanged : [],
+      linesAdded: diffResult.success ? diffResult.linesAdded : 0,
+      linesRemoved: diffResult.success ? diffResult.linesRemoved : 0,
+    } as ConversationCommitInfo;
+
+    return { success: true, commitInfo };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Unknown error' };
+  }
 }
 
 /**

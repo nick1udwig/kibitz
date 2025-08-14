@@ -5,7 +5,7 @@
  * and provides utilities for diff analysis and processing.
  */
 
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 
 export interface GitDiffResult {
   success: boolean;

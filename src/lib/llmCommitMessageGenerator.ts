@@ -70,12 +70,16 @@ export async function generateLLMCommitMessage(
       branchName: request.branchName,
       conversationId: request.conversationId
     });
-    console.log('🤖 Project settings for LLM:', {
-      provider: projectSettings.provider,
+    // Resolve provider and model strictly from settings
+    const resolvedProvider = (projectSettings.commitProvider || projectSettings.provider);
+    const resolvedModel = (projectSettings.commitModel || projectSettings.model);
+
+    console.log('🤖 Project settings for LLM (resolved):', {
+      provider: resolvedProvider,
       hasAnthropicKey: !!projectSettings.anthropicApiKey,
       hasOpenAIKey: !!projectSettings.openaiApiKey,
       hasOpenRouterKey: !!projectSettings.openRouterApiKey,
-      model: projectSettings.model
+      model: resolvedModel
     });
 
     // Validate inputs
@@ -88,27 +92,33 @@ export async function generateLLMCommitMessage(
       };
     }
 
-    if (!projectSettings.provider) {
+    if (!resolvedProvider) {
       console.warn('⚠️ No LLM provider configured');
       return {
         success: false,
-        message: 'Auto-commit: changes detected',
+        message: '',
         error: 'No LLM provider configured'
       };
     }
 
     // Get the appropriate API key based on provider
-    const apiKey = getApiKeyForProvider(projectSettings);
+    const apiKey = getApiKeyByResolvedProvider(resolvedProvider, projectSettings);
     if (!apiKey?.trim()) {
       return {
         success: false,
-        message: 'Auto-commit: changes detected',
-        error: `No API key configured for provider: ${projectSettings.provider}`
+        message: '',
+        error: `No API key configured for provider: ${resolvedProvider}`
       };
     }
 
-    // For commit messages, always use optimized models for speed and cost efficiency
-    const model = getCommitMessageModelForProvider(projectSettings.provider);
+    // Strictly use the resolved model from settings (no hardcoded defaults)
+    if (!resolvedModel || !resolvedModel.trim()) {
+      return {
+        success: false,
+        message: '',
+        error: 'No LLM model configured'
+      };
+    }
 
     // Format the prompt with diff data
     const prompt = COMMIT_MESSAGE_PROMPT
@@ -117,49 +127,54 @@ export async function generateLLMCommitMessage(
       .replace('{LINES_ADDED}', request.linesAdded.toString())
       .replace('{LINES_REMOVED}', request.linesRemoved.toString());
 
-    console.log(`🤖 Generating commit message using ${projectSettings.provider} (${model}) - optimized for commit tasks`);
+    console.log(`🤖 Generating commit message using ${resolvedProvider} (${resolvedModel})`);
 
     let generatedMessage: string;
 
     // Call the appropriate LLM provider
-    switch (projectSettings.provider) {
+    switch (resolvedProvider) {
       case 'anthropic':
-        generatedMessage = await callAnthropicAPI(prompt, apiKey, model);
+        generatedMessage = await callAnthropicAPI(prompt, apiKey, resolvedModel);
         break;
       case 'openai':
-        generatedMessage = await callOpenAIAPI(prompt, apiKey, model);
+        generatedMessage = await callOpenAIAPI(prompt, apiKey, resolvedModel);
         break;
       case 'openrouter':
-        generatedMessage = await callOpenRouterAPI(prompt, apiKey, model);
+        generatedMessage = await callOpenRouterAPI(prompt, apiKey, resolvedModel);
         break;
       default:
-        throw new Error(`Unsupported provider: ${projectSettings.provider}`);
+        throw new Error(`Unsupported provider: ${resolvedProvider}`);
     }
 
     // Clean and validate the generated message
     const cleanMessage = cleanCommitMessage(generatedMessage);
+    if (!cleanMessage || cleanMessage.length < 3) {
+      return {
+        success: false,
+        message: '',
+        error: 'LLM returned an empty or invalid commit message',
+        provider: resolvedProvider,
+        model: resolvedModel
+      };
+    }
 
     console.log(`✅ Generated commit message: "${cleanMessage}"`);
 
     return {
       success: true,
       message: cleanMessage,
-      provider: projectSettings.provider,
-      model
+      provider: resolvedProvider,
+      model: resolvedModel
     };
 
   } catch (error) {
     console.error('❌ Error generating LLM commit message:', error);
-    
-    // Return a fallback message
-    const fallbackMessage = generateFallbackCommitMessage(request);
-    
     return {
       success: false,
-      message: fallbackMessage,
+      message: '',
       error: error instanceof Error ? error.message : 'Unknown error',
-      provider: projectSettings.provider,
-      model: projectSettings.model
+      provider: projectSettings.commitProvider || projectSettings.provider,
+      model: projectSettings.commitModel || projectSettings.model
     };
   }
 }
@@ -167,8 +182,8 @@ export async function generateLLMCommitMessage(
 /**
  * Get API key for the configured provider
  */
-function getApiKeyForProvider(settings: ProjectSettings): string | undefined {
-  switch (settings.provider) {
+function getApiKeyByResolvedProvider(provider: string, settings: ProjectSettings): string | undefined {
+  switch (provider) {
     case 'anthropic':
       return settings.anthropicApiKey || settings.apiKey;
     case 'openai':
@@ -183,35 +198,13 @@ function getApiKeyForProvider(settings: ProjectSettings): string | undefined {
 /**
  * Get default model for provider
  */
-function getDefaultModelForProvider(provider: string): string {
-  switch (provider) {
-    case 'openai':
-      return 'gpt-4o';
-    case 'openrouter':
-      return 'openai/gpt-4-turbo-preview';
-    case 'anthropic':
-    default:
-      return 'claude-3-5-haiku-20241022';
-  }
-}
+// Intentionally removed default model mapping to honor strict model selection from settings
 
 /**
  * Get model specifically optimized for commit message generation
  * Uses fast, cost-effective models since commit messages are simple tasks
  */
-function getCommitMessageModelForProvider(provider: string): string {
-  switch (provider) {
-    case 'anthropic':
-      // Always use Haiku for Anthropic users - fast and cost-effective for commit messages
-      return 'claude-3-5-haiku-20241022';
-    case 'openai':
-      return 'gpt-4o-mini'; // Use mini for cost efficiency
-    case 'openrouter':
-      return 'openai/gpt-4o-mini'; // Use mini for cost efficiency
-    default:
-      return 'claude-3-5-haiku-20241022';
-  }
-}
+// Intentionally removed per-provider commit model defaults to avoid hardcoding
 
 /**
  * Call Anthropic API to generate commit message
@@ -349,42 +342,10 @@ function cleanCommitMessage(message: string): string {
     cleaned = cleaned.substring(0, 69) + '...';
   }
 
-  // Ensure it's not empty
-  if (!cleaned || cleaned.length < 3) {
-    return 'Auto-commit: changes detected';
-  }
-
   return cleaned;
 }
 
 /**
  * Generate fallback commit message when LLM fails
  */
-function generateFallbackCommitMessage(request: CommitMessageRequest): string {
-  const { filesChanged, linesAdded, linesRemoved } = request;
-
-  // Try to determine commit type based on files
-  const hasNewFiles = request.gitDiff.includes('+++ /dev/null');
-  const hasDeletedFiles = request.gitDiff.includes('--- /dev/null');
-  const hasDocChanges = filesChanged.some(f => f.includes('.md') || f.includes('README'));
-  const hasConfigChanges = filesChanged.some(f => f.includes('.json') || f.includes('.config'));
-  const hasTestChanges = filesChanged.some(f => f.includes('.test.') || f.includes('.spec.'));
-
-  if (hasNewFiles) {
-    return 'feat: add new files and functionality';
-  } else if (hasDeletedFiles) {
-    return 'refactor: remove unused files';
-  } else if (hasDocChanges) {
-    return 'docs: update documentation';
-  } else if (hasConfigChanges) {
-    return 'config: update configuration files';
-  } else if (hasTestChanges) {
-    return 'test: update tests';
-  } else if (linesAdded > linesRemoved * 2) {
-    return 'feat: implement new functionality';
-  } else if (linesRemoved > linesAdded * 2) {
-    return 'refactor: simplify and clean up code';
-  } else {
-    return `chore: update ${filesChanged.length} file${filesChanged.length !== 1 ? 's' : ''}`;
-  }
-} 
+// Fallback message generation removed to enforce LLM-only commit messages

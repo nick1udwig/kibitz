@@ -15,6 +15,12 @@ import { createHash } from 'crypto';
 import { getGitHubRepoName } from './projectPathService';
 import { wrapGitCommand, createGitContext } from './gitCommandOptimizer';
 
+// MCP thread reuse cache to avoid repeated Initialize handshakes
+const mcpThreadCache: Map<string, string> = new Map();
+
+// Cache of repositories where git user config has been set
+const gitConfigInitializedForRepo: Set<string> = new Set();
+
 /**
  * GitHub Sync Protected Functions:
  * The following functions will check GitHub sync status and immediately return with
@@ -124,34 +130,28 @@ export const executeGitCommand = async (
     
     console.log(`🔧 executeGitCommand: Using working directory: "${cwd}" for command: "${command}"`);
     
-    // Storage for the thread ID
-    let threadId = "git-operations";
-    let needToInitialize = true;
-    
-    // First try to initialize if needed
-    if (needToInitialize) {
+    // Reuse or establish an MCP thread once per (serverId + cwd)
+    const threadKey = `${serverId}|${cwd}`;
+    let threadId = mcpThreadCache.get(threadKey) || 'git-operations';
+    if (!mcpThreadCache.has(threadKey)) {
       try {
-        console.log("Initializing MCP environment...");
+        console.log('Initializing MCP environment (once per path)...');
         const initResult = await executeTool(serverId, 'Initialize', {
-          type: "first_call",
+          type: 'first_call',
           any_workspace_path: cwd,
           initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
+          task_id_to_resume: '',
+          mode_name: 'wcgw',
           thread_id: threadId
         });
-        
-        // Extract the thread_id from the response
         const match = initResult.match(/thread_id=([a-z0-9]+)/i);
         if (match && match[1]) {
           threadId = match[1];
-          console.log(`Successfully initialized with thread_id=${threadId}`);
-          needToInitialize = false;
-        } else {
-          console.log("Initialized but couldn't extract thread_id, using default");
         }
+        mcpThreadCache.set(threadKey, threadId);
+        console.log(`MCP thread cached for ${threadKey}: ${threadId}`);
       } catch (initError) {
-        console.warn("Failed to initialize MCP environment:", initError);
+        console.warn('Initialize failed; proceeding with default thread_id', initError);
       }
     }
     
@@ -254,10 +254,11 @@ export const initGitRepository = async (
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<GitCommandResponse> => {
   try {
-    // Initialize Git repository
+    // Initialize Git repository (prefer main as initial branch when possible)
     const initResult = await executeGitCommand(
       serverId,
-      'git init',
+      // Try to set initial branch to main if supported; fall back to plain init
+      'git init -b main || git init',
       options.projectPath,
       executeTool
     );
@@ -265,6 +266,22 @@ export const initGitRepository = async (
     if (!initResult.success) {
       return initResult;
     }
+    
+    // Ensure HEAD points to main and rename master->main if created by user's git defaults
+    await executeGitCommand(
+      serverId,
+      'git symbolic-ref HEAD refs/heads/main || true',
+      options.projectPath,
+      executeTool
+    );
+
+    // If a 'master' branch was created, rename it to 'main'
+    await executeGitCommand(
+      serverId,
+      'git show-ref --verify --quiet refs/heads/master && git branch -m master main || true',
+      options.projectPath,
+      executeTool
+    );
     
     // Create .gitignore if it doesn't exist
     const createGitignoreResult = await executeGitCommand(
@@ -528,295 +545,78 @@ export const createCommit = async (
 ): Promise<{ success: boolean; commitHash: string | null }> => {
   try {
     console.log(`Attempting to create commit in ${projectPath} with message: "${message}"`);
-    
-    // Ensure Git user configuration is set before any Git operations
-    console.log("Setting Git user configuration...");
-    const gitUserName = process.env.GIT_USER_NAME || 'malikrohail';
-    const gitUserEmail = process.env.GIT_USER_EMAIL || 'malikrohail525@gmail.com';
-    const gitConfigResult = await executeGitCommand(
+
+    // Do NOT assume or set git identity here. Rely on existing repo/global config or env.
+    // Pre-flight: check identity is configured to avoid confusing commit errors
+    const userNameCheck = await executeGitCommand(
       serverId,
-      `git config user.name "${gitUserName}" && git config user.email "${gitUserEmail}"`,
+      'git config --get user.name',
       projectPath,
       executeTool
     );
-    
-    if (!gitConfigResult.success) {
-      console.warn("Failed to set Git config, but continuing...", gitConfigResult.error);
-    } else {
-      console.log("Git user configuration set successfully");
-    }
-    
-    // First, let's verify what files exist in the project directory
-    console.log("Checking files in project directory...");
-    const listFilesResult = await executeGitCommand(
+    const userEmailCheck = await executeGitCommand(
       serverId,
-      'ls -la',
+      'git config --get user.email',
       projectPath,
       executeTool
     );
-    
-    if (listFilesResult.success) {
-      console.log("Files in project directory:", listFilesResult.output);
+    if (!userNameCheck.success || !userNameCheck.output.trim() || !userEmailCheck.success || !userEmailCheck.output.trim()) {
+      console.warn('Git identity is not configured for this repository. Set GIT_USER_NAME and GIT_USER_EMAIL in .env/.env.local or configure git globally.');
+      // Continue to attempt commit; git will emit a clear error if identity is missing
     }
-    
-    // Check git status before adding files
-    console.log("Checking git status before staging...");
-    const preStatusResult = await executeGitCommand(
-      serverId,
-      'git status --porcelain',
-      projectPath,
-      executeTool
-    );
-    
-    if (preStatusResult.success) {
-      console.log("Git status before staging:", preStatusResult.output || "(empty)");
-    }
-    
-    // Stage all changes with explicit patterns to catch more files
-    console.log("Staging changes...");
+
+    // Stage and commit in the minimal number of calls
     const stageResult = await executeGitCommand(
       serverId,
-      'git add . && git add -A && git add --all',
+      'git add -A',
       projectPath,
       executeTool
     );
-    
     if (!stageResult.success) {
-      console.error("Failed to stage changes:", stageResult.error || stageResult.output);
+      console.error('Failed to stage changes:', stageResult.error || stageResult.output);
       return { success: false, commitHash: null };
     }
-    
-    // Also try to add any files that might be in subdirectories
-    console.log("Staging files with force...");
-    const forceStageResult = await executeGitCommand(
-      serverId,
-      'find . -type f -not -path "./.git/*" -not -name ".gitignore" -exec git add {} \\;',
-      projectPath,
-      executeTool
-    );
-    
-    // This command might fail if there are no files, that's okay
-    if (forceStageResult.success) {
-      console.log("Force staging successful");
-    }
-    
-    // Wait a moment for file system operations to complete
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Check if there are changes to commit (retry up to 3 times)
-    console.log("Checking for changes to commit...");
-    let statusResult;
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    do {
-      attempts++;
-      console.log(`Checking git status (attempt ${attempts}/${maxAttempts})...`);
-      
-      statusResult = await executeGitCommand(
-        serverId,
-        'git status --porcelain',
-        projectPath,
-        executeTool
-      );
-      
-      if (statusResult.success && statusResult.output.trim()) {
-        console.log("Found changes to commit:", statusResult.output);
-        break;
-      }
-      
-      if (attempts < maxAttempts) {
-        console.log("No changes detected, waiting and retrying...");
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Re-stage files before retry with more aggressive approach
-        await executeGitCommand(
-          serverId,
-          'git add . && git add -A && git add --all',
-          projectPath,
-          executeTool
-        );
-        
-        // Also try force staging again
-        await executeGitCommand(
-          serverId,
-          'find . -type f -not -path "./.git/*" -not -name ".gitignore" -exec git add {} \\;',
-          projectPath,
-          executeTool
-        );
-      }
-    } while (attempts < maxAttempts);
-    
-    if (!statusResult || !statusResult.success) {
-      console.error("Failed to check git status:", statusResult?.error || statusResult?.output);
-      return { success: false, commitHash: null };
-    }
-    
-    // If still no changes after retries, check what files git can see
-    if (!statusResult.output.trim()) {
-      console.log("No changes detected after retries. Checking git ls-files...");
-      const gitLsResult = await executeGitCommand(
-        serverId,
-        'git ls-files',
-        projectPath,
-        executeTool
-      );
-      
-      console.log("Git tracked files:", gitLsResult.output || "(none)");
-      
-      const gitLsOthersResult = await executeGitCommand(
-        serverId,
-        'git ls-files --others --exclude-standard',
-        projectPath,
-        executeTool
-      );
-      
-      console.log("Git untracked files:", gitLsOthersResult.output || "(none)");
-      
-      console.log("No changes to commit");
-      return { success: true, commitHash: "no_changes" };
-    }
-    
-    // Commit changes
-    console.log(`Creating commit with message: "${message}"...`);
-    const commitResult = await executeGitCommand(
-      serverId,
-      `git commit -m "${message}"`,
-      projectPath,
-      executeTool
-    );
-    
-    // Check if the commit result indicates "nothing to commit"
+
+    // Use env-provided identity inline if available; never assume defaults
+    // Resolve identity from in-memory keys vault first, then env
+    let envUserName = (process.env.NEXT_PUBLIC_GIT_USER_NAME || process.env.GIT_USER_NAME || '').trim();
+    let envUserEmail = (process.env.NEXT_PUBLIC_GIT_USER_EMAIL || process.env.GIT_USER_EMAIL || '').trim();
+    try {
+      const { useStore } = await import('../stores/rootStore');
+      const st = useStore.getState();
+      envUserName = (st.apiKeys.githubUsername || envUserName || '').trim();
+      envUserEmail = (st.apiKeys.githubEmail || envUserEmail || '').trim();
+    } catch {}
+    const commitCmd = envUserName && envUserEmail
+      ? `git -c user.name="${envUserName.replace(/"/g, '\\"')}" -c user.email="${envUserEmail.replace(/"/g, '\\"')}" commit -m "${message.replace(/"/g, '\\"')}"`
+      : `git commit -m "${message.replace(/"/g, '\\"')}"`;
+
+    const commitResult = await executeGitCommand(serverId, commitCmd, projectPath, executeTool);
+
+    // If nothing to commit, exit fast
     if (commitResult.success && commitResult.output.includes('nothing to commit')) {
-      console.log("Git reports: nothing to commit, working tree clean");
-      return { success: true, commitHash: "no_changes" };
+      return { success: true, commitHash: 'no_changes' };
     }
-    
     if (!commitResult.success) {
-      console.error("Failed to commit changes:", commitResult.error || commitResult.output);
+      // Some git wrappers return success=false but print "nothing to commit"
+      if (commitResult.output.includes('nothing to commit')) {
+        return { success: true, commitHash: 'no_changes' };
+      }
       return { success: false, commitHash: null };
     }
-    
-    console.log("Commit successful, retrieving commit hash...");
-    // Get commit hash
+
     const hashResult = await executeGitCommand(
       serverId,
       'git rev-parse HEAD',
       projectPath,
       executeTool
     );
-    
     if (!hashResult.success || !hashResult.output.trim()) {
-      console.error("Failed to get commit hash:", hashResult.error || "Empty result");
-      return { success: true, commitHash: "unknown" };
-    }
-    
-    const commitHash = hashResult.output.trim();
-    console.log(`Successfully retrieved commit hash: ${commitHash}`);
-    
-    // Try to push to GitHub if remote origin exists AND sync is enabled
-    console.log("🔍 BRANCH PUSH DEBUG: Checking for remote origin and GitHub sync status...");
-    try {
-      // 🚫 SYNC CHECK: Only push to GitHub if sync is enabled
-      const syncEnabled = await isGitHubSyncEnabled(projectPath);
-      console.log(`🔍 BRANCH PUSH DEBUG: GitHub sync enabled = ${syncEnabled}`);
-      if (!syncEnabled) {
-        console.log("🔒 BRANCH PUSH DEBUG: GitHub sync is disabled for this project. Skipping push to GitHub.");
-      } else {
-        const remoteCheckResult = await executeGitCommand(
-          serverId,
-          'git remote get-url origin',
-          projectPath,
-          executeTool
-        );
-        
-        console.log(`🔍 BRANCH PUSH DEBUG: Remote check result - success: ${remoteCheckResult.success}, output: "${remoteCheckResult.output}"`);
-        
-        // Check if remote actually exists (not just command success)
-        const hasRemote = remoteCheckResult.success && 
-                         remoteCheckResult.output.trim() && 
-                         !remoteCheckResult.output.includes('error:') &&
-                         !remoteCheckResult.output.includes('No such remote');
-        
-        console.log(`🔍 BRANCH PUSH DEBUG: Has remote = ${hasRemote}`);
-        
-        if (hasRemote) {
-          console.log("🔍 BRANCH PUSH DEBUG: Remote origin found and sync enabled, proceeding with push...");
-          
-          // 🔧 FIX: Get current branch name instead of hardcoding 'main'
-          const currentBranchResult = await executeGitCommand(
-            serverId,
-            'git branch --show-current',
-            projectPath,
-            executeTool
-          );
-          
-          console.log(`🔍 BRANCH PUSH DEBUG: Current branch check - success: ${currentBranchResult.success}, output: "${currentBranchResult.output}"`);
-          
-          if (currentBranchResult.success && currentBranchResult.output.trim()) {
-            const currentBranch = currentBranchResult.output.trim();
-            console.log(`🔍 BRANCH PUSH DEBUG: Current branch detected: '${currentBranch}'`);
-            console.log(`🌿 BRANCH PUSH DEBUG: Attempting to push branch '${currentBranch}' to GitHub...`);
-            
-            // 🚀 Try normal push first
-            console.log(`🔍 BRANCH PUSH DEBUG: Executing: git push origin ${currentBranch}`);
-            let pushResult = await executeGitCommand(
-              serverId,
-              `git push origin ${currentBranch}`,
-              projectPath,
-              executeTool
-            );
-            
-            console.log(`🔍 BRANCH PUSH DEBUG: First push attempt - success: ${pushResult.success}, output: "${pushResult.output}", error: "${pushResult.error}"`);
-            
-            // 🔄 If push fails (likely because branch doesn't exist on remote), set upstream
-            if (!pushResult.success && (
-              pushResult.output.includes('no upstream branch') || 
-              pushResult.output.includes('has no upstream branch') ||
-              pushResult.output.includes('refused to push') ||
-              pushResult.output.includes('does not exist')
-            )) {
-              console.log(`🔍 BRANCH PUSH DEBUG: First push failed, setting upstream for new branch '${currentBranch}'...`);
-              console.log(`🔍 BRANCH PUSH DEBUG: Executing: git push -u origin ${currentBranch}`);
-              pushResult = await executeGitCommand(
-                serverId,
-                `git push -u origin ${currentBranch}`,
-                projectPath,
-                executeTool
-              );
-              
-              console.log(`🔍 BRANCH PUSH DEBUG: Upstream push attempt - success: ${pushResult.success}, output: "${pushResult.output}", error: "${pushResult.error}"`);
-            }
-            
-            if (pushResult.success) {
-              console.log(`✅ BRANCH PUSH DEBUG: Successfully pushed branch '${currentBranch}' to GitHub`);
-            } else {
-              console.log(`❌ BRANCH PUSH DEBUG: Failed to push branch '${currentBranch}' to GitHub. Output: "${pushResult.output}", Error: "${pushResult.error}"`);
-            }
-          } else {
-            console.log(`❌ BRANCH PUSH DEBUG: Failed to get current branch name. Success: ${currentBranchResult.success}, Output: "${currentBranchResult.output}", Error: "${currentBranchResult.error}"`);
-          }
-        } else {
-          console.log("🔍 BRANCH PUSH DEBUG: No remote origin configured, skipping push to GitHub");
-        }
-      }
-    } catch (pushError) {
-      console.log("Error checking/pushing to GitHub (commit was still successful):", pushError);
-    }
-    
-    // 🚀 IMMEDIATE JSON GENERATION after successful commit
-    try {
-      const { createProjectJSONFiles } = await import('./branchService');
-      await createProjectJSONFiles(projectPath, serverId, executeTool);
-      console.log('✅ JSON files generated after successful commit');
-    } catch (jsonError) {
-      console.warn('⚠️ Failed to generate JSON files after commit:', jsonError);
+      return { success: true, commitHash: 'unknown' };
     }
 
-    return {
-      success: true,
-      commitHash
-    };
+    const commitHash = hashResult.output.trim();
+    return { success: true, commitHash };
   } catch (error) {
     console.error('Failed to create commit:', error);
     return { 
@@ -984,6 +784,7 @@ export const pushToRemote = async (
 ): Promise<GitCommandResponse> => {
   try {
     console.log(`🚀 PUSH-TO-REMOTE DEBUG: Starting push for branch '${branch}' from ${projectPath}`);
+    try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, [`push:start branch=${branch}`]); } catch {}
     
     // 🚫 SYNC CHECK: Block GitHub operations if sync is disabled
     const syncEnabled = await isGitHubSyncEnabled(projectPath);
@@ -998,6 +799,26 @@ export const pushToRemote = async (
     }
     
     console.log(`🚀 PUSH-TO-REMOTE DEBUG: Pushing to remote branch '${branch}' from ${projectPath}`);
+
+    // Enforce UI-configured min files threshold before any client-side push
+    try {
+      const { useStore } = await import('../stores/rootStore');
+      const st = useStore.getState();
+      const dirName = projectPath.split('/').pop() || '';
+      const projectId = dirName.split('_')[0] || '';
+      const project = st.projects.find(p => p.id === projectId);
+      const minFiles = (project?.settings?.minFilesForAutoCommitPush ?? 0) as number;
+      if (minFiles > 0) {
+        const statusRes = await executeGitCommand(serverId, 'git status --porcelain', projectPath, executeTool);
+        const changed = statusRes.success && statusRes.output.trim()
+          ? statusRes.output.trim().split('\n').filter(l => l.trim()).length
+          : 0;
+        if (changed < minFiles) {
+          console.log(`ℹ️ pushToRemote: below minFilesForAutoCommitPush=${minFiles}. Skipping push.`);
+          return { success: false, output: '', error: `Below min files threshold (${changed} < ${minFiles})` };
+        }
+      }
+    } catch {}
     
     // Check if remote origin exists
     console.log('🚀 PUSH-TO-REMOTE DEBUG: Checking for remote origin...');
@@ -1019,36 +840,98 @@ export const pushToRemote = async (
     
     if (!hasRemote) {
       console.log('🚀 PUSH-TO-REMOTE DEBUG: No remote origin configured');
-      return {
-        success: false,
-        output: '',
-        error: 'No remote origin configured. Please connect to a GitHub repository first.'
-      };
+      try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, ['push:no-remote']); } catch {}
+      // Try to auto-add origin using runtime creds and canonical repo name
+      try {
+        // Resolve username/token from in-memory store first, then env
+        let username = '';
+        let token = '';
+        try {
+          const { useStore } = await import('../stores/rootStore');
+          const st = useStore.getState();
+          username = (st.apiKeys.githubUsername || process.env.GITHUB_USERNAME || '').trim();
+          token = (st.apiKeys.githubToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+        } catch {}
+        // Derive projectId from path (format: /.../{id}_{name})
+        const dirName = projectPath.split('/').pop() || '';
+        const projId = dirName.split('_')[0] || 'project';
+        const repoName = `${projId}-project`;
+        const remoteUrl = username ? `https://github.com/${username}/${repoName}.git` : '';
+        if (remoteUrl) {
+          await executeGitCommand(serverId, `git remote add origin ${remoteUrl}`, projectPath, executeTool);
+          console.log(`✅ Added origin remote: ${remoteUrl}`);
+          try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, [`push:added-remote url=${remoteUrl}`]); } catch {}
+        } else {
+          return { success: false, output: '', error: 'No remote origin configured and username unavailable' };
+        }
+      } catch (e) {
+        try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, ['push:add-remote-failed']); } catch {}
+        return { success: false, output: '', error: 'Failed to configure remote origin' };
+      }
     }
     
     console.log("🚀 PUSH-TO-REMOTE DEBUG: Remote origin found:", remoteCheckResult.output);
     
     // Check if there are commits to push
-    console.log('🚀 PUSH-TO-REMOTE DEBUG: Checking git status...');
-    const statusResult = await executeGitCommand(
+    // Do not push if repository has no commits or HEAD is invalid
+    console.log('🚀 PUSH-TO-REMOTE DEBUG: Checking for valid HEAD...');
+    const headCheck = await executeGitCommand(
       serverId,
-      `git status --porcelain -b`,
+      'git rev-parse --verify HEAD',
       projectPath,
       executeTool
     );
-    
-    if (statusResult.success) {
-      console.log("🚀 PUSH-TO-REMOTE DEBUG: Git status before push:", statusResult.output);
+    if (!headCheck.success) {
+      console.log('🚀 PUSH-TO-REMOTE DEBUG: No commits yet; skipping push.');
+      return {
+        success: false,
+        output: '',
+        error: 'Repository has no commits; skipping push'
+      };
     }
+    
+    console.log('🚀 PUSH-TO-REMOTE DEBUG: Checking git status...');
+    const statusResult = await executeGitCommand(serverId, `git status --porcelain -b`, projectPath, executeTool);
+    if (statusResult.success) console.log("🚀 PUSH-TO-REMOTE DEBUG: Git status before push:", statusResult.output);
     
     // 🚀 Push to remote with upstream handling for new branches
     console.log(`🚀 PUSH-TO-REMOTE DEBUG: Executing: git push origin ${branch}`);
-    let pushResult = await executeGitCommand(
+    // Ensure we have a current branch name; if not, do not attempt push
+    const currentBranchResult = await executeGitCommand(
       serverId,
-      `git push origin ${branch}`,
+      'git branch --show-current',
       projectPath,
       executeTool
     );
+    const currentBranch = currentBranchResult.success && currentBranchResult.output.trim()
+      ? currentBranchResult.output.trim()
+      : branch;
+    if (!currentBranch) {
+      return { success: false, output: '', error: 'No current branch; skipping push' };
+    }
+    
+    // If a token exists in the in-memory vault, use header-based push to avoid credential prompts
+    let tokenFromVault = '';
+    try {
+      const { useStore } = await import('../stores/rootStore');
+      const st = useStore.getState();
+      tokenFromVault = st.apiKeys.githubToken || '';
+    } catch {}
+
+    let pushResult: GitCommandResponse;
+    if (tokenFromVault) {
+      // GitHub over HTTPS expects Basic auth (x-access-token:token), not Bearer
+      const basicB64 = Buffer.from(`x-access-token:${tokenFromVault}`).toString('base64');
+      pushResult = await executeGitCommand(
+        serverId,
+        `git -c http.extraHeader="AUTHORIZATION: basic ${basicB64}" push origin ${currentBranch}`,
+        projectPath,
+        executeTool
+      );
+    } else {
+      pushResult = await executeGitCommand(serverId, `git push origin ${currentBranch}`, projectPath, executeTool);
+    }
+    try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, [`push:first-result success=${String(pushResult.success)}`]); } catch {}
     
     console.log(`🚀 PUSH-TO-REMOTE DEBUG: First push result - success: ${pushResult.success}, output: "${pushResult.output}", error: "${pushResult.error}"`);
     
@@ -1061,24 +944,59 @@ export const pushToRemote = async (
     )) {
       console.log(`🚀 PUSH-TO-REMOTE DEBUG: First push failed, setting upstream for new branch '${branch}'...`);
       console.log(`🚀 PUSH-TO-REMOTE DEBUG: Executing: git push -u origin ${branch}`);
-      pushResult = await executeGitCommand(
-        serverId,
-        `git push -u origin ${branch}`,
-        projectPath,
-        executeTool
-      );
+      if (tokenFromVault) {
+        const basicB64 = Buffer.from(`x-access-token:${tokenFromVault}`).toString('base64');
+        pushResult = await executeGitCommand(
+          serverId,
+          `git -c http.extraHeader="AUTHORIZATION: basic ${basicB64}" push -u origin ${currentBranch}`,
+          projectPath,
+          executeTool
+        );
+      } else {
+        pushResult = await executeGitCommand(
+          serverId,
+          `git push -u origin ${currentBranch}`,
+          projectPath,
+          executeTool
+        );
+      }
+      try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, [`push:set-upstream success=${String(pushResult.success)}`]); } catch {}
       
       console.log(`🚀 PUSH-TO-REMOTE DEBUG: Upstream push result - success: ${pushResult.success}, output: "${pushResult.output}", error: "${pushResult.error}"`);
     }
     
     if (pushResult.success) {
       console.log(`✅ PUSH-TO-REMOTE DEBUG: Successfully pushed branch '${branch}' to remote`);
+      // Persist remoteUrl in project.json after a successful push
+      try {
+        const remoteUrlRes = await executeGitCommand(serverId, 'git remote get-url origin', projectPath, executeTool);
+        const remoteUrl = remoteUrlRes.success ? remoteUrlRes.output.trim() : '';
+        if (remoteUrl && typeof window !== 'undefined') {
+          // Derive projectId from directory name
+          const dirName = projectPath.split('/').pop() || '';
+          const projectId = dirName.split('_')[0] || '';
+          // Update via server API to avoid importing Node-only modules in client
+          await fetch('/api/github-sync/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectId,
+              enabled: true,
+              remoteUrl,
+              syncBranches: ['main', 'conv-*'],
+              authentication: { type: 'token', configured: true }
+            })
+          }).catch(() => {});
+        }
+      } catch {}
+      try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, [`push:success branch=${branch}`]); } catch {}
       return {
         success: true,
         output: `Successfully pushed to origin/${branch}`
       };
     } else {
-      console.error(`❌ PUSH-TO-REMOTE DEBUG: Failed to push branch '${branch}' to remote. Output: "${pushResult.output}", Error: "${pushResult.error}"`);
+      console.error(`❌ PUSH-TO-REMOTE DEBUG: Failed to push branch '${currentBranch}' to remote. Output: "${pushResult.output}", Error: "${pushResult.error}"`);
+      try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, [`push:failed output=${pushResult.output}`]); } catch {}
       return {
         success: false,
         output: pushResult.output,
@@ -1087,6 +1005,7 @@ export const pushToRemote = async (
     }
   } catch (error) {
     console.error('Failed to push to remote:', error);
+    try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, [`push:error ${String(error)}`]); } catch {}
     return {
       success: false,
       output: '',
@@ -1126,8 +1045,8 @@ export const pushAllBranches = async (
     const branches = branchListResult.output
       .split('\n')
       .map(line => line.replace(/^\*?\s*/, '').trim())
-      .filter(branch => branch && 
-        (branch.startsWith('conv-') || branch.startsWith('auto/') || branch === 'main'))
+    .filter(branch => branch && 
+      (branch.startsWith('conv-') || branch === 'main'))
       .filter(branch => branch !== 'main' || branchListResult.output.includes('* main')); // Only include main if it exists
     
     console.log('🚀 PUSH-ALL-BRANCHES: Found branches to push:', branches);

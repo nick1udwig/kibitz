@@ -10,9 +10,9 @@ import {
 } from '../lib/checkpointService';
 import { 
   initGitRepository, 
-  createGitHubRepository, 
-  createCommit 
+  createGitHubRepository
 } from '../lib/gitService';
+import { createCommit, executeGitCommand } from '../lib/versionControl/git';
 import { Project } from '../components/LlmChat/context/types';
 import { ensureProjectDirectory, getGitHubRepoName } from '../lib/projectPathService';
 
@@ -314,68 +314,51 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
     
     try {
       console.log(`Creating Git commit at ${projectPath} with message: "${message}"`);
-      
-      // Check if this is a Git repository and initialize if needed
+
+      // Pre-flight: ensure git user.name and user.email are configured somewhere
       try {
-        const initResult = await executeTool(mcpServerId, 'Initialize', {
-          type: "first_call",
-          any_workspace_path: projectPath,
-          initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
-          thread_id: "git-check"
-        });
-        
-        // Extract the thread_id from the response
-        const match = initResult.match(/thread_id=([a-z0-9]+)/i);
-        const threadId = match && match[1] ? match[1] : "git-check";
-        console.log(`Using thread_id=${threadId} for Git operations`);
-        
-        // Check if this is a Git repo
-        console.log("Checking if this is a Git repository...");
-        try {
-          const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-            action_json: {
-              command: 'git rev-parse --is-inside-work-tree'
-            },
-            thread_id: threadId
-          });
-          
-          console.log("Git check result:", gitCheckResult);
-          
-          // If not a Git repo, try to initialize it
-          if (!gitCheckResult.includes("true")) {
-            console.log("Not a Git repository, initializing...");
-            const initSuccess = await get().initializeGitRepository(
-              projectPath,
-              "Project",
-              mcpServerId,
-              executeTool
-            );
-            
-            if (!initSuccess) {
-              console.error("Failed to initialize Git repository");
-              set({ isLoading: false });
-              return "not_git_repo";
-            }
-          }
-        } catch (gitCheckError) {
-          console.warn("Error checking Git repository, will try to initialize:", gitCheckError);
+        const nameRes = await executeGitCommand(mcpServerId, 'git config --get user.name', projectPath, executeTool);
+        const emailRes = await executeGitCommand(mcpServerId, 'git config --get user.email', projectPath, executeTool);
+        if (!nameRes.success || !nameRes.output.trim() || !emailRes.success || !emailRes.output.trim()) {
+          console.warn('Git identity not configured. Configure GIT_USER_NAME and GIT_USER_EMAIL in .env/.env.local or set global git config.');
+        }
+      } catch {}
+
+      // Check if this is a Git repository and initialize if needed (using cached git executor)
+      try {
+        const gitCheck = await executeGitCommand(
+          mcpServerId,
+          'git rev-parse --is-inside-work-tree 2>/dev/null || echo not-git',
+          projectPath,
+          executeTool
+        );
+        if (!gitCheck.success || gitCheck.output.includes('not-git')) {
+          console.log('Not a Git repository, initializing...');
           const initSuccess = await get().initializeGitRepository(
             projectPath,
-            "Project",
+            'Project',
             mcpServerId,
             executeTool
           );
-          
           if (!initSuccess) {
-            console.error("Failed to initialize Git repository");
+            console.error('Failed to initialize Git repository');
             set({ isLoading: false });
-            return "not_git_repo";
+            return 'not_git_repo';
           }
         }
-      } catch (initError) {
-        console.warn("Failed to initialize MCP environment:", initError);
+      } catch (gitCheckError) {
+        console.warn('Git check failed, attempting initialization:', gitCheckError);
+        const initSuccess = await get().initializeGitRepository(
+          projectPath,
+          'Project',
+          mcpServerId,
+          executeTool
+        );
+        if (!initSuccess) {
+          console.error('Failed to initialize Git repository');
+          set({ isLoading: false });
+          return 'not_git_repo';
+        }
       }
       
       console.log("Calling createCommit function...");
