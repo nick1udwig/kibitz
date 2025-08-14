@@ -22,7 +22,17 @@ export async function GET(_request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const projectsBaseDir = typeof body?.projectsBaseDir === 'string' ? body.projectsBaseDir.trim() : '';
+    const sanitize = (input: string): string => {
+      let s = String(input || '').trim();
+      s = s
+        .replace(/[•\u2022]+/g, '')
+        .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00A0\u202F]+/g, '')
+        .replace(/[\u0000-\u001F\u007F]+/g, '')
+        .replace(/\/+$/, '');
+      if (!s.startsWith('/') && /^Users\//.test(s)) s = '/' + s;
+      return s;
+    };
+    const projectsBaseDir = typeof body?.projectsBaseDir === 'string' ? sanitize(body.projectsBaseDir) : '';
     if (!projectsBaseDir) {
       return NextResponse.json({ success: false, error: 'projectsBaseDir-required' }, { status: 400 });
     }

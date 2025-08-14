@@ -30,7 +30,7 @@ export const runtime = 'nodejs';
  * - To poll a long-running job, reuse the returned jobId in your UI and call this route again; identical keys coalesce
  *   and will return the in-flight state.
  */
-import { readProjectJson } from '../../../../../project-json-manager.js';
+import { readProjectJson } from '@/lib/server/githubSync/project-json-manager.js';
 import path from 'path';
 import fs from 'fs';
 import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../lib/server/projectPaths';
@@ -147,7 +147,10 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
       console.log(`✅ Project ${projectId} is already a git repository`);
     } catch (error) {
       console.log(`🔧 Initializing git repository for ${projectId}`);
-      await execAsync('git init', { cwd: projectPath, env });
+      // Force initialize with main as default when possible
+      await execAsync('git init -b main || git init', { cwd: projectPath, env });
+      // Ensure master->main rename if older git created master
+      await execAsync('git show-ref --verify --quiet refs/heads/master && git branch -m master main || true', { cwd: projectPath, env });
     }
 
     // Determine if the repository has any commits; if not, DO NOT create or push remote yet
@@ -172,7 +175,7 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
     const changed = (status.stdout || '').toString().trim().split('\n').filter((l: string) => l.trim()).length;
     // Try to read min from project.json under settings or github section
     try {
-      const { readProjectJson } = await import('../../../../../project-json-manager.js');
+      const { readProjectJson } = await import('@/lib/server/githubSync/project-json-manager.js');
       const pData: any = await readProjectJson(projectPath).catch(() => ({}));
       const minFiles = Number(pData?.settings?.minFilesForAutoCommitPush || pData?.github?.minFilesForAutoCommitPush || 0);
       if (minFiles > 0 && changed < minFiles) {
@@ -541,7 +544,7 @@ export async function POST(request: NextRequest) {
       try {
         // Mark syncing at start
         try {
-          const { updateGitHubConfig } = await import('../../../../../project-json-manager.js');
+          const { updateGitHubConfig } = await import('@/lib/server/githubSync/project-json-manager.js');
           await updateGitHubConfig(projectPath, { syncStatus: 'syncing', lastSync: new Date().toISOString() });
         } catch {}
         // Optionally validate HEAD/branch if provided
@@ -565,7 +568,7 @@ export async function POST(request: NextRequest) {
         // Perform real GitHub sync/push (ensures remote, pushes current branch)
         const syncResult = await performRealGitHubSync(projectId, projectPath, githubConfig || {});
 
-        const { updateGitHubConfig } = await import('../../../../../project-json-manager.js');
+        const { updateGitHubConfig } = await import('@/lib/server/githubSync/project-json-manager.js');
         if (syncResult.success) {
           await updateGitHubConfig(projectPath, {
             syncStatus: 'idle',

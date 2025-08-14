@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
-import { getAllProjectsWithGitHub } from '../../../../../project-json-manager.js';
+import { getAllProjectsWithGitHub } from '@/lib/server/githubSync/project-json-manager.js';
 import { hasPersistedAuth, resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
 
 export async function GET(request: NextRequest) {

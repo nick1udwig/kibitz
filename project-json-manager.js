@@ -10,12 +10,16 @@ import { existsSync } from 'fs';
 function getEnvProjectsBaseDir() {
   const normalize = (v) => {
     if (!v) return undefined;
-    let s = String(v).trim();
-    // Remove accidentally masked bullets and trailing slashes
-    s = s.replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
-    // If it looks like a macOS path missing leading slash, add it
-    if (!s.startsWith('/') && /^Users\//.test(s)) s = '/' + s;
-    return s;
+      let s = String(v).trim();
+      // Remove accidentally masked bullets, invisible/zero-width chars, control chars, and trailing slashes
+      s = s
+        .replace(/[•\u2022]+/g, '')
+        .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00A0\u202F]+/g, '')
+        .replace(/[\u0000-\u001F\u007F]+/g, '')
+        .replace(/\/+$/, '');
+      // If it looks like a macOS path missing leading slash, add it
+      if (!s.startsWith('/') && /^Users\//.test(s)) s = '/' + s;
+      return s;
   };
 
   // 1) Runtime env

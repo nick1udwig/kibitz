@@ -1700,8 +1700,14 @@ export const useStore = create<RootState>((set, get) => {
         try {
           const uiBase = (get().apiKeys as any)?.projectsBaseDir as string | undefined;
           if (uiBase && uiBase.trim()) {
+            let sanitized = uiBase.trim()
+              .replace(/[•\u2022]+/g, '')
+              .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00A0\u202F]+/g, '')
+              .replace(/[\u0000-\u001F\u007F]+/g, '')
+              .replace(/\/+$/, '');
+            if (!sanitized.startsWith('/') && /^Users\//.test(sanitized)) sanitized = '/' + sanitized;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
+            (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = sanitized;
           }
         } catch {}
         

@@ -75,7 +75,7 @@ export class GitService {
 
       // Initialize Git repository
       await this.executeTool(this.mcpServerId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git init`,
+        command: `cd "${this.projectPath}" && (git init -b main || git init); git show-ref --verify --quiet refs/heads/master && git branch -m master main || true`,
         thread_id: `git-init-${this.projectId}`
       });
 

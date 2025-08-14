@@ -53,7 +53,7 @@ export const useConversationGitHandler = () => {
         executeTool,
         {
           autoCommit: true,
-          commitMessage: `End of conversation: ${new Date().toISOString()}`,
+          commitMessage: 'Initial commit',
           forceInit: false
         }
       );
