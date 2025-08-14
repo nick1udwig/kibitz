@@ -168,7 +168,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
           }`}
         >
           <Image
-            src={`data:${content.source.media_type};base64,${content.source.data}`}
+            src={`data:${(content as any).source.media_type};base64,${(content as any).source.data}`}
             alt="User uploaded image"
             className="max-h-[150px] max-w-[300px] w-auto h-auto rounded object-contain"
             width={300}
@@ -193,8 +193,8 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
           }`}
         >
           <embed
-            src={`data:${content.source.media_type};base64,${content.source.data}`}
-            type={content.source.media_type}
+            src={`data:${(content as any).source.media_type};base64,${(content as any).source.data}`}
+            type={(content as any).source.media_type}
             width="100%"
             height="600px"
             className="rounded"
@@ -219,10 +219,10 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
         >
           <div className="space-y-2">
             <button
-              onClick={() => onToolClick?.(content.name, content.input, toolResult)}
+              onClick={() => onToolClick?.((content as any).name, (content as any).input, toolResult)}
               className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline group"
             >
-              🛠️: {content.name}
+              🛠️: {(content as any).name}
             </button>
           </div>
         </div>

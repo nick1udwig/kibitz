@@ -33,6 +33,14 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# local env files
+.env
+.env.local
+docker/volumes/logs/
+*.log
+.kibitz/
+docker/compose/.env
+
 # vercel
 .vercel
 
@@ -42,9 +50,3 @@ next-env.d.ts
 
 *.swp
 summary.md
-.env
-.env.local
-docker/volumes/logs/
-*.log
-.kibitz/
-docker/compose/.env

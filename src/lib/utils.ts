@@ -1,3 +1,10 @@
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
 // Simple project-scoped audit logger used by git flows
 // NOTE: This must be safe in the browser bundle. Do NOT import 'fs' at top-level.
 export async function appendProjectLog(projectPath: string, lines: string[]): Promise<void> {
@@ -24,10 +31,4 @@ export async function appendProjectLog(projectPath: string, lines: string[]): Pr
   } catch {
     // best-effort; ignore failures
   }
-}
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
 }
