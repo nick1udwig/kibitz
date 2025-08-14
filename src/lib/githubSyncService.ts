@@ -1,4 +1,4 @@
-import { createSyncAPI } from '../../github-sync-api.js';
+import { createSyncAPI } from './server/githubSync/github-sync-api.js';
 
 class GitHubSyncService {
   private api: any = null;

@@ -4,7 +4,7 @@ import fs from 'fs';
 // Use dynamic import to avoid TS path resolution issues for JS file
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
-import * as Pjm from '../../../../../../project-json-manager.js';
+import * as Pjm from '@/lib/server/githubSync/project-json-manager.js';
 import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../../lib/server/projectPaths';
 
 const BASE_DIR = projectsBaseDir();

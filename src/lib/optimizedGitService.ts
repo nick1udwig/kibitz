@@ -120,7 +120,7 @@ export class OptimizedGitService {
       // Initialize git repository
       const initResult = await this.executeGitCommand(
         projectPath,
-        'git init',
+        'git init -b main || git init',
         executeTool,
         { skipCache: true }
       );

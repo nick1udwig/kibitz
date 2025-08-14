@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
-import { updateGitHubConfig, readProjectJson } from '../../../../../project-json-manager.js';
+import { updateGitHubConfig, readProjectJson } from '@/lib/server/githubSync/project-json-manager.js';
 import path from 'path';
 import fs from 'fs';
 import { projectsBaseDir, findProjectPath as findExistingProjectPath, resolveOrCreateProjectPath, sanitizeProjectName } from '../../../../lib/server/projectPaths';

@@ -259,7 +259,7 @@ export class LlmAgentGitHandler {
       // Do not hardcode identity; just initialize repo. Identity must come from env or git config
       const initResult = await executeTool(mcpServerId, 'BashCommand', {
         action_json: {
-          command: `cd "${projectPath}" && git init`,
+          command: `cd "${projectPath}" && (git init -b main || git init); git show-ref --verify --quiet refs/heads/master && git branch -m master main || true`,
           type: 'command'
         },
         thread_id: threadId
@@ -359,9 +359,21 @@ export class LlmAgentGitHandler {
         emailEnv = (st.apiKeys.githubEmail || emailEnv || '').trim();
       } catch {}
       const escapedMsg = commitMessage.replace(/"/g, '\\"');
+      // If this is the first commit (no HEAD), override message to a clean default
+      let isFirstCommit = false;
+      try {
+        const headCheck = await executeTool(mcpServerId, 'BashCommand', {
+          action_json: { command: `cd "${projectPath}" && git rev-parse --verify HEAD`, type: 'command' },
+          thread_id: threadId
+        });
+        const headOut = this.extractCommandOutput(headCheck);
+        isFirstCommit = headOut.toLowerCase().includes('fatal') || headOut.trim() === '';
+      } catch { isFirstCommit = true; }
+
+      const finalMsg = isFirstCommit ? 'Initial commit' : escapedMsg;
       const commitCmd = nameEnv && emailEnv
-        ? `cd "${projectPath}" && git -c user.name="${nameEnv.replace(/"/g, '\\"')}" -c user.email="${emailEnv.replace(/"/g, '\\"')}" commit -m "${escapedMsg}"`
-        : `cd "${projectPath}" && git commit -m "${escapedMsg}"`;
+        ? `cd "${projectPath}" && git -c user.name="${nameEnv.replace(/"/g, '\\"')}" -c user.email="${emailEnv.replace(/"/g, '\\"')}" commit -m "${finalMsg}"`
+        : `cd "${projectPath}" && git commit -m "${finalMsg}"`;
 
       const commitResult = await executeTool(mcpServerId, 'BashCommand', {
         action_json: {

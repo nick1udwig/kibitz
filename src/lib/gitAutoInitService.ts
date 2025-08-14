@@ -108,8 +108,10 @@ async function performGitInitialization(
     }
 
     // Git doesn't exist, so initialize it
-    console.log('🔧 autoInitializeGitForProject: Step 2 - Initialize Git repository');
-    const gitInitResult = await executeGitCommand(mcpServerId, 'git init', projectPath, executeTool);
+    console.log('🔧 autoInitializeGitForProject: Step 2 - Initialize Git repository (prefer main)');
+    const gitInitResult = await executeGitCommand(mcpServerId, 'git init -b main || git init', projectPath, executeTool);
+    // Ensure master->main rename if older git created master
+    await executeGitCommand(mcpServerId, 'git show-ref --verify --quiet refs/heads/master && git branch -m master main || true', projectPath, executeTool);
     
     if (!gitInitResult.success) {
       console.error('❌ autoInitializeGitForProject: Failed to initialize Git repository:', gitInitResult.output);

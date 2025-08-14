@@ -29,7 +29,11 @@ export async function prepareCommit(context: CommitPreparationContext): Promise<
       });
     }
 
-    // LLM commit message
+    // Detect if this is the very first commit (no HEAD yet)
+    const headRes = await executeGitCommand(serverId, 'git rev-parse --verify HEAD', projectPath, executeTool);
+    const isFirstCommit = !headRes.success || !headRes.output.trim();
+
+    // LLM commit message (skip for first commit)
     const llm = await generateLLMCommitMessage({
       gitDiff: diffRes.output,
       filesChanged,
@@ -40,7 +44,9 @@ export async function prepareCommit(context: CommitPreparationContext): Promise<
       previousMessage: ''
     }, projectSettings);
 
-    const commitMessage = (llm.success && llm.message.trim()) ? llm.message.trim() : `Auto-commit: ${filesChanged.length} files changed`;
+    const commitMessage = isFirstCommit
+      ? 'Initial commit'
+      : ((llm.success && llm.message.trim()) ? llm.message.trim() : `Auto-commit: ${filesChanged.length} files changed`);
 
     return { success: true, commitMessage, filesChanged, linesAdded, linesRemoved, diff: diffRes.output };
   } catch (error) {

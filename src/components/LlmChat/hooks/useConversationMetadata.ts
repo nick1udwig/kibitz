@@ -3,7 +3,7 @@
  * Integrates with existing git operations and provides UI state management
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore } from '@/stores/rootStore';
 import { getProjectPath } from '@/lib/projectPathService';
 
@@ -45,6 +45,7 @@ export function useConversationMetadata() {
   const [projectMetadata, setProjectMetadata] = useState<ProjectMetadata | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadProjectMetadataRef = useRef<((projectId: string) => Promise<void>) | null>(null);
 
   // Get active project from store
   const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
@@ -137,14 +138,21 @@ export function useConversationMetadata() {
       setError(null);
 
       const response = await fetch(`/api/projects/${projectId}`);
-      
+
+      // Gracefully handle projects that don't have metadata yet
+      if (response.status === 404) {
+        setProjectMetadata(null);
+        // Do not surface a scary error for a normal empty state
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`Failed to load project metadata: ${response.statusText}`);
       }
 
       const data = await response.json();
       setProjectMetadata(data);
-      
+
       console.log('📊 Loaded project metadata:', {
         projectId,
         branches: data.branches?.length || 0,
@@ -158,6 +166,9 @@ export function useConversationMetadata() {
       setIsLoading(false);
     }
   }, []);
+
+  // Expose the stable reference so callers outside the hook body (like UI callbacks) can invoke it
+  loadProjectMetadataRef.current = loadProjectMetadata;
 
   // Revert to specific commit/branch
   const revertToCommit = useCallback(async (commitHash: string, branchName: string = 'main') => {
@@ -273,7 +284,7 @@ export function useConversationMetadata() {
     incrementMessageCount,
     updateBranchInfo,
     revertToCommit,
-    loadProjectMetadata,
+    loadProjectMetadata: (projectId: string) => loadProjectMetadataRef.current ? loadProjectMetadataRef.current(projectId) : Promise.resolve(),
 
     // Computed values
     canRevert: Boolean(metadata?.commitHash),

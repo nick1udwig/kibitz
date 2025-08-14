@@ -16,8 +16,11 @@ const DEFAULT_PROJECTS_DIR = '/Users/test/gitrepo/projects';
 function normalizePathNoTrailingSlash(pathValue: string | undefined): string | undefined {
   if (!pathValue) return undefined;
   let v = String(pathValue).trim();
-  // Strip any UI masking bullets accidentally applied (e.g. "••••••••shim")
-  v = v.replace(/[•\u2022]+/g, '');
+  // Strip UI masking bullets and invisible/zero-width or control characters
+  v = v
+    .replace(/[•\u2022]+/g, '')
+    .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00A0\u202F]+/g, '')
+    .replace(/[\u0000-\u001F\u007F]+/g, '');
   // If it looks like a macOS path missing leading slash, add it
   if (!v.startsWith('/') && /^Users\//.test(v)) v = '/' + v;
   return v.replace(/\/+$/, '');

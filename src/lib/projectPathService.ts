@@ -7,7 +7,6 @@
 
 import { Project } from '../components/LlmChat/context/types';
 import { getProjectsBaseDir } from './pathConfig';
-import { getServerProjectsBaseDir } from './server/pathConfigServer';
 
 /**
  * Cache to prevent multiple simultaneous directory creation attempts
@@ -94,15 +93,36 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
   
   // Create project-specific subdirectories in the base projects directory  
   // Prefer server-only resolution to include persisted UI override when available
-  const baseDir = (typeof process !== 'undefined' && (process as any).versions?.node)
-    ? getServerProjectsBaseDir()
-    : getCurrentWorkingDirectory();
+  let baseDir = getCurrentWorkingDirectory();
+  if (typeof process !== 'undefined' && (process as any).versions?.node) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const srv = require('./server/pathConfigServer') as typeof import('./server/pathConfigServer');
+      if (srv && typeof srv.getServerProjectsBaseDir === 'function') {
+        baseDir = srv.getServerProjectsBaseDir();
+      }
+    } catch {
+      // fall back to client-safe base dir
+    }
+  }
+  // Extra hardening: strip invisible/zero-width/control characters from base dir
+  const cleanBaseDir = String(baseDir)
+    .replace(/[•\u2022]+/g, '')
+    .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00A0\u202F]+/g, '')
+    .replace(/[\u0000-\u001F\u007F]+/g, '')
+    .replace(/\/+$/, '');
   const sanitizedName = cleanProjectName ? sanitizeProjectName(cleanProjectName) : 'project';
-  let fullPath = `${baseDir}/${cleanProjectId}_${sanitizedName}`;
+  let fullPath = `${cleanBaseDir}/${cleanProjectId}_${sanitizedName}`;
   // Fix accidental loss of leading slash if baseDir came in as "Users/..."
   if (!fullPath.startsWith('/')) {
     fullPath = '/' + fullPath;
   }
+  // Final hardening: remove any invisible/zero-width/control characters from result
+  fullPath = fullPath
+    .replace(/[•\u2022]+/g, '')
+    .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00A0\u202F]+/g, '')
+    .replace(/[\u0000-\u001F\u007F]+/g, '')
+    .replace(/\/+$/, '');
   
   // 🚨 VALIDATION: Ensure generated path is correct
   if (fullPath === baseDir || fullPath === `${baseDir}/`) {
@@ -320,7 +340,7 @@ export const ensureProjectDirectory = async (
   // 🚨 CRITICAL: Validate project path is absolute and complete.
   // Use server base dir when available for strict validation.
   const baseDir = (typeof process !== 'undefined' && (process as any).versions?.node)
-    ? getServerProjectsBaseDir()
+    ? (() => { try { const srv = require('./server/pathConfigServer'); return srv.getServerProjectsBaseDir?.() || getProjectsBaseDir(); } catch { return getProjectsBaseDir(); } })()
     : getProjectsBaseDir();
   // If a customPath was provided, only require an absolute path
   const hasCustom = !!(project.customPath && String(project.customPath).trim());

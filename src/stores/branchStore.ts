@@ -16,7 +16,7 @@ import {
   revertToState,
   autoCreateBranchIfNeeded,
   mergeBranch
-} from '../lib/branchService';
+} from '@/lib/versionControl';
 
 /**
  * Branch management configuration

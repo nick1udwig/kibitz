@@ -254,10 +254,11 @@ export const initGitRepository = async (
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<GitCommandResponse> => {
   try {
-    // Initialize Git repository
+    // Initialize Git repository (prefer main as initial branch when possible)
     const initResult = await executeGitCommand(
       serverId,
-      'git init',
+      // Try to set initial branch to main if supported; fall back to plain init
+      'git init -b main || git init',
       options.projectPath,
       executeTool
     );
@@ -266,10 +267,18 @@ export const initGitRepository = async (
       return initResult;
     }
     
-    // Ensure HEAD points to main without creating a commit
+    // Ensure HEAD points to main and rename master->main if created by user's git defaults
     await executeGitCommand(
       serverId,
       'git symbolic-ref HEAD refs/heads/main || true',
+      options.projectPath,
+      executeTool
+    );
+
+    // If a 'master' branch was created, rename it to 'main'
+    await executeGitCommand(
+      serverId,
+      'git show-ref --verify --quiet refs/heads/master && git branch -m master main || true',
       options.projectPath,
       executeTool
     );
