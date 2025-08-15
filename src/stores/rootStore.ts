@@ -5,7 +5,7 @@ import { loadState, saveState, loadMcpServers, saveMcpServers, loadWorkspaceMapp
 import { WsTool } from '../components/LlmChat/types/toolTypes';
 import { autoInitializeGitForProject } from '../lib/gitAutoInitService';
 import { ensureProjectDirectory, getProjectPath, sanitizeProjectName } from '../lib/projectPathService';
-import { recordSystemError, shouldThrottleOperation } from '@/lib/systemDiagnostics';
+import { recordSystemError } from '@/lib/systemDiagnostics';
 import { createWorkspaceMapping } from '../lib/conversationWorkspaceService';
 import { initializeAutoCommitAgent, stopAutoCommitAgent, getAutoCommitAgent } from '../lib/autoCommitAgent';
 
@@ -265,12 +265,14 @@ interface RootState extends ProjectState, McpState {
   // New methods
   ensureActiveProjectDirectory: () => Promise<void>;
   // Phase 0: Commit coordination
-  safeCommit: (projectId: string, source: string, commitFn: () => Promise<any>) => Promise<any>;
+  safeCommit: (projectId: string, source: string, commitFn: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>;
 }
 
 export const useStore = create<RootState>((set, get) => {
   // Using refs outside the store to maintain WebSocket connections
   const connectionsRef = new Map<string, WebSocket>();
+  // Cache MCP thread IDs per (serverId|projectPath) that the server asks us to use
+  const mcpThreadIdCache = new Map<string, string>();
   const reconnectTimeoutsRef = new Map<string, NodeJS.Timeout>();
   const pendingRequestsRef = new Map<string, { 
     resolve: (result: string) => void; 
@@ -281,13 +283,13 @@ export const useStore = create<RootState>((set, get) => {
   }>();
   
   // Phase 0: Per-project commit locks to prevent racing commits
-  const commitLocksRef = new Map<string, Promise<any>>();
+  const commitLocksRef = new Map<string, Promise<Record<string, unknown>>>();
   
   // Circuit breaker removed - let MCP handle its own error management
   
   // Throttling mechanism for workspace initialization
-  const initializationThrottleRef = new Map<string, number>();
-  const INITIALIZATION_THROTTLE_MS = 1000; // Reduced from 5000ms to 1000ms for better responsiveness
+  // const initializationThrottleRef = new Map<string, number>();
+  // const INITIALIZATION_THROTTLE_MS = 1000; // Reduced from 5000ms to 1000ms for better responsiveness
 
   // Helper function to save API keys to server (masked persistence channel)
   const saveApiKeysToServer = (keys: Record<string, string>) => {
@@ -498,6 +500,44 @@ export const useStore = create<RootState>((set, get) => {
                 console.error('Error saving MCP servers:', err);
               });
 
+              // Auto-attach the first connected MCP server to the active project
+              // if it currently has no MCP servers configured. This fixes the
+              // first-load/new-project case where tools were unavailable until
+              // the user manually edited settings.
+              try {
+                const state = get();
+                const activeProjectId = state.activeProjectId;
+                if (activeProjectId) {
+                  const project = state.projects.find(p => p.id === activeProjectId);
+                  if (project && (!project.settings.mcpServerIds || project.settings.mcpServerIds.length === 0)) {
+                    const updatedSettings = {
+                      ...project.settings,
+                      mcpServerIds: [connectedServer.id]
+                    };
+                    state.updateProjectSettings(activeProjectId, { settings: updatedSettings });
+
+                    // Kick off directory + git init similar to project creation
+                    setTimeout(async () => {
+                      try {
+                        const projectPath = await ensureProjectDirectory(project, connectedServer.id, state.executeTool);
+                        await autoInitializeGitForProject(
+                          project.id,
+                          project.name,
+                          projectPath,
+                          connectedServer.id,
+                          state.executeTool
+                        );
+                        await initializeAutoCommitForProject(project.id);
+                      } catch (e) {
+                        console.warn('Auto-setup after MCP connect failed:', e);
+                      }
+                    }, 1000);
+                  }
+                }
+              } catch (e) {
+                console.warn('Failed to auto-attach MCP on connect:', e);
+              }
+
               resolve(connectedServer);
             } else {
               // Handle tool execution responses
@@ -566,8 +606,8 @@ export const useStore = create<RootState>((set, get) => {
                       result = response.result;
                     } else if (response.result.content && Array.isArray(response.result.content)) {
                       result = response.result.content
-                        .filter((item: any) => item.type === 'text')
-                        .map((item: any) => item.text)
+                        .filter((item: Record<string, unknown>) => item.type === 'text')
+                        .map((item: Record<string, unknown>) => item.text)
                         .join('\n');
                     } else if (response.result.content && typeof response.result.content === 'string') {
                       result = response.result.content;
@@ -624,7 +664,7 @@ export const useStore = create<RootState>((set, get) => {
         const merged = { ...state.apiKeys, ...keys };
         // Immediately persist to server so secrets don't linger only in memory
         saveApiKeysToServer(merged);
-        return { apiKeys: merged } as Partial<RootState> as any;
+        return { apiKeys: merged } as Partial<RootState> as Record<string, unknown>;
       });
     },
 
@@ -668,10 +708,9 @@ export const useStore = create<RootState>((set, get) => {
             const dir = data?.config?.projectsBaseDir as string | undefined;
             if (dir && typeof dir === 'string' && dir.trim()) {
               const cleaned = dir.trim().replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
-              set(state => ({ apiKeys: { ...state.apiKeys, projectsBaseDir: cleaned } } as any));
+              set(state => ({ apiKeys: { ...state.apiKeys, projectsBaseDir: cleaned } } as Record<string, unknown>));
               try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = cleaned;
+                (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ = cleaned;
               } catch {}
             }
           }
@@ -835,7 +874,7 @@ export const useStore = create<RootState>((set, get) => {
       let uiBaseDir: string | undefined;
       try {
         // from in-memory apiKeys first
-        uiBaseDir = (state.apiKeys as any)?.projectsBaseDir as string | undefined;
+        uiBaseDir = (state.apiKeys as Record<string, unknown>)?.projectsBaseDir as string | undefined;
         // then from localStorage (persisted across reloads)
         if (!uiBaseDir && typeof window !== 'undefined') {
           uiBaseDir = window.localStorage?.getItem('kibitz_projects_base_dir') || undefined;
@@ -844,7 +883,7 @@ export const useStore = create<RootState>((set, get) => {
           uiBaseDir = uiBaseDir.trim().replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
           if (!uiBaseDir.startsWith('/') && /^Users\//.test(uiBaseDir)) uiBaseDir = '/' + uiBaseDir;
           // expose runtime hint so client resolvers see it
-          try { (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBaseDir; } catch {}
+          try { (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ = uiBaseDir; } catch {}
         }
       } catch {}
 
@@ -1644,10 +1683,9 @@ export const useStore = create<RootState>((set, get) => {
           const projectPath = getProjectPath(project.id, project.name);
           // If user set a base path in Admin panel (apiKeys.projectsBaseDir), honor it immediately on client
           try {
-            const uiBase = (get().apiKeys as any)?.projectsBaseDir as string | undefined;
+            const uiBase = (get().apiKeys as Record<string, unknown>)?.projectsBaseDir as string | undefined;
             if (uiBase && uiBase.trim()) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
+              (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
             }
           } catch {}
         
@@ -1703,7 +1741,7 @@ export const useStore = create<RootState>((set, get) => {
       if (project && (toolName === 'BashCommand' || toolName === 'FileWriteOrEdit')) {
         const projectPath = getProjectPath(project.id, project.name);
         try {
-          const uiBase = (get().apiKeys as any)?.projectsBaseDir as string | undefined;
+          const uiBase = (get().apiKeys as Record<string, unknown>)?.projectsBaseDir as string | undefined;
           if (uiBase && uiBase.trim()) {
             let sanitized = uiBase.trim()
               .replace(/[•\u2022]+/g, '')
@@ -1711,8 +1749,7 @@ export const useStore = create<RootState>((set, get) => {
               .replace(/[\u0000-\u001F\u007F]+/g, '')
               .replace(/\/+$/, '');
             if (!sanitized.startsWith('/') && /^Users\//.test(sanitized)) sanitized = '/' + sanitized;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (window as any).__KIBITZ_PROJECTS_BASE_DIR__ = sanitized;
+            (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ = sanitized;
           }
         } catch {}
         
@@ -1757,14 +1794,21 @@ export const useStore = create<RootState>((set, get) => {
           console.log(`🔧 Final BashCommand: ${command}`);
           
           // Remove the raw command property and use only action_json format
-          const { command: _, ...argsWithoutCommand } = modifiedArgs;
+          const { command: _unused, ...argsWithoutCommand } = modifiedArgs;
+          // Use cached thread_id from last Initialize for this project/server if available
+          let desiredThreadId = 'git-operations';
+          try {
+            const key = `${serverId}|${projectPath}`;
+            const cached = mcpThreadIdCache.get(key);
+            if (cached && cached.trim()) desiredThreadId = cached.trim();
+          } catch {}
           modifiedArgs = {
             ...argsWithoutCommand,
             action_json: {
               command: command,
               type: 'command' // Move type field inside action_json where it belongs
             },
-            thread_id: modifiedArgs.thread_id
+            thread_id: desiredThreadId
           };
         }
         
@@ -1838,7 +1882,7 @@ export const useStore = create<RootState>((set, get) => {
           });
         } else if (modifiedArgs.action_json) {
           // 🔧 CRITICAL: Ensure ALL BashCommand calls have type field inside action_json
-          const actionJson = modifiedArgs.action_json as any;
+          const actionJson = modifiedArgs.action_json as Record<string, unknown>;
           if (!actionJson.type) {
             console.warn('🔧 BashCommand missing type field inside action_json - adding it');
             actionJson.type = 'command';
@@ -1861,6 +1905,19 @@ export const useStore = create<RootState>((set, get) => {
         
         pendingRequestsRef.set(requestId, { 
           resolve: (result: string) => {
+            // Cache server-advised thread_id after Initialize for this project/server
+            try {
+              if (toolName === 'Initialize') {
+                const text = String(result || '');
+                const m = text.match(/Use\s+thread_id=([a-z0-9]+)/i) || text.match(/thread_id=([a-z0-9]+)/i);
+                if (m && m[1] && project) {
+                  const projectPath = getProjectPath(project.id, project.name);
+                  const key = `${serverId}|${projectPath}`;
+                  mcpThreadIdCache.set(key, m[1]);
+                }
+              }
+            } catch {}
+
             // ✅ IMMEDIATE RESOLVE: Return result to user immediately, run post-hooks async
             resolve(result);
             
@@ -1895,7 +1952,7 @@ export const useStore = create<RootState>((set, get) => {
                         
                         // Track file changes for FileWriteOrEdit
                         if (toolName === 'FileWriteOrEdit') {
-                          const filePath = (args as any).file_path || 'unknown_file';
+                          const filePath = (args as Record<string, unknown>).file_path || 'unknown_file';
                           trackFileChange(filePath);
                         }
                         
@@ -2077,7 +2134,7 @@ export const useStore = create<RootState>((set, get) => {
     },
 
     // Phase 0: Safe commit coordination to prevent racing commits
-    safeCommit: async (projectId: string, source: string, commitFn: () => Promise<any>) => {
+    safeCommit: async (projectId: string, source: string, commitFn: () => Promise<Record<string, unknown>>) => {
       const existing = commitLocksRef.get(projectId);
       if (existing) {
         console.log(`🔒 Phase 0: Skipping ${source} commit - already in progress for project ${projectId}`);

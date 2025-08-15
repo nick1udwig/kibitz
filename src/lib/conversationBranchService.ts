@@ -8,7 +8,7 @@
  */
 
 import { executeGitCommand } from './versionControl/git';
-import { generateCommitDiff, GitDiffResult } from './gitDiffService';
+import { generateCommitDiff } from './gitDiffService';
 import { generateLLMCommitMessage, CommitMessageRequest, CommitMessageResult } from './llmCommitMessageGenerator';
 import { ProjectSettings } from '../components/LlmChat/context/types';
 
@@ -37,6 +37,26 @@ export interface ConversationBranchInfo {
   createdAt: number;
   commitHash?: string;
   commits?: ConversationCommitInfo[];
+}
+
+export interface ProjectConversation {
+  conversationId: string;
+  currentBranch: string;
+  branches: ConversationBranchInfo[];
+}
+
+export interface ProjectBranch {
+  branchName: string;
+  commitHash: string;
+  commitMessage: string;
+  timestamp: number;
+  conversationId?: string;
+  interactionCount?: number;
+}
+
+export interface ProjectData {
+  conversations?: ProjectConversation[];
+  branches?: ProjectBranch[];
 }
 
 export interface ConversationBranchResult {
@@ -251,8 +271,7 @@ export async function createConversationBranch(
 
     console.log(`✅ Successfully checked out base branch: ${baseBranch}`);
 
-    // Get starting hash (before any changes)
-    const startingHash = await getCurrentCommitHash(projectPath, serverId, executeTool);
+
 
     // Create new branch name
     const newBranchName = `conv-${conversationId}-step-${interactionCount}`;
@@ -429,17 +448,17 @@ export async function createConversationCommit(
  * Update conversation branches in project JSON
  */
 export function updateConversationJSON(
-  projectData: any,
+  projectData: ProjectData,
   conversationId: string,
   branchInfo: ConversationBranchInfo
-): any {
+): ProjectData {
   // Initialize conversations structure if it doesn't exist
   if (!projectData.conversations) {
     projectData.conversations = [];
   }
 
   // Find or create conversation entry
-  let conversation = projectData.conversations.find((c: any) => c.conversationId === conversationId);
+  let conversation = projectData.conversations.find((c: ProjectConversation) => c.conversationId === conversationId);
   
   if (!conversation) {
     conversation = {
@@ -471,7 +490,7 @@ export function updateConversationJSON(
   }
 
   // Check if branch already exists in main branches array
-  const existingBranchIndex = projectData.branches.findIndex((b: any) => b.branchName === branchInfo.branchName);
+  const existingBranchIndex = projectData.branches.findIndex((b: ProjectBranch) => b.branchName === branchInfo.branchName);
   
   // Get the latest commit info for summary data
   const latestCommit = branchInfo.commits && branchInfo.commits.length > 0 
@@ -523,16 +542,16 @@ export function updateConversationJSON(
  * Add commit information to existing conversation branch in project JSON
  */
 export function addCommitToConversationJSON(
-  projectData: any,
+  projectData: ProjectData,
   conversationId: string,
   branchName: string,
   commitInfo: ConversationCommitInfo
-): any {
+): ProjectData {
   // Update conversation-specific data
   if (projectData.conversations) {
-    const conversation = projectData.conversations.find((c: any) => c.conversationId === conversationId);
+    const conversation = projectData.conversations.find((c: ProjectConversation) => c.conversationId === conversationId);
     if (conversation && conversation.branches) {
-      const branch = conversation.branches.find((b: any) => b.branchName === branchName);
+      const branch = conversation.branches.find((b: ConversationBranchInfo) => b.branchName === branchName);
       if (branch) {
         if (!branch.commits) {
           branch.commits = [];
@@ -550,7 +569,7 @@ export function addCommitToConversationJSON(
 
   // Update main branches array
   if (projectData.branches) {
-    const branchIndex = projectData.branches.findIndex((b: any) => b.branchName === branchName);
+    const branchIndex = projectData.branches.findIndex((b: ProjectBranch) => b.branchName === branchName);
     if (branchIndex >= 0) {
       const branch = projectData.branches[branchIndex];
       

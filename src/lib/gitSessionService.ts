@@ -176,7 +176,7 @@ export default class GitSessionService {
         thread_id: `verify-commit-${Date.now()}`
       });
       return !result.includes('Error:');
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -190,9 +190,9 @@ export default class GitSessionService {
         thread_id: `current-commit-${Date.now()}`
       });
       return result.trim();
-    } catch (error) {
-      return '';
-    }
+          } catch {
+        return '';
+      }
   }
 
   private async stashChanges(): Promise<void> {

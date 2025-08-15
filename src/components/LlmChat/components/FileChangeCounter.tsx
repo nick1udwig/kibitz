@@ -6,8 +6,7 @@ export const FileChangeCounter: React.FC = () => {
   const { 
     config, 
     pendingChanges, 
-    isProcessing, 
-    lastCommitTimestamp 
+    isProcessing
   } = useAutoCommitStore();
 
   // Don't show if auto-commit is disabled

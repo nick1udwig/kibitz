@@ -1,16 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 import { getAllProjectsWithGitHub } from '@/lib/server/githubSync/project-json-manager.js';
-import { hasPersistedAuth, resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
+import { resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     console.log('📊 GitHub Sync Status Check');
     
     // Get all projects with GitHub config
     const projects = await getAllProjectsWithGitHub();
     
-    const enabledProjects = projects.filter(p => (p as any).github?.enabled);
+    const enabledProjects = projects.filter(p => (p as { github?: { enabled?: boolean } }).github?.enabled);
     const totalProjects = projects.length;
     
     console.log(`Found ${totalProjects} total projects, ${enabledProjects.length} with GitHub enabled`);
@@ -32,10 +32,10 @@ export async function GET(request: NextRequest) {
       },
       health,
       enabledProjects: enabledProjects.map(p => ({
-        projectId: (p as any).projectId,
-        projectName: (p as any).projectName,
-        syncStatus: (p as any).github?.syncStatus || 'unknown',
-        lastSync: (p as any).github?.lastSync || null
+        projectId: (p as { projectId?: string }).projectId,
+        projectName: (p as { projectName?: string }).projectName,
+        syncStatus: (p as { github?: { syncStatus?: string } }).github?.syncStatus || 'unknown',
+        lastSync: (p as { github?: { lastSync?: unknown } }).github?.lastSync || null
       })),
       timestamp: new Date().toISOString(),
       automated: true

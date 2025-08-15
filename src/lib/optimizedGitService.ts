@@ -324,8 +324,36 @@ export class OptimizedGitService {
         ...status.untrackedFiles
       ];
 
-      // Do NOT auto-create branches; stay on current branch (main or conv-*)
-      const branchResult = { success: true } as any;
+      // Respect step-branching: if UI/store indicates threshold for new branch met, ensure we are on the right conv-* branch first.
+      try {
+        const { useStore } = await import('../stores/rootStore');
+        const st = useStore.getState();
+        const project = st.projects.find(p => p.id === projectId);
+        const minFiles = (project?.settings?.minFilesForAutoCommitPush ?? 2) as number;
+        const convId = (st.activeConversationId || '') as string;
+        if (convId && filesChanged.length >= Math.max(1, minFiles)) {
+          const convPrefix = `conv-${convId}-step-`;
+          const listRes = await this.executeGitCommand(projectPath, 'git for-each-ref refs/heads --format="%(refname:short)"', executeTool, { skipCache: true });
+          let highestStep = 0;
+          if (listRes.success && listRes.output.trim()) {
+            listRes.output.split('\n').map(s => s.trim()).filter(Boolean)
+              .filter(n => n.startsWith(convPrefix))
+              .forEach(n => { const m = n.match(/step-(\d+)$/); if (m) highestStep = Math.max(highestStep, parseInt(m[1], 10)); });
+          }
+          const baseBranch = highestStep === 0 ? 'main' : `${convPrefix}${highestStep}`;
+          const nextBranch = `${convPrefix}${highestStep + 1}`;
+          // Try create directly; fallback to stash/switch/pop
+          let mk = await this.executeGitCommand(projectPath, `git checkout -b ${nextBranch} ${baseBranch}`, executeTool, { skipCache: true });
+          if (!mk.success) {
+            await this.executeGitCommand(projectPath, 'git stash push -u -m "kibitz-autobranch" || true', executeTool, { skipCache: true });
+            const co = await this.executeGitCommand(projectPath, `git checkout ${baseBranch}`, executeTool, { skipCache: true });
+            if (co.success) {
+              mk = await this.executeGitCommand(projectPath, `git checkout -b ${nextBranch}`, executeTool, { skipCache: true });
+            }
+            await this.executeGitCommand(projectPath, 'git stash pop || true', executeTool, { skipCache: true });
+          }
+        }
+      } catch {}
 
       // Stage all changes
       const addResult = await this.executeGitCommand(

@@ -1,3 +1,3 @@
-export * from '../../../sync-detection-service.js';
+export * from '../../../scripts/sync-detection-service.js';
 
 

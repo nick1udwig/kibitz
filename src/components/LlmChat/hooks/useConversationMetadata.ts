@@ -92,7 +92,7 @@ export function useConversationMetadata() {
     }, 30000); // 30 seconds
     
     // Store interval for cleanup
-    (newMetadata as any)._refreshInterval = refreshInterval;
+    (newMetadata as { _refreshInterval?: NodeJS.Timeout })._refreshInterval = refreshInterval;
     
     return conversationId;
   }, [activeProject, generateConversationId]);
@@ -120,8 +120,8 @@ export function useConversationMetadata() {
       if (!prev) return null;
       
       // Clear auto-refresh interval
-      if ((prev as any)._refreshInterval) {
-        clearInterval((prev as any)._refreshInterval);
+      if ((prev as { _refreshInterval?: NodeJS.Timeout })._refreshInterval) {
+        clearInterval((prev as { _refreshInterval?: NodeJS.Timeout })._refreshInterval);
       }
       
       return {
@@ -224,7 +224,7 @@ export function useConversationMetadata() {
     if (activeProject?.id) {
       loadProjectMetadata(activeProject.id);
     }
-  }, [activeProject?.id, loadProjectMetadata]);
+  }, [activeProject, loadProjectMetadata]);
 
   // Auto-generate JSON files for projects that don't have them yet
   useEffect(() => {
@@ -269,7 +269,32 @@ export function useConversationMetadata() {
     if (activeProject?.id) {
       generateInitialProjectData();
     }
-  }, [activeProject?.id, executeTool, loadProjectMetadata]);
+  }, [activeProject, executeTool, loadProjectMetadata]);
+
+  // 🚀 UI REFRESH FIX: Listen for branch switch events and refresh metadata
+  useEffect(() => {
+    const handleBranchSwitch = async (event: CustomEvent) => {
+      const { projectId: eventProjectId, branchName } = event.detail;
+      if (eventProjectId === activeProject?.id) {
+        console.log(`🔄 useConversationMetadata: Branch switched to ${branchName}, refreshing metadata...`);
+        try {
+          // Clear existing metadata and reload
+          setMetadata(null);
+          await loadProjectMetadata(eventProjectId);
+          console.log(`✅ useConversationMetadata: Metadata refreshed after branch switch`);
+        } catch (error) {
+          console.warn('⚠️ useConversationMetadata: Failed to refresh metadata after branch switch:', error);
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('branchSwitched', handleBranchSwitch as EventListener);
+      return () => {
+        window.removeEventListener('branchSwitched', handleBranchSwitch as EventListener);
+      };
+    }
+  }, [activeProject?.id, loadProjectMetadata]);
 
   return {
     // Current conversation state

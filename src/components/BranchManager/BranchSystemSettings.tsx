@@ -197,7 +197,7 @@ export const BranchSystemSettings: React.FC = () => {
         <div className="border-t pt-4">
           <h4 className="font-medium mb-3">Re-enable Auto-Systems (Advanced)</h4>
           <div className="space-y-2 text-sm text-muted-foreground">
-            <p>⚠️ To re-enable auto-branch creation, you'll need to:</p>
+            <p>⚠️ To re-enable auto-branch creation, you&apos;ll need to:</p>
             <ul className="list-disc list-inside space-y-1 text-xs ml-4">
               <li>Edit `src/lib/branchService.ts` - uncomment autoCreateBranchIfNeeded</li>
               <li>Edit `src/lib/checkpointRollbackService.ts` - uncomment createAutoCheckpoint</li>

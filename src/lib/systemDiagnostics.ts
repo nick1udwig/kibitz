@@ -139,7 +139,7 @@ export class SystemDiagnostics {
 /**
  * Global error handler for system diagnostics
  */
-export const recordSystemError = (type: string, error: any): void => {
+export const recordSystemError = (type: string, error: unknown): void => {
   const diagnostics = SystemDiagnostics.getInstance();
   const message = error instanceof Error ? error.message : String(error);
   diagnostics.recordError(type, message);

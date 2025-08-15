@@ -155,7 +155,7 @@ export interface ConversationWorkspaceSettings {
   allowedTools?: string[];           // Restricted tool set for this conversation
   
   // Future extensibility
-  customSettings?: Record<string, any>;  // For future features
+  customSettings?: Record<string, unknown>;  // For future features
 }
 
 // 🌟 NEW: Workspace mapping for conversation-to-folder relationships

@@ -46,17 +46,17 @@ const ToolsView = () => {
   ), []);
 
   // Generate example args from tool.input_schema when available
-  const generateArgsFromSchema = (schema?: any): string => {
+  const generateArgsFromSchema = (schema?: Record<string, unknown>): string => {
     try {
       if (!schema || typeof schema !== 'object') return '{\n\n}';
       if ((schema.type || schema.Type) !== 'object') return '{\n\n}';
-      const properties = schema.properties || {};
-      const required: string[] = schema.required || [];
+      const properties = (schema.properties as Record<string, unknown>) || {};
+      const required = (schema.required as string[]) || [];
       const sample: Record<string, unknown> = {};
       for (const key of Object.keys(properties)) {
-        const prop = properties[key] || {};
+        const prop = (properties[key] as Record<string, unknown>) || {};
         const t = (prop.type || '').toString();
-        let val: any = null;
+        let val: unknown = null;
         if (key === 'callArgs') {
           val = [["q", "New York, USA"]];
         } else if (key.toLowerCase().includes('url')) {
@@ -96,7 +96,7 @@ const ToolsView = () => {
       let args: Record<string, unknown> = {};
       try {
         args = raw ? JSON.parse(raw) : {};
-      } catch (e) {
+      } catch {
         setResults(prev => ({ ...prev, [key]: { loading: false, error: 'Invalid JSON arguments' } }));
         return;
       }

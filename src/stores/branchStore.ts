@@ -42,6 +42,8 @@ interface BranchState {
   currentBranch: Record<string, string>; // projectId -> current branch name
   pendingChanges: Record<string, ChangeDetectionResult>; // projectId -> pending changes
   isProcessing: boolean;
+  // Dedicated switching flag so UI doesn't get blocked by background refreshes
+  isSwitching: boolean;
   lastOperation: string | null;
   
   // Auto-refresh
@@ -73,7 +75,7 @@ interface BranchState {
  * Default configuration
  */
 const DEFAULT_BRANCH_CONFIG: BranchConfig = {
-  autoCreateBranches: false,
+  autoCreateBranches: true, // creates incremental branches e.g main to step 1 and step n + 1
   changeThreshold: 2, // Trigger at 2+ files changed (matches user requirement)
   enableSmartNaming: true,
   defaultBranchType: 'iteration',
@@ -88,6 +90,7 @@ export const useBranchStore = create<BranchState>((set, get) => ({
   currentBranch: {},
   pendingChanges: {},
   isProcessing: false,
+  isSwitching: false,
   lastOperation: null,
   
   // Auto-refresh interval for current branch
@@ -301,7 +304,7 @@ export const useBranchStore = create<BranchState>((set, get) => ({
     }
     
     try {
-      set({ isProcessing: true, lastOperation: `Switching to branch: ${branchName}` });
+      set({ isProcessing: true, isSwitching: true, lastOperation: `Switching to branch: ${branchName}` });
       
       const mcpServerId = activeMcpServers[0].id;
       const projectPath = await ensureProjectDirectory(project, mcpServerId, rootStore.executeTool);
@@ -321,14 +324,85 @@ export const useBranchStore = create<BranchState>((set, get) => ({
           }
         }));
         
-        console.log(`Successfully switched to branch: ${branchName}`);
+        // Ensure the local workspace is now on the requested branch by asking Git directly
+        try {
+          const res = await fetch(`/api/projects/${projectId}/branches/current`);
+          const data = await res.json();
+          if (data?.currentBranch && data.currentBranch !== branchName) {
+            console.warn(`Branch switch mismatch (expected ${branchName}, got ${data.currentBranch}). Retrying revert once.`);
+            const retry = await revertToState(
+              projectPath,
+              { targetBranch: branchName, createBackupBranch: false },
+              mcpServerId,
+              rootStore.executeTool
+            );
+            if (!retry.success) {
+              console.warn('Retry switch failed:', retry.error);
+            }
+          }
+        } catch {}
+        
+        // 🚀 UI REFRESH FIX: Trigger comprehensive UI refresh after successful branch switch
+        try {
+          console.log(`🔄 Triggering UI refresh after successful branch switch to: ${branchName}`);
+          
+          // 1. Refresh branch list and current branch state
+          setTimeout(async () => {
+            try {
+              const { listProjectBranches, refreshCurrentBranch } = get();
+              await listProjectBranches(projectId);
+              await refreshCurrentBranch(projectId);
+              console.log(`✅ Branch state refreshed for project ${projectId}`);
+            } catch (refreshError) {
+              console.warn('⚠️ Failed to refresh branch state:', refreshError);
+            }
+          }, 100);
+          
+          // 2. Generate project metadata if missing on new branch (trigger the project.json creation)
+          setTimeout(async () => {
+            try {
+              console.log(`📋 Checking if project data needs regeneration on branch ${branchName}...`);
+              const checkRes = await fetch(`/api/projects/${projectId}`);
+              if (!checkRes.ok) {
+                console.log(`🔄 Generating project data for new branch ${branchName}...`);
+                const generateRes = await fetch(`/api/projects/${projectId}/generate`, { method: 'POST' });
+                if (generateRes.ok) {
+                  console.log(`✅ Project data generated for branch ${branchName}`);
+                } else {
+                  console.warn(`⚠️ Failed to generate project data for branch ${branchName}`);
+                }
+              } else {
+                console.log(`✅ Project data already exists on branch ${branchName}`);
+              }
+            } catch (generateError) {
+              console.warn('⚠️ Failed to check/generate project data:', generateError);
+            }
+          }, 200);
+          
+          // 3. Dispatch events to notify UI components about the branch change
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('branchSwitched', {
+              detail: {
+                projectId,
+                branchName,
+                timestamp: Date.now()
+              }
+            }));
+            console.log(`📡 Branch switch event dispatched for ${projectId} -> ${branchName}`);
+          }
+          
+        } catch (refreshError) {
+          console.warn('⚠️ UI refresh after branch switch failed:', refreshError);
+        }
+        
+        console.log(`✅ Successfully switched to branch: ${branchName}`);
         return true;
       } else {
         console.error('Failed to switch branch:', result.error);
         return false;
       }
     } finally {
-      set({ isProcessing: false, lastOperation: null });
+      set({ isProcessing: false, isSwitching: false, lastOperation: null });
     }
   },
   

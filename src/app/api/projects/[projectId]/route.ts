@@ -11,9 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
-import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../lib/server/projectPaths';
-
-const BASE_PROJECTS_DIR = projectsBaseDir();
+import { findProjectPath as findExistingProjectPath } from '../../../../lib/server/projectPaths';
 
 export async function GET(
   request: NextRequest,
@@ -122,30 +120,5 @@ export async function GET(
       { error: 'Internal server error' },
       { status: 500 }
     );
-  }
-}
-
-/**
- * Find project directory by scanning for {projectId}_new-project pattern
- */
-async function findProjectPath(projectId: string): Promise<string | null> {
-  try {
-    const entries = fs.readdirSync(BASE_PROJECTS_DIR);
-    
-    for (const entry of entries) {
-      if (entry.startsWith(`${projectId}_`)) {
-        const fullPath = path.join(BASE_PROJECTS_DIR, entry);
-        const stats = fs.statSync(fullPath);
-        
-        if (stats.isDirectory()) {
-          return fullPath;
-        }
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Error finding project path:', error);
-    return null;
   }
 } 

@@ -5,8 +5,8 @@
  * Provides branch creation, commit functionality, and change detection.
  */
 
-import { AutoCommitBranch, BranchOperationResult, Project } from '../components/LlmChat/context/types';
-import { saveAutoCommitBranch, updateAutoCommitAgentStatus, getAutoCommitAgentStatus } from './db';
+import { AutoCommitBranch, BranchOperationResult } from '../components/LlmChat/context/types';
+import { saveAutoCommitBranch } from './db';
 import { getProjectPath } from './projectPathService';
 
 export interface GitChangeDetection {
@@ -75,8 +75,11 @@ export class GitService {
 
       // Initialize Git repository
       await this.executeTool(this.mcpServerId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && (git init -b main || git init); git show-ref --verify --quiet refs/heads/master && git branch -m master main || true`,
-        thread_id: `git-init-${this.projectId}`
+        action_json: {
+          command: `cd "${this.projectPath}" && (git init -b main || git init); git show-ref --verify --quiet refs/heads/master && git branch -m master main || true`,
+          type: 'command'
+        },
+        thread_id: 'git-operations'
       });
 
       // Do not set identity here; rely on repo/global git config or env-provided values
@@ -84,9 +87,10 @@ export class GitService {
       try {
         await this.executeTool(this.mcpServerId, 'BashCommand', {
           action_json: {
-            command: `cd "${this.projectPath}" && git symbolic-ref HEAD refs/heads/main || true`
+            command: `cd "${this.projectPath}" && git symbolic-ref HEAD refs/heads/main || true`,
+            type: 'command'
           },
-          thread_id: `git-head-main-${this.projectId}`
+          thread_id: 'git-operations'
         });
       } catch {}
 
@@ -105,12 +109,13 @@ export class GitService {
     try {
       const result = await this.executeTool(this.mcpServerId, 'BashCommand', {
         action_json: {
-          command: `cd "${this.projectPath}" && git rev-parse --is-inside-work-tree`
+          command: `cd "${this.projectPath}" && git rev-parse --is-inside-work-tree`,
+          type: 'command'
         },
-        thread_id: `git-check-${this.projectId}`
+        thread_id: 'git-operations'
       });
       return result.trim() === 'true';
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -132,18 +137,20 @@ export class GitService {
       // Get current branch
       const currentBranchResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
         action_json: {
-          command: `cd "${this.projectPath}" && git branch --show-current`
+          command: `cd "${this.projectPath}" && git branch --show-current`,
+          type: 'command'
         },
-        thread_id: `git-current-branch-${this.projectId}`
+        thread_id: 'git-operations'
       });
       const currentBranch = currentBranchResult.trim() || 'main';
 
       // Get all branches
       const allBranchesResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
         action_json: {
-          command: `cd "${this.projectPath}" && git branch --format='%(refname:short)'`
+          command: `cd "${this.projectPath}" && git branch --format='%(refname:short)'`,
+          type: 'command'
         },
-        thread_id: `git-all-branches-${this.projectId}`
+        thread_id: 'git-operations'
       });
       const allBranches = allBranchesResult.trim() ? allBranchesResult.trim().split('\n') : [];
 
@@ -153,20 +160,22 @@ export class GitService {
       try {
         const commitHashResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
           action_json: {
-            command: `cd "${this.projectPath}" && git log -1 --format='%H'`
+            command: `cd "${this.projectPath}" && git log -1 --format='%H'`,
+            type: 'command'
           },
-          thread_id: `git-last-commit-hash-${this.projectId}`
+          thread_id: 'git-operations'
         });
         lastCommitHash = commitHashResult.trim();
 
         const commitMessageResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
           action_json: {
-            command: `cd "${this.projectPath}" && git log -1 --format='%s'`
+            command: `cd "${this.projectPath}" && git log -1 --format='%s'`,
+            type: 'command'
           },
-          thread_id: `git-last-commit-message-${this.projectId}`
+          thread_id: 'git-operations'
         });
         lastCommitMessage = commitMessageResult.trim();
-      } catch (error) {
+      } catch {
         // No commits yet, which is fine
       }
 
@@ -207,9 +216,10 @@ export class GitService {
       // Get status of all files
       const statusResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
         action_json: {
-          command: `cd "${this.projectPath}" && git status --porcelain`
+          command: `cd "${this.projectPath}" && git status --porcelain`,
+          type: 'command'
         },
-        thread_id: `git-status-${this.projectId}`
+        thread_id: 'git-operations'
       });
 
       const statusLines = statusResult.trim().split('\n').filter(line => line.trim());
@@ -290,8 +300,11 @@ export class GitService {
         if (options.force) {
           // Delete existing branch first
           await this.executeTool(this.mcpServerId, 'BashCommand', {
-            command: `cd "${this.projectPath}" && git branch -D ${branchName}`,
-            thread_id: `git-delete-branch-${this.projectId}`
+            action_json: {
+              command: `cd "${this.projectPath}" && git branch -D ${branchName}`,
+              type: 'command'
+            },
+            thread_id: 'git-operations'
           });
         } else {
           return {
@@ -304,15 +317,21 @@ export class GitService {
       // Create new branch
       const baseBranch = options.baseBranch || branchInfo.currentBranch;
       await this.executeTool(this.mcpServerId, 'BashCommand', {
-        command: `cd "${this.projectPath}" && git checkout -b ${branchName} ${baseBranch}`,
-        thread_id: `git-create-branch-${this.projectId}`
+        action_json: {
+          command: `cd "${this.projectPath}" && git checkout -b ${branchName} ${baseBranch}`,
+          type: 'command'
+        },
+        thread_id: 'git-operations'
       });
 
       // Switch to branch if requested
       if (options.switchToBranch !== false) {
         await this.executeTool(this.mcpServerId, 'BashCommand', {
-          command: `cd "${this.projectPath}" && git checkout ${branchName}`,
-          thread_id: `git-checkout-${this.projectId}`
+          action_json: {
+            command: `cd "${this.projectPath}" && git checkout ${branchName}`,
+            type: 'command'
+          },
+          thread_id: 'git-operations'
         });
       }
 
@@ -364,9 +383,10 @@ export class GitService {
 
       await this.executeTool(this.mcpServerId, 'BashCommand', {
         action_json: {
-          command: stageCommand
+          command: stageCommand,
+          type: 'command'
         },
-        thread_id: `git-stage-${this.projectId}`
+        thread_id: 'git-operations'
       });
 
       // Do not assume identity; only set if explicit author provided
@@ -377,19 +397,21 @@ export class GitService {
 
       // Commit changes
       const commitCommand = `cd "${this.projectPath}" && ${authorConfig}git commit -m "${options.message}"`;
-      const commitResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
+      await this.executeTool(this.mcpServerId, 'BashCommand', {
         action_json: {
-          command: commitCommand
+          command: commitCommand,
+          type: 'command'
         },
-        thread_id: `git-commit-${this.projectId}`
+        thread_id: 'git-operations'
       });
 
       // Get commit hash
       const commitHashResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
         action_json: {
-          command: `cd "${this.projectPath}" && git log -1 --format='%H'`
+          command: `cd "${this.projectPath}" && git log -1 --format='%H'`,
+          type: 'command'
         },
-        thread_id: `git-commit-hash-${this.projectId}`
+        thread_id: 'git-operations'
       });
       const commitHash = commitHashResult.trim();
 

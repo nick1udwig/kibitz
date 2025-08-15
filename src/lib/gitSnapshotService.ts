@@ -56,7 +56,7 @@ export async function generateCommitMessage(
   projectPath: string,
   serverId: string,
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
-  provider: 'openai' | 'anthropic' | 'custom' = 'anthropic'
+  _provider?: 'openai' | 'anthropic' | 'custom'
 ): Promise<string> {
   try {
     // Get git diff for staged changes
@@ -361,7 +361,7 @@ export async function getRecentBranches(
     const lines = branchResult.trim().split('\n').filter(line => line.trim());
 
     for (const line of lines) {
-      const [name, lastCommit, timestamp, subject] = line.split('|');
+      const [name, lastCommit, timestamp] = line.split('|');
       if (!name) continue;
 
       // Get commit count for this branch
@@ -412,16 +412,20 @@ export async function quickRevertToSnapshot(
       backupBranch = `backup-before-revert-${timestamp}`;
       
       await executeTool(serverId, 'BashCommand', {
-        command: `cd "${projectPath}" && git checkout -b "${backupBranch}"`,
-        type: 'command',
+        action_json: {
+          command: `cd "${projectPath}" && git checkout -b "${backupBranch}"`,
+          type: 'command'
+        },
         thread_id: threadId
       });
     }
 
     // Checkout the target snapshot branch
     const checkoutResult = await executeTool(serverId, 'BashCommand', {
-      command: `cd "${projectPath}" && git checkout "${snapshot.branchName}"`,
-      type: 'command',
+      action_json: {
+        command: `cd "${projectPath}" && git checkout "${snapshot.branchName}"`,
+        type: 'command'
+      },
       thread_id: threadId
     });
 

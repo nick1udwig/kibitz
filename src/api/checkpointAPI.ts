@@ -5,15 +5,13 @@
  * Provides clean interface, standardized responses, and handles complexity internally.
  */
 
-import { analyzeRepository, type RepoAnalysis, type DetailedBranchInfo } from '../lib/repoAnalysisService';
-import { safeRollback, createAutoCheckpoint, shouldCreateCheckpoint, listCheckpoints, type CheckpointResult, type CheckpointOptions, type RollbackOptions } from '../lib/checkpointRollbackService';
 import { ensureProjectDirectory } from '../lib/projectPathService';
 import { Project } from '../components/LlmChat/context/types';
 
 /**
  * Standard API Response Format
  */
-export interface APIResponse<T = any> {
+export interface APIResponse<T = unknown> {
   success: boolean;
   data?: T | undefined;
   error?: string;
@@ -47,9 +45,9 @@ export interface CheckpointCreationResponse {
  * Repository Analysis Response
  */
 export interface RepoAnalysisResponse {
-  analysis: RepoAnalysis;
-  topBranches: DetailedBranchInfo[];
-  checkpoints: any[];
+  analysis: unknown;
+  topBranches: unknown[];
+  checkpoints: unknown[];
   recommendations: string[];
 }
 
@@ -182,7 +180,7 @@ export class CheckpointAPI {
   /**
    * Switch to a different branch with automatic backup
    */
-  async switchToBranch(branchName: string, createBackup: boolean = true): Promise<APIResponse<BranchSwitchResponse>> {
+  async switchToBranch(): Promise<APIResponse<BranchSwitchResponse>> {
     // 🔒 DISABLED: Branch switching to prevent backup branch creation
     return this.createResponse<BranchSwitchResponse>(
       false,
@@ -248,10 +246,7 @@ export class CheckpointAPI {
   /**
    * Create a manual checkpoint
    */
-  async createCheckpoint(
-    description?: string,
-    branchType: 'feature' | 'bugfix' | 'experiment' | 'checkpoint' = 'checkpoint'
-  ): Promise<APIResponse<CheckpointCreationResponse>> {
+  async createCheckpoint(): Promise<APIResponse<CheckpointCreationResponse>> {
     // 🔒 DISABLED: Checkpoint creation to prevent multiple branches
     return this.createResponse(
       false,
@@ -335,7 +330,7 @@ export class CheckpointAPI {
   /**
    * List all checkpoints for the project
    */
-  async listCheckpoints(): Promise<APIResponse<any[]>> {
+  async listCheckpoints(): Promise<APIResponse<unknown[]>> {
     // 🔒 DISABLED: Checkpoint listing to prevent multiple branches
     return this.createResponse(
       true,
@@ -343,59 +338,18 @@ export class CheckpointAPI {
       undefined,
       'Checkpoint listing disabled to prevent multiple branches'
     );
-
-    /* ORIGINAL CODE DISABLED:
-    try {
-      console.log(`📋 CheckpointAPI: Listing checkpoints for project ${this.projectId}`);
-      
-      const projectPath = await this.getProjectPath();
-      const checkpoints = await listCheckpoints(projectPath, this.serverId, this.executeTool);
-      
-      return this.createResponse(
-        true,
-        checkpoints,
-        undefined,
-        `Found ${checkpoints.length} checkpoints`
-      );
-      
-    } catch (error) {
-      console.error('CheckpointAPI: Failed to list checkpoints:', error);
-      return this.createResponse(
-        false,
-        undefined,
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-    */
   }
 
   /**
    * Check if auto-checkpoint should be created
    */
-  async shouldAutoCheckpoint(): Promise<APIResponse<{ shouldCreate: boolean; reason: string; changes: any }>> {
+  async shouldAutoCheckpoint(): Promise<APIResponse<{ shouldCreate: boolean; reason: string; changes: unknown }>> {
     // 🔒 DISABLED: Checkpoint checks to prevent multiple branches
     return this.createResponse(true, {
       shouldCreate: false,
       reason: 'Auto-checkpoint disabled to prevent multiple branches',
       changes: {}
     });
-
-    /* ORIGINAL CODE DISABLED:
-    try {
-      const projectPath = await this.getProjectPath();
-      const result = await shouldCreateCheckpoint(projectPath, this.serverId, this.executeTool);
-      
-      return this.createResponse(true, result);
-      
-    } catch (error) {
-      console.error('CheckpointAPI: Failed to check auto-checkpoint:', error);
-      return this.createResponse(
-        false,
-        undefined,
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-    */
   }
 }
 

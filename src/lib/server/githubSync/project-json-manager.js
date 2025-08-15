@@ -1,3 +1,3 @@
-export * from '../../../../project-json-manager.js';
+export * from '../../../../scripts/project-json-manager.js';
 
 

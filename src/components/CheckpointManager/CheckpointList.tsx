@@ -18,7 +18,6 @@ import { Checkpoint } from '../../types/Checkpoint';
 import { Button } from '../ui/button';
 import { useStore } from '../../stores/rootStore';
 import { Project } from '../../components/LlmChat/context/types';
-import { revertToState } from '../../lib/branchService';
 import { ensureProjectDirectory } from '../../lib/projectPathService';
 
 interface CheckpointListProps {
@@ -49,8 +48,6 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
     initialize, 
     deleteCheckpointById,
     rollbackToCheckpoint,
-    selectCheckpoint,
-    selectedCheckpointId,
     isLoading
   } = useCheckpointStore();
   
@@ -68,54 +65,11 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
   const [autoBranches, setAutoBranches] = useState<AutoBranch[]>([]);
   const [reverting, setReverting] = useState<string | null>(null);
   
-  // 🔒 NEW: Circuit breaker for system overload protection
-  const [errorCount, setErrorCount] = useState(0);
-  const [lastErrorTime, setLastErrorTime] = useState(0);
-  const [isCircuitBreakerOpen, setIsCircuitBreakerOpen] = useState(false);
+
   
-  // Circuit breaker constants
-  const MAX_ERRORS = 3;
-  const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
-  const ERROR_RESET_TIME = 300000; // 5 minutes
+
   
-  // Check circuit breaker status
-  const checkCircuitBreaker = useCallback(() => {
-    const now = Date.now();
-    
-    // Reset error count if enough time has passed
-    if (now - lastErrorTime > ERROR_RESET_TIME) {
-      setErrorCount(0);
-      setIsCircuitBreakerOpen(false);
-      return false;
-    }
-    
-    // Check if circuit breaker should be opened
-    if (errorCount >= MAX_ERRORS) {
-      if (!isCircuitBreakerOpen) {
-        setIsCircuitBreakerOpen(true);
-        console.warn('🔒 CheckpointList: Circuit breaker opened due to repeated failures');
-      }
-      
-      // Check if circuit breaker timeout has passed
-      if (now - lastErrorTime > CIRCUIT_BREAKER_TIMEOUT) {
-        setIsCircuitBreakerOpen(false);
-        setErrorCount(0);
-        console.log('🔓 CheckpointList: Circuit breaker reset after timeout');
-        return false;
-      }
-      
-      return true;
-    }
-    
-    return false;
-  }, [errorCount, lastErrorTime, isCircuitBreakerOpen]);
-  
-  // Record error for circuit breaker
-  const recordError = useCallback(() => {
-    const now = Date.now();
-    setErrorCount(prev => prev + 1);
-    setLastErrorTime(now);
-  }, []);
+
   
   // 🌿 NEW: Load auto-created branches from git
   const loadAutoBranches = useCallback(async () => {
@@ -265,10 +219,8 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
       }
     } catch (error) {
       console.error('❌ loadAutoBranches: Failed to load auto-branches:', error);
-      // 🔒 Record error for circuit breaker
-      recordError();
     }
-  }, [projectId, projects, servers, executeTool, ensureProjectDirectory, setAutoBranches, checkCircuitBreaker, recordError]);
+  }, [projectId, projects, servers, executeTool, setAutoBranches]);
 
   // 🔄 EMERGENCY: Periodic refresh disabled during recovery
   // useEffect(() => {
@@ -652,20 +604,7 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
   
   return (
     <div className="p-4">
-      {/* 🔒 Circuit breaker status indicator */}
-      {isCircuitBreakerOpen && (
-        <div className="mb-4 p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
-              <span className="text-red-400 text-xs font-bold">!</span>
-            </div>
-            <div>
-              <h4 className="text-sm font-medium text-red-300">System Protection Active</h4>
-              <p className="text-xs text-red-400">Branch loading temporarily disabled due to system overload. Will retry automatically.</p>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* 🌿 ALWAYS SHOW: Auto-created branches section for visibility */}
       <div className="mb-6">
@@ -867,7 +806,7 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
             </div>
             <p className="text-sm font-medium text-gray-300 mb-1">No persistent checkpoints found</p>
             <p className="text-xs text-gray-400 mb-4">
-              Use the "💾 Create Persistent Checkpoint" button to create one
+              Use the &quot;💾 Create Persistent Checkpoint&quot; button to create one
             </p>
           </div>
         )}

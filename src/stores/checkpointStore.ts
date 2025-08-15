@@ -6,7 +6,7 @@ import {
   getCheckpointById, 
   deleteCheckpoint,
   getShortHash,
-  createAutoCheckpoint
+  // createAutoCheckpoint
 } from '../lib/checkpointService';
 import { 
   initGitRepository, 
@@ -14,7 +14,7 @@ import {
 } from '../lib/gitService';
 import { createCommit, executeGitCommand } from '../lib/versionControl/git';
 import { Project } from '../components/LlmChat/context/types';
-import { ensureProjectDirectory, getGitHubRepoName } from '../lib/projectPathService';
+// import { ensureProjectDirectory, getGitHubRepoName } from '../lib/projectPathService';
 
 // Default checkpoint configuration
 const DEFAULT_CHECKPOINT_CONFIG: CheckpointConfig = {
@@ -35,7 +35,7 @@ interface CheckpointState {
   // Methods
   initialize: (projectId: string) => Promise<void>;
   createManualCheckpoint: (projectId: string, project: Project, description: string) => Promise<Checkpoint>;
-  createAutoCheckpointAfterOperation: (projectId: string, project: Project, operation: string) => Promise<Checkpoint | null>;
+  createAutoCheckpointAfterOperation: () => Promise<Checkpoint | null>;
   selectCheckpoint: (checkpointId: string | null) => void;
   deleteCheckpointById: (projectId: string, checkpointId: string) => Promise<void>;
   rollbackToCheckpoint: (projectId: string, checkpointId: string) => Promise<Project | null>;
@@ -120,7 +120,7 @@ export const useCheckpointStore = create<CheckpointState>((set, get) => ({
   },
   
   // Create an automatic checkpoint after an operation
-  createAutoCheckpointAfterOperation: async (projectId: string, project: Project, operation: string) => {
+  createAutoCheckpointAfterOperation: async () => {
     // 🔒 DISABLED: Auto-checkpoint creation to prevent multiple branches
     console.log('⚠️ Auto-checkpoint creation disabled to prevent multiple branches');
     return null;

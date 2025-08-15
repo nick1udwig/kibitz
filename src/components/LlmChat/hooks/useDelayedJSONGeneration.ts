@@ -6,7 +6,7 @@ import { useStore } from '../../../stores/rootStore';
  * 🚀 UNIFIED APPROACH: Single source of truth for JSON generation timing
  */
 export const useDelayedJSONGeneration = () => {
-  const { activeProjectId, executeTool } = useStore();
+  const { activeProjectId } = useStore();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   /**

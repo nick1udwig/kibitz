@@ -5,7 +5,7 @@
  * to browse and restore from multiple Git-based sessions/checkpoints
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   RotateCcw, 
   Clock, 
@@ -37,7 +37,7 @@ export const SessionRecoveryPanel: React.FC<SessionRecoveryPanelProps> = ({
   className = ''
 }) => {
   const [recentCommits, setRecentCommits] = useState<SessionCommit[]>([]);
-  const [sessionInfo, setSessionInfo] = useState<SessionInfo[]>([]);
+  const [, setSessionInfo] = useState<SessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
   const [restoreStatus, setRestoreStatus] = useState<{
@@ -45,16 +45,10 @@ export const SessionRecoveryPanel: React.FC<SessionRecoveryPanelProps> = ({
     message?: string;
   }>({ status: 'idle' });
   
-  const { servers, executeTool, activeProjectId } = useStore();
+  const { servers, executeTool } = useStore();
   const activeServer = servers.find(s => s.status === 'connected');
 
-  useEffect(() => {
-    if (projectPath && activeServer) {
-      loadSessionData();
-    }
-  }, [projectPath, activeServer?.id]);
-
-  const loadSessionData = async () => {
+  const loadSessionData = useCallback(async () => {
     if (!projectPath || !activeServer) return;
 
     setIsLoading(true);
@@ -80,7 +74,13 @@ export const SessionRecoveryPanel: React.FC<SessionRecoveryPanelProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [projectPath, activeServer, executeTool]);
+
+  useEffect(() => {
+    if (projectPath && activeServer) {
+      loadSessionData();
+    }
+  }, [projectPath, activeServer, loadSessionData]);
 
   const handleRestore = async (commitHash: string) => {
     if (!projectPath || !activeServer) return;

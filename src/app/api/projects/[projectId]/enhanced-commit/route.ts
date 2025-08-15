@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import path from 'path';
-import fs from 'fs';
 // Use dynamic import to avoid TS path resolution issues for JS file
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import * as Pjm from '@/lib/server/githubSync/project-json-manager.js';
-import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../../lib/server/projectPaths';
-
-const BASE_DIR = projectsBaseDir();
+import { findProjectPath as findExistingProjectPath } from '../../../../../lib/server/projectPaths';
 
 function findProjectPath(projectId: string): string | null {
   return findExistingProjectPath(projectId);
@@ -32,24 +28,24 @@ export async function POST(
     }
 
     // Read project.json (single-writer via project-json-manager)
-    let projectData: any;
+    let projectData: unknown;
     try {
       projectData = await Pjm.readProjectJson(projectPath);
-    } catch (e: any) {
-      return NextResponse.json({ success: false, error: e?.message || 'Failed to read project.json' }, { status: 500 });
+    } catch (e: unknown) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Failed to read project.json' }, { status: 500 });
     }
 
     // Ensure branches array exists
-    if (!Array.isArray(projectData.branches)) projectData.branches = [];
+    if (!Array.isArray((projectData as { branches?: unknown[] }).branches)) (projectData as { branches: unknown[] }).branches = [];
 
     // Find target branch by name or by commit hash
     let idx = -1;
-    if (branchName) idx = projectData.branches.findIndex((b: any) => b.branchName === branchName);
-    if (idx < 0 && commitInfo?.hash) idx = projectData.branches.findIndex((b: any) => b.commitHash === commitInfo.hash);
+    if (branchName) idx = (projectData as { branches: unknown[] }).branches.findIndex((b: unknown) => (b as { branchName?: string }).branchName === branchName);
+    if (idx < 0 && commitInfo?.hash) idx = (projectData as { branches: unknown[] }).branches.findIndex((b: unknown) => (b as { commitHash?: string }).commitHash === commitInfo.hash);
 
     if (idx < 0) {
       // Create new branch entry
-      projectData.branches.push({
+      (projectData as { branches: unknown[] }).branches.push({
         branchName: branchName || 'main',
         commitHash: commitInfo.hash,
         commitMessage: commitInfo.llmGeneratedMessage || commitInfo.message,
@@ -71,10 +67,18 @@ export async function POST(
         }
       });
     } else {
-      const branch = projectData.branches[idx];
+      const branch = (projectData as { branches: unknown[] }).branches[idx] as {
+        commitMessage?: string;
+        commits?: unknown[];
+        diffData?: unknown;
+        filesChanged?: unknown;
+        linesAdded?: number;
+        linesRemoved?: number;
+        timestamp?: number;
+      };
       if (commitInfo.llmGeneratedMessage) branch.commitMessage = commitInfo.llmGeneratedMessage;
       if (!Array.isArray(branch.commits)) branch.commits = [];
-      const existing = branch.commits.findIndex((c: any) => c.hash === commitInfo.hash);
+      const existing = branch.commits.findIndex((c: unknown) => (c as { hash?: string }).hash === commitInfo.hash);
       if (existing >= 0) branch.commits[existing] = commitInfo; else branch.commits.push(commitInfo);
       branch.diffData = {
         gitDiff: commitInfo.diff,
@@ -92,11 +96,11 @@ export async function POST(
     try {
       await Pjm.writeProjectJson(projectPath, projectData);
       return NextResponse.json({ success: true });
-    } catch (e: any) {
-      return NextResponse.json({ success: false, error: e?.message || 'Failed to write project.json' }, { status: 500 });
+    } catch (e: unknown) {
+      return NextResponse.json({ success: false, error: (e as Error)?.message || 'Failed to write project.json' }, { status: 500 });
     }
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error?.message || 'Unhandled error' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: (error as Error)?.message || 'Unhandled error' }, { status: 500 });
   }
 }
 

@@ -22,8 +22,8 @@ export async function GET(
       );
     }
 
-    const fs = require('fs');
-    const path = require('path');
+    const fs = await import('fs');
+    const path = await import('path');
   const { projectsBaseDir, findProjectPath } = await import('../../../../../lib/server/projectPaths');
     
   // Calculate project path (no hardcoded name suffix)

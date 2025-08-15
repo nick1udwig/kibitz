@@ -34,7 +34,7 @@ export const useConversationGitHandler = () => {
     } catch (error) {
       console.warn('⚠️ ConversationMetadata: Failed to capture metadata:', error);
     }
-  }, [activeProject, activeConversationId, activeConversation, executeTool]);
+  }, [activeProject, activeConversationId, activeConversation]);
 
   const triggerGitOperations = useCallback(async () => {
     if (!activeProject || !activeConversationId) {
@@ -84,7 +84,7 @@ export const useConversationGitHandler = () => {
     } catch (gitError) {
       console.warn('⚠️ ConversationGitHandler: Failed to trigger git operations:', gitError);
     }
-  }, [activeProject, activeConversationId, executeTool, safeCommit, captureConversationMetadata]);
+  }, [activeProject, activeConversationId, safeCommit, captureConversationMetadata, executeTool]);
 
   const scheduleGitOperations = useCallback((immediate = false) => {
     // Clear any existing timeout

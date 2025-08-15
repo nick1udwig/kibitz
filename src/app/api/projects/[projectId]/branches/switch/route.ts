@@ -25,19 +25,41 @@ export async function POST(
     }
 
     const { switchToConversationBranch } = await import('../../../../../../lib/conversationBranchService');
+    const { useBranchStore } = await import('../../../../../../stores/branchStore');
+    const { useStore } = await import('../../../../../../stores/rootStore');
     
-    // For now, use a mock executeTool - in production this would come from your MCP system
-    const mockExecuteTool = async (serverId: string, toolName: string, args: any) => {
-      // This would normally interface with your MCP system
-      return 'mock-result';
-    };
+    // Get the real executeTool from the store
+    const rootStore = useStore.getState();
+    const branchStore = useBranchStore.getState();
+    
+    // Find the project and get an active MCP server
+    const project = rootStore.projects.find(p => p.id === projectId);
+    if (!project) {
+      return NextResponse.json(
+        { error: 'Project not found' },
+        { status: 404 }
+      );
+    }
+    
+    const activeMcpServers = rootStore.servers.filter(server => 
+      server.status === 'connected' && project.settings.mcpServerIds?.includes(server.id)
+    );
+    
+    if (!activeMcpServers.length) {
+      return NextResponse.json(
+        { error: 'No active MCP servers available' },
+        { status: 500 }
+      );
+    }
+    
+    const mcpServerId = activeMcpServers[0].id;
     
     const result = await switchToConversationBranch(
       projectId,
-      'New Project', // Default project name - could be fetched from database
+      project.name,
       branchName,
-      'localhost-mcp',
-      mockExecuteTool
+      mcpServerId,
+      rootStore.executeTool
     );
     
     if (result.success) {

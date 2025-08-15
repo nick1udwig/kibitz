@@ -5,9 +5,7 @@
  * Provides metadata persistence for projects, commits, and branches
  */
 
-import { initDb, saveState, loadState } from './db';
 import { generateWorkspaceId } from './conversationWorkspaceService';
-import { getProjectPath } from './projectPathService';
 import { type Project, type ProviderType } from '../components/LlmChat/context/types';
 import { getDefaultModelForProvider } from '../stores/rootStore';
 
@@ -57,7 +55,7 @@ export interface BranchMetadata {
  */
 export class DatabaseIntegrationService {
   private static instance: DatabaseIntegrationService | null = null;
-  private db: any = null;
+  private db: IDBDatabase | null = null;
   private isInitialized = false;
   private metadataCache: Map<string, ProjectMetadata> = new Map();
 
@@ -113,7 +111,7 @@ export class DatabaseIntegrationService {
       elideToolResults?: boolean;
       messageWindowSize?: number;
       enableGitHub?: boolean;
-      providerConfig?: any;
+      providerConfig?: Record<string, unknown>;
     }
   ): Promise<{
     projectId: string;
@@ -304,7 +302,7 @@ export class DatabaseIntegrationService {
    */
   async trackCommit(
     projectId: string,
-    commitData: {
+    /* _commitData: {
       commitSha: string;
       message: string;
       author?: string;
@@ -312,10 +310,11 @@ export class DatabaseIntegrationService {
       branchName: string;
       isAutoCommit: boolean;
       parentCommit?: string;
-    }
+    } */
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const commitMetadata: CommitMetadata = {
+      // Create and use commit metadata
+      const commitData = {
         id: generateWorkspaceId(),
         project_id: projectId,
         commit_sha: commitData.commitSha,
@@ -351,15 +350,16 @@ export class DatabaseIntegrationService {
    */
   async trackBranch(
     projectId: string,
-    branchData: {
+    /* _branchData: {
       branchName: string;
       branchType: 'main' | 'auto' | 'feature' | 'bugfix';
       latestCommit?: string;
       parentBranch?: string;
-    }
+    } */
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const branchMetadata: BranchMetadata = {
+      // Create and use branch metadata
+      const branchData = {
         id: generateWorkspaceId(),
         project_id: projectId,
         branch_name: branchData.branchName,
@@ -447,7 +447,7 @@ export class DatabaseIntegrationService {
       const { data: projects } = await response.json();
       
       // Convert to metadata format and cache
-      projects.forEach((project: any) => {
+      projects.forEach((project: Record<string, unknown>) => {
         const metadata: ProjectMetadata = {
           id: project.id,
           conversation_id: project.conversation_id || '',
@@ -553,7 +553,7 @@ export const useDatabaseIntegration = () => {
       elideToolResults?: boolean;
       messageWindowSize?: number;
       enableGitHub?: boolean;
-      providerConfig?: any;
+      providerConfig?: Record<string, unknown>;
     }
   ) => {
     return await service.createProjectWithTracking(conversationId, projectName, userSettings);

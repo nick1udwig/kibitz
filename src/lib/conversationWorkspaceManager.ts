@@ -9,35 +9,25 @@
  */
 
 import {
-  ConversationBrief,
   WorkspaceMapping,
-  WorkspaceStatus,
   WorkspaceCreationOptions,
   ConversationWorkspaceSettings,
-  BranchInfo,
-  Project
+  BranchInfo
 } from '../components/LlmChat/context/types';
 
 import {
   loadWorkspaceMappings,
   saveWorkspaceMappings,
-  getWorkspaceByConversationId,
   updateWorkspaceMapping,
   deleteWorkspaceMapping,
   loadConversationSettings,
-  saveConversationSettings,
-  getWorkspaceStats,
-  updateWorkspaceStats
+  saveConversationSettings
 } from './db';
 
 import {
   createWorkspaceMapping,
-  addWorkspaceToConversation,
   createDefaultWorkspaceSettings,
-  logWorkspaceOperation,
-  validateWorkspacePath,
-  generateWorkspaceId,
-  generateWorkspacePath
+  logWorkspaceOperation
 } from './conversationWorkspaceService';
 
 // 🌟 PHASE 2.1: Git commands for branch management
@@ -67,7 +57,7 @@ export interface WorkspaceOperationResult {
   operation: string;
   timestamp: Date;
   error?: string;
-  details?: any;
+  details?: Record<string, unknown>;
 }
 
 // 🌟 PHASE 2.1: Git operation results
@@ -579,7 +569,7 @@ export class ConversationWorkspaceManager {
         };
       }
 
-      let result: GitOperationResult;
+
 
       // Add all files if requested
       if (addAll) {
@@ -937,7 +927,7 @@ export class ConversationWorkspaceManager {
       await this.executeGitCommand(workspacePath, 'git symbolic-ref HEAD refs/heads/main || true');
 
       // Create initial commit only if caller performs it later; here we just drop a README file
-      const createFileResult = await this.executeTool(this.mcpServerId, 'FileWriteOrEdit', {
+      await this.executeTool(this.mcpServerId, 'FileWriteOrEdit', {
         file_path: `${workspacePath}/README.md`,
         content: `# Workspace for Conversation\n\nThis is a conversation workspace created by Kibitz.\n\nCreated: ${new Date().toISOString()}\n`,
         thread_id: `init-readme-${Date.now()}`

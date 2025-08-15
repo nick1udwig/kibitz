@@ -171,7 +171,7 @@ export const AutoBranchSettings: React.FC<AutoBranchSettingsProps> = ({
                 Branch Prefix
               </label>
               <p className="text-xs text-gray-500">
-                Prefix for auto-created branch names (e.g., "auto/2025-01-15-14-30-01")
+                Prefix for auto-created branch names (e.g., &quot;auto/2025-01-15-14-30-01&quot;)
               </p>
             </div>
             <div className="ml-4">

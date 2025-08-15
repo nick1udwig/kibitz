@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 import { loadPersistedServerConfig, persistServerConfig } from '../../../../lib/server/configVault';
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const cfg = loadPersistedServerConfig();
     return NextResponse.json({
@@ -14,7 +14,7 @@ export async function GET(_request: NextRequest) {
         updatedAt: cfg.updatedAt || ''
       }
     });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ success: false, error: 'failed-to-read-config' }, { status: 500 });
   }
 }
@@ -40,14 +40,13 @@ export async function PUT(request: NextRequest) {
     try { persistServerConfig({ projectsBaseDir }); } catch {}
     // 2) Also update in-memory apiKeysStorage so server immediately honors it
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const keysModule = require('../../keys/route');
-      if (keysModule && keysModule.apiKeysStorage) {
-        keysModule.apiKeysStorage.projectsBaseDir = projectsBaseDir;
+      const keysModule = await import('../../keys/route');
+      if (keysModule && (keysModule as { apiKeysStorage?: { projectsBaseDir?: string } }).apiKeysStorage) {
+        (keysModule as { apiKeysStorage: { projectsBaseDir?: string } }).apiKeysStorage.projectsBaseDir = projectsBaseDir;
       }
     } catch {}
     return NextResponse.json({ success: true });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ success: false, error: 'failed-to-save-config' }, { status: 500 });
   }
 }

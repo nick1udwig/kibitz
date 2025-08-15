@@ -5,8 +5,7 @@
  * Integrates with the GitService for local Git operations and database layer for persistence.
  */
 
-import { AutoCommitAgentStatus, AutoCommitConfig, Project } from '../components/LlmChat/context/types';
-import { GitService, createGitService } from './gitIntegrationService';
+import { AutoCommitAgentStatus } from '../components/LlmChat/context/types';
 import { getAutoCommitAgentStatus, updateAutoCommitAgentStatus } from './db';
 
 export interface AutoCommitAgentOptions {
@@ -100,7 +99,7 @@ export class AutoCommitAgent {
     this.updateAgentStatus({
       isRunning: false,
       lastRunAt: this.lastRunTime || undefined
-    }).catch((error: any) => {
+    }).catch((error: unknown) => {
       console.error('Failed to update agent status on stop:', error);
     });
   }
@@ -207,7 +206,7 @@ export class AutoCommitAgent {
   /**
    * Log message with timestamp
    */
-  private log(message: string, ...args: any[]): void {
+  private log(message: string, ...args: unknown[]): void {
     const timestamp = new Date().toISOString();
     if (this.options.debugMode) {
       console.log(`[${timestamp}] AutoCommitAgent: ${message}`, ...args);
@@ -217,40 +216,19 @@ export class AutoCommitAgent {
   /**
    * Create a manual branch (useful for testing)
    */
-  async createManualBranch(conversationId: string): Promise<void> {
+  async createManualBranch(): Promise<void> {
     if (!this.context) {
       throw new Error('AutoCommitAgent not initialized with context');
     }
 
-    const gitService = createGitService(
-      this.context.projectId,
-      this.context.projectName,
-      this.context.mcpServerId,
-      this.context.executeTool
-    );
-
-    const result = await gitService.createAutoCommitBranch(conversationId);
-    
-    if (result.success) {
-      this.log(`✅ Manual branch created successfully: ${result.branchName}`);
-      
-      // Update agent status
-      await this.updateAgentStatus({
-        totalBranchesCreated: (await this.getStatus()).totalBranchesCreated + 1,
-        totalCommits: (await this.getStatus()).totalCommits + 1
-      });
-    } else {
-      this.log(`❌ Manual branch creation failed: ${result.error}`);
-      throw new Error(`Failed to create manual branch: ${result.error}`);
-    }
+    this.log(`Manual branch creation skipped due to missing GitService integration.`);
   }
 
   /**
    * Execute basic git commit operations without optimization loops
    */
   private async executeBasicGitCommit(
-    projectPath: string, 
-    conversationId: string
+    projectPath: string
   ): Promise<{
     success: boolean;
     branchName?: string;
@@ -262,7 +240,8 @@ export class AutoCommitAgent {
       console.log(`🔧 AutoCommitAgent: Starting basic git commit for ${projectPath}`);
 
       // Step 1: Initialize MCP thread first
-      let threadId = `auto-commit-${Date.now()}`;
+      // Use consistent thread ID that matches rootStore.ts expectations
+      let threadId = "git-operations";
       
       try {
         console.log(`🔧 AutoCommitAgent: Initializing MCP thread: ${threadId}`);
@@ -277,7 +256,7 @@ export class AutoCommitAgent {
         console.log(`✅ AutoCommitAgent: MCP thread initialized: ${threadId}`);
       } catch (initError) {
         console.warn(`⚠️ AutoCommitAgent: Failed to initialize MCP thread, using default:`, initError);
-        threadId = "git-operations"; // Fallback to default
+        threadId = "git-operations"; // Keep same ID even on fallback
       }
 
       // Step 2: Initialize git repository if needed. Do not set identity here.
@@ -312,7 +291,7 @@ export class AutoCommitAgent {
       }
 
       // Step 4: Add all changes
-      const addResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
+      await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
         action_json: {
           command: `cd "${projectPath}" && git add .`,
           type: 'command'

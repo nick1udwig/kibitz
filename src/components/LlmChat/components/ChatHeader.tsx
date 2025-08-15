@@ -1,11 +1,12 @@
 import React from 'react';
 // import SessionRestoreButton from './SessionRestoreButton'; // Temporarily disabled
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface ChatHeaderProps {
-  projectId: string;
+  // Currently no props needed, but keeping interface for future extensibility
 }
 
-export const ChatHeader: React.FC<ChatHeaderProps> = ({ projectId }) => {
+export const ChatHeader: React.FC<ChatHeaderProps> = () => {
   
   return (
     <div className="flex justify-end items-center p-2 bg-background/90 backdrop-blur-sm">

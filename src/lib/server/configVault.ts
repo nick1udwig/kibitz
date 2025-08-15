@@ -5,6 +5,10 @@
  * - Stores only what is needed for server restart resilience: githubToken, githubUsername
  */
 
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
+
 export type PersistedServerConfig = {
   githubToken?: string;
   githubUsername?: string;
@@ -21,20 +25,24 @@ type EncryptedBlobV1 = {
   c: string; // base64 ciphertext
 };
 
-const isNode = typeof process !== 'undefined' && !!(process as any).versions?.node;
+interface ProcessWithVersions {
+  versions?: {
+    node?: string;
+  };
+}
+
+const isNode = typeof process !== 'undefined' && !!(process as ProcessWithVersions).versions?.node;
 
 function getDataDir(): string {
-  const path = require('node:path') as typeof import('node:path');
   const cwd = process.cwd();
   const custom = process.env.KIBITZ_DATA_DIR;
-  const base = custom && custom.trim() ? custom.trim() : (require('node:fs') as typeof import('node:fs')).existsSync(path.join(cwd, 'data'))
+  const base = custom && custom.trim() ? custom.trim() : fs.existsSync(path.join(cwd, 'data'))
     ? path.join(cwd, 'data')
     : cwd; // fallback to CWD if data/ not present
   return base;
 }
 
 function getConfigPath(): string {
-  const path = require('node:path') as typeof import('node:path');
   const custom = process.env.KIBITZ_SERVER_CONFIG_PATH;
   if (custom && custom.trim()) return custom.trim();
   return path.join(getDataDir(), 'server-config.json.enc');
@@ -47,13 +55,11 @@ function getSecret(): string | null {
 }
 
 function deriveKey(secret: string, salt: Buffer): Buffer {
-  const crypto = require('node:crypto') as typeof import('node:crypto');
   // scrypt: interactive params by default; Node scryptSync uses N=16384, r=8, p=1 under the hood
   return crypto.scryptSync(secret, salt, 32);
 }
 
 function encryptJson(obj: object, secret: string): EncryptedBlobV1 {
-  const crypto = require('node:crypto') as typeof import('node:crypto');
   const salt = crypto.randomBytes(16);
   const key = deriveKey(secret, salt);
   const nonce = crypto.randomBytes(12);
@@ -70,8 +76,7 @@ function encryptJson(obj: object, secret: string): EncryptedBlobV1 {
   };
 }
 
-function decryptJson(blob: EncryptedBlobV1, secret: string): any {
-  const crypto = require('node:crypto') as typeof import('node:crypto');
+function decryptJson(blob: EncryptedBlobV1, secret: string): object {
   const salt = Buffer.from(blob.s, 'base64');
   const nonce = Buffer.from(blob.n, 'base64');
   const tag = Buffer.from(blob.t, 'base64');
@@ -84,8 +89,6 @@ function decryptJson(blob: EncryptedBlobV1, secret: string): any {
 }
 
 function atomicWriteFileSync(targetPath: string, contents: string) {
-  const fs = require('node:fs') as typeof import('node:fs');
-  const path = require('node:path') as typeof import('node:path');
   const dir = path.dirname(targetPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -101,7 +104,6 @@ function atomicWriteFileSync(targetPath: string, contents: string) {
 // Load persisted config (sync, best-effort). Returns empty object if not available.
 export function loadPersistedServerConfig(): PersistedServerConfig {
   if (!isNode) return {};
-  const fs = require('node:fs') as typeof import('node:fs');
   const secret = getSecret();
   if (!secret) {
     // No secret configured; skip persistence for safety
@@ -116,10 +118,11 @@ export function loadPersistedServerConfig(): PersistedServerConfig {
     const decrypted = decryptJson(blob, secret);
     if (typeof decrypted !== 'object' || decrypted === null) return {};
     const out: PersistedServerConfig = {};
-    if (typeof (decrypted as any).githubToken === 'string') out.githubToken = (decrypted as any).githubToken;
-    if (typeof (decrypted as any).githubUsername === 'string') out.githubUsername = (decrypted as any).githubUsername;
-    if (typeof (decrypted as any).projectsBaseDir === 'string') out.projectsBaseDir = (decrypted as any).projectsBaseDir;
-    if (typeof (decrypted as any).updatedAt === 'string') out.updatedAt = (decrypted as any).updatedAt;
+    const decryptedObj = decrypted as Record<string, unknown>;
+    if (typeof decryptedObj.githubToken === 'string') out.githubToken = decryptedObj.githubToken;
+    if (typeof decryptedObj.githubUsername === 'string') out.githubUsername = decryptedObj.githubUsername;
+    if (typeof decryptedObj.projectsBaseDir === 'string') out.projectsBaseDir = decryptedObj.projectsBaseDir;
+    if (typeof decryptedObj.updatedAt === 'string') out.updatedAt = decryptedObj.updatedAt;
     return out;
   } catch (e) {
     console.warn('configVault: failed to load persisted server config:', e);
@@ -165,7 +168,8 @@ export function resolveServerAuthFromAnySource(): { githubToken: string; githubU
   if (token && username) return { githubToken: token, githubUsername: username, source: 'env' };
   // try in-memory keys route (if already loaded in this process)
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // Dynamic require for runtime access to in-memory keys
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const keysModule = require('../../app/api/keys/route');
     const vault: Record<string, string> | undefined = keysModule?.apiKeysStorage;
     if (vault) {

@@ -11,15 +11,14 @@
  * unintended GitHub interactions.
  */
 
-import { createHash } from 'crypto';
+// import { createHash } from 'crypto';
 import { getGitHubRepoName } from './projectPathService';
-import { wrapGitCommand, createGitContext } from './gitCommandOptimizer';
+// import { wrapGitCommand, createGitContext } from './gitCommandOptimizer';
 
-// MCP thread reuse cache to avoid repeated Initialize handshakes
-const mcpThreadCache: Map<string, string> = new Map();
+// Note: Using fresh thread IDs for each git operation to avoid state conflicts
 
 // Cache of repositories where git user config has been set
-const gitConfigInitializedForRepo: Set<string> = new Set();
+// const gitConfigInitializedForRepo: Set<string> = new Set();
 
 /**
  * GitHub Sync Protected Functions:
@@ -130,29 +129,31 @@ export const executeGitCommand = async (
     
     console.log(`🔧 executeGitCommand: Using working directory: "${cwd}" for command: "${command}"`);
     
-    // Reuse or establish an MCP thread once per (serverId + cwd)
-    const threadKey = `${serverId}|${cwd}`;
-    let threadId = mcpThreadCache.get(threadKey) || 'git-operations';
-    if (!mcpThreadCache.has(threadKey)) {
+    // Default to the conventional thread id, but allow server to override it
+    // when it replies with "Use thread_id=XXXX" or "thread_id=XXXX".
+    let threadId = 'git-operations';
+    
+    try {
+      console.log(`🔧 Initializing MCP thread: ${threadId}`);
+      const initResult = await executeTool(serverId, 'Initialize', {
+        type: 'first_call',
+        any_workspace_path: cwd,
+        initial_files_to_read: [],
+        task_id_to_resume: '',
+        mode_name: 'wcgw',
+        thread_id: threadId
+      });
+      // If the server instructs us to use a specific thread id, respect it
       try {
-        console.log('Initializing MCP environment (once per path)...');
-        const initResult = await executeTool(serverId, 'Initialize', {
-          type: 'first_call',
-          any_workspace_path: cwd,
-          initial_files_to_read: [],
-          task_id_to_resume: '',
-          mode_name: 'wcgw',
-          thread_id: threadId
-        });
-        const match = initResult.match(/thread_id=([a-z0-9]+)/i);
-        if (match && match[1]) {
-          threadId = match[1];
+        const text = String(initResult || '');
+        const m = text.match(/Use\s+thread_id=([a-z0-9]+)/i) || text.match(/thread_id=([a-z0-9]+)/i);
+        if (m && m[1]) {
+          threadId = m[1];
         }
-        mcpThreadCache.set(threadKey, threadId);
-        console.log(`MCP thread cached for ${threadKey}: ${threadId}`);
-      } catch (initError) {
-        console.warn('Initialize failed; proceeding with default thread_id', initError);
-      }
+      } catch {}
+      console.log(`✅ MCP thread initialized: ${threadId}`);
+    } catch (initError) {
+      console.warn('🚨 Initialize failed; proceeding anyway:', initError);
     }
     
     // Run the actual command with BashCommand
@@ -185,7 +186,7 @@ export const executeGitCommand = async (
               .map((item: McpResponseItem) => item.text)
               .join('\n');
           }
-        } catch (jsonError) {
+        } catch {
           // If it's not valid JSON, try to extract the content array using regex
           const contentMatch = result.match(/"content":\s*\[\s*\{\s*"type":\s*"text",\s*"text":\s*"([^"]+)"/);
           if (contentMatch && contentMatch[1]) {
@@ -845,12 +846,12 @@ export const pushToRemote = async (
       try {
         // Resolve username/token from in-memory store first, then env
         let username = '';
-        let token = '';
+        // const token = '';
         try {
           const { useStore } = await import('../stores/rootStore');
           const st = useStore.getState();
           username = (st.apiKeys.githubUsername || process.env.GITHUB_USERNAME || '').trim();
-          token = (st.apiKeys.githubToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
+          // token = (st.apiKeys.githubToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
         } catch {}
         // Derive projectId from path (format: /.../{id}_{name})
         const dirName = projectPath.split('/').pop() || '';
@@ -864,7 +865,7 @@ export const pushToRemote = async (
         } else {
           return { success: false, output: '', error: 'No remote origin configured and username unavailable' };
         }
-      } catch (e) {
+      } catch {
         try { const { appendProjectLog } = await import('./utils'); appendProjectLog(projectPath, ['push:add-remote-failed']); } catch {}
         return { success: false, output: '', error: 'Failed to configure remote origin' };
       }

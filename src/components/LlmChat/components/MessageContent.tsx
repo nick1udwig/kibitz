@@ -168,7 +168,7 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
           }`}
         >
           <Image
-            src={`data:${(content as any).source.media_type};base64,${(content as any).source.data}`}
+            src={`data:${(content as Extract<MessageContentType, { type: 'image' }>).source.media_type};base64,${(content as Extract<MessageContentType, { type: 'image' }>).source.data}`}
             alt="User uploaded image"
             className="max-h-[150px] max-w-[300px] w-auto h-auto rounded object-contain"
             width={300}
@@ -193,8 +193,8 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
           }`}
         >
           <embed
-            src={`data:${(content as any).source.media_type};base64,${(content as any).source.data}`}
-            type={(content as any).source.media_type}
+            src={`data:${(content as Extract<MessageContentType, { type: 'document' }>).source.media_type};base64,${(content as Extract<MessageContentType, { type: 'document' }>).source.data}`}
+            type={(content as Extract<MessageContentType, { type: 'document' }>).source.media_type}
             width="100%"
             height="600px"
             className="rounded"

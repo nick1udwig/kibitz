@@ -10,19 +10,12 @@
  * Built on top of the Storage Coordinator for unified storage management
  */
 
-import { 
-  StorageCoordinator, 
-  BranchInfo, 
-  ConversationInfo, 
-  ProjectStorageInfo,
-  saveBranchToAllSystems,
-  loadBranchesFromAllSystems,
-  saveConversationToAllSystems,
-  getProjectStorageInfo
+import {
+  StorageCoordinator,
+  BranchInfo
 } from './storageCoordinator';
 
-import { generateWorkspaceId } from './conversationWorkspaceService';
-import { getProjectPath } from './projectPathService';
+// import { getProjectPath } from './projectPathService';
 
 export interface SessionInfo {
   sessionId: string;
@@ -292,9 +285,7 @@ export class EnhancedBranchPersistence {
    * Rollback to a specific point
    */
   async rollbackToPoint(
-    rollbackId: string,
-    serverId: string,
-    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+    rollbackId: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
       console.log(`🔄 Rolling back to point: ${rollbackId}`);

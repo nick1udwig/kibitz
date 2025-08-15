@@ -30,13 +30,10 @@ export const runtime = 'nodejs';
  * - To poll a long-running job, reuse the returned jobId in your UI and call this route again; identical keys coalesce
  *   and will return the in-flight state.
  */
-import { readProjectJson } from '@/lib/server/githubSync/project-json-manager.js';
-import path from 'path';
-import fs from 'fs';
-import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../lib/server/projectPaths';
+import { readProjectJson } from '@/lib/server/githubSync/project-json-manager';
+import { findProjectPath as findExistingProjectPath } from '../../../../lib/server/projectPaths';
 import { resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
 
-const BASE_PROJECTS_DIR = projectsBaseDir();
 // Never hardcode; rely strictly on env. If missing, we will return a clear error when needed.
 // Runtime-sourced credentials (fallback to env). The route will fetch secrets
 // from the in-memory keys API to avoid hard env dependency.
@@ -53,7 +50,7 @@ async function findProjectPath(projectId: string): Promise<string | null> {
 /**
  * Perform real GitHub sync using GitHub CLI and Git operations
  */
-async function performRealGitHubSync(projectId: string, projectPath: string, githubConfig: any): Promise<{
+async function performRealGitHubSync(projectId: string, projectPath: string, githubConfig: { remoteUrl?: string }): Promise<{
   success: boolean;
   error?: string;
   details?: string;
@@ -90,8 +87,8 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
     
     // Pull runtime secrets from in-memory keys store if available (server-only import)
     try {
-      const keysModule: any = await import('../../keys/route');
-      const vault = (keysModule as any).apiKeysStorage as Record<string, string>;
+      const keysModule = await import('../../keys/route');
+      const vault = (keysModule as { apiKeysStorage?: Record<string, string> }).apiKeysStorage as Record<string, string>;
       if (vault) {
         GITHUB_TOKEN = vault.githubToken || GITHUB_TOKEN;
         GITHUB_USERNAME = vault.githubUsername || GITHUB_USERNAME;
@@ -115,7 +112,6 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
     console.log(`🔗 Using remote URL: ${remoteUrl}`);
     
     // Step 1: Check GitHub CLI availability with proper PATH
-    let ghPath = 'gh';
     let ghAvailable = false;
     
     const commonPaths = [
@@ -129,10 +125,9 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
       try {
         await execAsync(`${path} --version`, { env });
         console.log(`✅ GitHub CLI found at: ${path}`);
-        ghPath = path;
         ghAvailable = true;
         break;
-      } catch (e) {
+      } catch {
         continue;
       }
     }
@@ -145,7 +140,7 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
     try {
       await execAsync('git status', { cwd: projectPath, env });
       console.log(`✅ Project ${projectId} is already a git repository`);
-    } catch (error) {
+    } catch {
       console.log(`🔧 Initializing git repository for ${projectId}`);
       // Force initialize with main as default when possible
       await execAsync('git init -b main || git init', { cwd: projectPath, env });
@@ -175,15 +170,15 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
     const changed = (status.stdout || '').toString().trim().split('\n').filter((l: string) => l.trim()).length;
     // Try to read min from project.json under settings or github section
     try {
-      const { readProjectJson } = await import('@/lib/server/githubSync/project-json-manager.js');
-      const pData: any = await readProjectJson(projectPath).catch(() => ({}));
-      const minFiles = Number(pData?.settings?.minFilesForAutoCommitPush || pData?.github?.minFilesForAutoCommitPush || 0);
+      const { readProjectJson } = await import('@/lib/server/githubSync/project-json-manager');
+      const pData = await readProjectJson(projectPath).catch(() => ({}));
+      const minFiles = Number((pData as { settings?: { minFilesForAutoCommitPush?: number }, github?: { minFilesForAutoCommitPush?: number } })?.settings?.minFilesForAutoCommitPush || (pData as { settings?: { minFilesForAutoCommitPush?: number }, github?: { minFilesForAutoCommitPush?: number } })?.github?.minFilesForAutoCommitPush || 0);
       if (minFiles > 0 && changed < minFiles) {
         console.log(`ℹ️ Orchestrator: Below minFilesForAutoCommitPush=${minFiles}. Changed=${changed}. Skipping push.`);
         return {
           success: true,
           details: `Below min files threshold (${changed} < ${minFiles}); push skipped.`
-        } as any;
+        };
       }
     } catch {}
   } catch {}
@@ -219,15 +214,13 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
 
         // Prefer header-based push to avoid interactive auth prompts
         let pushCmd = `git push origin ${currentBranch}`;
-        let leaseCmd = `git push --force-with-lease origin ${currentBranch}:${currentBranch}`;
         if (GITHUB_TOKEN) {
-          const basic = (globalThis as any).Buffer
-            ? (globalThis as any).Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString('base64')
+          const basic = (globalThis as { Buffer?: { from: (str: string) => { toString: (encoding: string) => string } } }).Buffer
+            ? (globalThis as { Buffer: { from: (str: string) => { toString: (encoding: string) => string } } }).Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString('base64')
             : '';
           if (basic) {
             const header = `AUTHORIZATION: basic ${basic}`;
             pushCmd = `git -c http.extraHeader="${header}" push ${existingRemoteUrl} ${currentBranch}:${currentBranch}`;
-            leaseCmd = `git -c http.extraHeader="${header}" push ${existingRemoteUrl} ${currentBranch}:${currentBranch} --force-with-lease`;
           }
         }
         await execAsync(pushCmd, { cwd: projectPath, env });
@@ -238,9 +231,9 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
           details: `Pushed ${currentBranch} to existing remote: ${existingRemoteUrl}`,
           remoteUrl: existingRemoteUrl
         };
-      } catch (pushError: any) {
-          const stderr = (pushError && pushError.stderr) ? String(pushError.stderr) : '';
-          const stdout = (pushError && pushError.stdout) ? String(pushError.stdout) : '';
+      } catch (pushError: unknown) {
+          const stderr = (pushError && (pushError as { stderr?: unknown }).stderr) ? String((pushError as { stderr?: unknown }).stderr) : '';
+          const stdout = (pushError && (pushError as { stdout?: unknown }).stdout) ? String((pushError as { stdout?: unknown }).stdout) : '';
           const text = `${stdout}\n${stderr}`;
           const nonFF = /non-fast-forward|rejected/i.test(text);
           if (nonFF) {
@@ -251,8 +244,8 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
               if (!currentBranch2) throw new Error('No current branch for lease push');
               let leaseCmdLocal = `git push --force-with-lease origin ${currentBranch2}:${currentBranch2}`;
               if (GITHUB_TOKEN) {
-                const basic2 = (globalThis as any).Buffer
-                  ? (globalThis as any).Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString('base64')
+                const basic2 = (globalThis as { Buffer?: { from: (str: string) => { toString: (encoding: string) => string } } }).Buffer
+                  ? (globalThis as { Buffer: { from: (str: string) => { toString: (encoding: string) => string } } }).Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString('base64')
                   : '';
                 if (basic2) {
                   const header2 = `AUTHORIZATION: basic ${basic2}`;
@@ -283,7 +276,7 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
           };
         }
       
-    } catch (error) {
+    } catch {
       // No remote exists → create the repo and connect (now that we have commits)
       console.log(`🔧 No remote origin found, creating/pushing GitHub repository (automated): ${repoName}`);
 
@@ -291,9 +284,9 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
       // Try to refresh credentials from in-process vault by importing the module directly
       if (!GITHUB_TOKEN || !GITHUB_USERNAME) {
         try {
-          const keysModule: any = await import('../../keys/route');
+          const keysModule = await import('../../keys/route');
           // Access in-memory store indirectly. This stays server-only.
-          const vault = (keysModule as any).apiKeysStorage || (keysModule as any).default?.apiKeysStorage;
+          const vault = (keysModule as { apiKeysStorage?: Record<string, string> }).apiKeysStorage || (keysModule as { default?: { apiKeysStorage?: Record<string, string> } }).default?.apiKeysStorage;
           if (vault) {
             GITHUB_TOKEN = vault.githubToken || GITHUB_TOKEN;
             GITHUB_USERNAME = vault.githubUsername || GITHUB_USERNAME;
@@ -365,8 +358,8 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
         }
 
         // Push current branch using Basic auth header (GitHub over HTTPS)
-        const basic = (globalThis as any).Buffer
-          ? (globalThis as any).Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString('base64')
+        const basic = (globalThis as { Buffer?: { from: (str: string) => { toString: (encoding: string) => string } } }).Buffer
+          ? (globalThis as { Buffer: { from: (str: string) => { toString: (encoding: string) => string } } }).Buffer.from(`x-access-token:${GITHUB_TOKEN}`).toString('base64')
           : '';
         const header = `AUTHORIZATION: basic ${basic}`;
         console.log(`🔗 Token push to ${remoteUrl} (branch: ${currentBranch})`);
@@ -378,9 +371,9 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
             details: `Pushed ${currentBranch} to ${remoteUrl} using token auth`,
             remoteUrl
           };
-        } catch (firstPushErr: any) {
-          const stderr = (firstPushErr && firstPushErr.stderr) ? String(firstPushErr.stderr) : '';
-          const stdout = (firstPushErr && firstPushErr.stdout) ? String(firstPushErr.stdout) : '';
+        } catch (firstPushErr: unknown) {
+          const stderr = (firstPushErr && (firstPushErr as { stderr?: unknown }).stderr) ? String((firstPushErr as { stderr?: unknown }).stderr) : '';
+          const stdout = (firstPushErr && (firstPushErr as { stdout?: unknown }).stdout) ? String((firstPushErr as { stdout?: unknown }).stdout) : '';
           const text = `${stdout}\n${stderr}`;
           const nonFF = /non-fast-forward|rejected/i.test(text);
           if (nonFF) {
@@ -408,11 +401,11 @@ async function performRealGitHubSync(projectId: string, projectPath: string, git
       }
     }
     
-  } catch (error) {
-    console.error(`❌ Real GitHub sync failed for ${projectId}:`, error);
+  } catch {
+    console.error(`❌ Real GitHub sync failed for ${projectId}: unknown error`);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error during GitHub sync'
+      error: 'Unknown error during GitHub sync'
     };
   }
 }
@@ -469,7 +462,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Read project data (best-effort)
-    let projectData: any;
+    let projectData: unknown;
     try {
       projectData = await readProjectJson(projectPath);
     } catch (e) {
@@ -480,11 +473,11 @@ export async function POST(request: NextRequest) {
     console.log(`🚀 Triggering GitHub sync for project ${projectId}:`, {
       immediate,
       projectPath,
-      enabled: (projectData as any).github?.enabled
+      enabled: (projectData as { github?: { enabled?: boolean } }).github?.enabled
     });
 
     // Check if GitHub sync is enabled unless forced
-    const githubConfig = (projectData as any).github;
+    const githubConfig = (projectData as { github?: { enabled?: boolean } }).github;
     if (!githubConfig?.enabled && !force) {
       return NextResponse.json({
         success: false,
@@ -544,7 +537,7 @@ export async function POST(request: NextRequest) {
       try {
         // Mark syncing at start
         try {
-          const { updateGitHubConfig } = await import('@/lib/server/githubSync/project-json-manager.js');
+          const { updateGitHubConfig } = await import('@/lib/server/githubSync/project-json-manager');
           await updateGitHubConfig(projectPath, { syncStatus: 'syncing', lastSync: new Date().toISOString() });
         } catch {}
         // Optionally validate HEAD/branch if provided
@@ -566,9 +559,11 @@ export async function POST(request: NextRequest) {
         } catch {}
 
         // Perform real GitHub sync/push (ensures remote, pushes current branch)
-        const syncResult = await performRealGitHubSync(projectId, projectPath, githubConfig || {});
+        const syncResult = await performRealGitHubSync(projectId, projectPath, {
+          remoteUrl: (githubConfig as { remoteUrl?: string })?.remoteUrl
+        });
 
-        const { updateGitHubConfig } = await import('@/lib/server/githubSync/project-json-manager.js');
+        const { updateGitHubConfig } = await import('@/lib/server/githubSync/project-json-manager');
         if (syncResult.success) {
           await updateGitHubConfig(projectPath, {
             syncStatus: 'idle',
@@ -670,13 +665,13 @@ export async function POST(request: NextRequest) {
     // Note: We should never reach here because we return above; keep a guard
     return NextResponse.json({ success: false, error: 'Unexpected sync fallthrough' }, { status: 500 });
 
-  } catch (error) {
-    console.error('❌ Failed to trigger GitHub sync:', error);
+  } catch {
+    console.error('❌ Failed to trigger GitHub sync: unknown error');
     const res = NextResponse.json(
       { 
         success: false, 
         error: 'Failed to trigger GitHub sync',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: 'Unknown error'
       },
       { status: 500 }
     );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
   GitCommit, 
@@ -27,8 +27,8 @@ interface CommitInfo {
 
 export function CommitRollbackControls({ className = '' }: CommitRollbackControlsProps) {
   const { activeProjectId, projects, executeTool, servers } = useStore();
-  const [isLoading, setIsLoading] = useState(false);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusType, setStatusType] = useState<'success' | 'error' | 'info'>('info');
 
@@ -38,18 +38,7 @@ export function CommitRollbackControls({ className = '' }: CommitRollbackControl
     server.status === 'connected' && activeProject?.settings.mcpServerIds?.includes(server.id)
   );
 
-  // Load recent commits
-  useEffect(() => {
-    loadRecentCommits();
-  }, [activeProjectId]);
-
-  const showStatus = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setStatusMessage(message);
-    setStatusType(type);
-    setTimeout(() => setStatusMessage(null), 5000);
-  };
-
-  const loadRecentCommits = async () => {
+  const loadRecentCommits = useCallback(async () => {
     const __t0 = Date.now();
     if (!activeProjectId || !activeMcpServers.length) return;
 
@@ -64,27 +53,38 @@ export function CommitRollbackControls({ className = '' }: CommitRollbackControl
       const branchCommits: CommitInfo[] = [];
       
       if (projectData.branches && Array.isArray(projectData.branches)) {
-        projectData.branches.forEach((branch: any) => {
+        projectData.branches.forEach((branch: { commitHash?: string; commitMessage?: string; author?: string; timestamp?: number; branchName?: string }) => {
           if (branch.commitHash && branch.commitMessage) {
             branchCommits.push({
               hash: branch.commitHash.substring(0, 8),
               message: branch.commitMessage,
               author: branch.author || 'Unknown',
               date: new Date(branch.timestamp || Date.now()).toLocaleString(),
-              branch: branch.branchName
+              branch: branch.branchName || 'unknown'
             });
           }
         });
       }
 
       // Sort by timestamp (most recent first)
-      branchCommits.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      branchCommits.sort((a, b) => new Date(b.date).getTime() - new Date(b.date).getTime());
       
       setCommits(branchCommits.slice(0, 5)); // Show last 5 commits
       console.log(`⏱️ UI loadRecentCommits total time: ${Date.now() - __t0}ms for project ${activeProjectId}`);
     } catch (error) {
       console.warn('Could not load commits:', error);
     }
+  }, [activeProjectId, activeMcpServers.length]);
+
+  // Load recent commits
+  useEffect(() => {
+    loadRecentCommits();
+  }, [activeProjectId, loadRecentCommits]);
+
+  const showStatus = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setStatusMessage(message);
+    setStatusType(type);
+    setTimeout(() => setStatusMessage(null), 5000);
   };
 
   const createCommit = async () => {
@@ -212,7 +212,7 @@ export function CommitRollbackControls({ className = '' }: CommitRollbackControl
       // Find the full commit hash from branches
       let fullCommitHash = commitHash;
       if (projectData.branches) {
-        const branch = projectData.branches.find((b: any) => 
+        const branch = projectData.branches.find((b: { commitHash?: string }) => 
           b.commitHash && b.commitHash.startsWith(commitHash)
         );
         if (branch) {

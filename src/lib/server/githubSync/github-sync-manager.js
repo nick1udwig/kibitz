@@ -1,3 +1,3 @@
-export { GitHubSyncManager as default, GitHubSyncManager, createGitHubSyncManager } from '../../../github-sync-manager.js';
+export * from './github-sync-manager.js.disabled';
 
 

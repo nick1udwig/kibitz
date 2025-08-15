@@ -14,10 +14,7 @@ const generateCheckpointId = () => Math.random().toString(36).substring(7);
  * @param projectPath Path to the git repository
  * @param message Commit message
  */
-export const createGitCommit = async (
-  projectPath: string, 
-  message: string
-): Promise<string | null> => {
+export const createGitCommit = async (): Promise<string | null> => {
   try {
     // This will be implemented to use shell commands via MCP
     // For now, return a placeholder hash

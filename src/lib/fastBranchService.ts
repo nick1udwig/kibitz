@@ -41,10 +41,10 @@ export async function getFastBranches(
   projectPath: string,
   serverId: string,
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
-  maxCount: number = 5
+  maxCount: number = 10
 ): Promise<FastBranchInfo[]> {
   try {
-    const threadId = `fast-branches-${Date.now()}`;
+    // const threadId = `fast-branches-${Date.now()}`;  // Currently unused but kept for future use
 
     // Single optimized command to get branch info (compatible with older git versions)
     const branchResult = await executeGitCommand(
@@ -136,7 +136,7 @@ export async function getFastRepoInfo(
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<FastRepoInfo> {
   try {
-    const threadId = `fast-repo-${Date.now()}`;
+    // const threadId = `fast-repo-${Date.now()}`;  // Currently unused but kept for future use
 
     // Check if it's a git repo
     const gitCheckResult = await executeGitCommand(
@@ -218,7 +218,7 @@ export async function getSimpleBranchNames(
   maxCount: number = 5
 ): Promise<string[]> {
   try {
-    const threadId = `simple-branches-${Date.now()}`;
+    // const threadId = `simple-branches-${Date.now()}`;  // Currently unused but kept for future use
 
     const branchResult = await executeGitCommand(
       serverId,

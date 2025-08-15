@@ -196,14 +196,14 @@ export class GitCommandOptimizer {
   /**
    * 🔗 ADD CALLBACK FOR FRONTEND INTEGRATION
    */
-  addCallback(callback: (projectId: string, data: any) => void): void {
+  addCallback(callback: (projectId: string, data: Record<string, unknown>) => void): void {
     this.tracker.addCallback(callback);
   }
 
   /**
    * 🗑️ REMOVE CALLBACK
    */
-  removeCallback(callback: (projectId: string, data: any) => void): void {
+  removeCallback(callback: (projectId: string, data: Record<string, unknown>) => void): void {
     this.tracker.removeCallback(callback);
   }
 

@@ -255,7 +255,7 @@ export class GitStateTracker {
     command: string, 
     result: string, 
     success: boolean, 
-    metadata?: { tool?: string; trigger?: string }
+    // _metadata?: { tool?: string; trigger?: string }
   ): Promise<void> {
     if (!success) return;
 
@@ -283,7 +283,7 @@ export class GitStateTracker {
   private async handleCommitCommand(
     result: string, 
     success: boolean, 
-    metadata?: { tool?: string; trigger?: string }
+    // _metadata?: { tool?: string; trigger?: string }
   ): Promise<void> {
     if (!success) return;
 
@@ -417,7 +417,7 @@ export class GitStateTracker {
       
       const data = await fs.readFile(mainFile, 'utf-8');
       return JSON.parse(data) as ProjectGitData;
-    } catch (error) {
+    } catch {
       // File doesn't exist yet, that's okay
       return null;
     }

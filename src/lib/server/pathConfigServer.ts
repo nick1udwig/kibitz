@@ -24,28 +24,12 @@ export function getServerProjectsBaseDir(): string {
   // Runtime env (highest precedence on server)
   const fromRuntime = normalize(process.env.PROJECT_WORKSPACE_PATH || process.env.USER_PROJECTS_PATH);
 
-  // Persisted override from encrypted server config
-  let fromPersisted: string | undefined;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const vault = require('./configVault') as typeof import('./configVault');
-    const cfg = vault.loadPersistedServerConfig?.();
-    if (cfg && typeof cfg.projectsBaseDir === 'string' && cfg.projectsBaseDir.trim()) {
-      fromPersisted = normalize(cfg.projectsBaseDir.trim());
-    }
-  } catch {}
+  // Persisted override from encrypted server config (disabled in sync function context)
+  // If needed later, refactor this resolver to be async and plumb through callers.
+  const fromPersisted: string | undefined = undefined;
 
-  // In-memory UI override (if persistence secret is not configured)
-  let fromMemory: string | undefined;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const keysModule = require('../../app/api/keys/route');
-    const apiKeysStorage = (keysModule && (keysModule.apiKeysStorage as Record<string, string>)) || undefined;
-    const mem = apiKeysStorage?.projectsBaseDir;
-    if (typeof mem === 'string' && mem.trim()) {
-      fromMemory = normalize(mem.trim());
-    }
-  } catch {}
+  // In-memory UI override (disabled in sync function context)
+  const fromMemory: string | undefined = undefined;
 
   // Client hint
   const fromClient = normalize(process.env.NEXT_PUBLIC_PROJECTS_DIR);

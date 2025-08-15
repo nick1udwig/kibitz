@@ -2,19 +2,19 @@ import { create } from 'zustand';
 import { useStore } from './rootStore';
 import { useCheckpointStore } from './checkpointStore';
 // 🔓 RESTORED: Branch creation imports for automatic branching integration
-import { useBranchStore } from './branchStore';
+// import { useBranchStore } from './branchStore';
 // import { shouldCreateCheckpoint, createAutoCheckpoint } from '../lib/checkpointRollbackService';
 import { executeGitCommand } from '../lib/versionControl/git';
 import { persistentStorage } from '../lib/persistentStorageService';
-import { getProjectPath } from '../lib/projectPathService';
+// import { getProjectPath } from '../lib/projectPathService';
 import { Checkpoint } from '../types/Checkpoint';
 import { logDebug, logAutoCommit, logFileChange } from '../lib/debugStorageService';
 import { 
-  createConversationBranch, 
-  updateConversationJSON,
-  type ConversationBranchInfo 
+  // createConversationBranch, 
+  // updateConversationJSON,
+  // type ConversationBranchInfo 
 } from '../lib/conversationBranchService';
-import { prepareCommit, executeCommit, pushCurrentBranch } from '../lib/versionControl';
+import { prepareCommit, executeCommit } from '../lib/versionControl';
 import { isPushOrchestratorEnabled } from '../lib/featureFlags';
 
 export interface AutoCommitConfig {
@@ -142,9 +142,9 @@ const generateCommitMessage = (
  * @param projectId Project ID
  * @param projectName Optional project name
  */
-const getAutoCommitProjectPath = (projectId: string, projectName?: string): string => {
-  return getProjectPath(projectId, projectName);
-};
+// const getAutoCommitProjectPath = (projectId: string, projectName?: string): string => {
+//   return getProjectPath(projectId, projectName);
+// };
 
 export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
   config: DEFAULT_CONFIG,
@@ -241,36 +241,49 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
           const baseBranch = highestStep === 0 
             ? 'main' 
             : `${convPrefix}${highestStep}`;
-          // Checkout base branch; if missing and this is not the first step, fall back to main
-          let baseOk = true;
-          const coBase = await executeGitCommand(
+          // Create next step branch robustly even with local changes present
+          const nextStep = highestStep + 1;
+          const proposedBranch = `${convPrefix}${nextStep}`;
+          // First, try creating directly from intended base without switching
+          let created = await executeGitCommand(
             mcpServerId,
-            `git checkout ${baseBranch}`,
+            `git checkout -b ${proposedBranch} ${baseBranch}`,
             context.projectPath,
             rootStore.executeTool
           );
-          if (!coBase.success) {
-            if (baseBranch !== 'main') {
-              const coMain = await executeGitCommand(
+          if (!created.success) {
+            // Fallback: stash → checkout base → create → pop
+            try {
+              await executeGitCommand(
                 mcpServerId,
-                'git checkout main',
+                'git stash push -u -m "kibitz-autobranch" || true',
                 context.projectPath,
                 rootStore.executeTool
               );
-              baseOk = coMain.success;
-            } else {
-              baseOk = false;
-            }
+              const coBase = await executeGitCommand(
+                mcpServerId,
+                `git checkout ${baseBranch}`,
+                context.projectPath,
+                rootStore.executeTool
+              );
+              if (coBase.success) {
+                created = await executeGitCommand(
+                  mcpServerId,
+                  `git checkout -b ${proposedBranch}`,
+                  context.projectPath,
+                  rootStore.executeTool
+                );
+              }
+              await executeGitCommand(
+                mcpServerId,
+                'git stash pop || true',
+                context.projectPath,
+                rootStore.executeTool
+              );
+            } catch {}
           }
-          if (baseOk) {
-            const nextStep = highestStep + 1;
-            targetBranchName = `${convPrefix}${nextStep}`;
-            await executeGitCommand(
-              mcpServerId,
-              `git checkout -b ${targetBranchName}`,
-              context.projectPath,
-              rootStore.executeTool
-            );
+          if (created.success) {
+            targetBranchName = proposedBranch;
           }
         } catch {}
       }
@@ -317,7 +330,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
   // Background enhanced processing and optional sync/push (amend-safe)
   enqueueEnhanceAndSync: (context: AutoCommitContext, payload: { commitHash: string; branchName: string | null; commitMessage: string }) => {
     const rootStore = useStore.getState();
-    const { config } = get();
+    // const { config } = get();
     const activeProject = rootStore.projects.find(p => p.id === context.projectId);
     if (!activeProject) return;
 
@@ -360,7 +373,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
   // Small helper to flush any buffered enhanced-commit payloads captured when API was temporarily unavailable
   // This keeps the UI smooth and converges state on the server when it becomes available
   // Returns number of flushed items
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   _flushBufferedEnhancedCommits: async (projectId: string): Promise<number> => {
     try {
       if (typeof window === 'undefined') return 0;
@@ -637,15 +650,15 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
           return false;
         }
         
-        const { commitHash, branchName, commitMessage } = commitResult;
+        const { commitHash, branchName, commitMessage } = commitResult as { commitHash: string | null; branchName: string | null; commitMessage: string };
         if (!commitHash) {
           console.log('⚠️ executeAutoCommit: Auto-commit skipped or failed');
           console.log(`⏱️ executeAutoCommit total time (no commit): ${Date.now() - __t0}ms for project ${context.projectId}`);
           return false;
         }
-        console.log(`✅ local commit ${commitHash.slice(0,7)} on ${branchName || 'main'}`);
+        console.log(`✅ local commit ${(commitHash as string).slice(0,7)} on ${branchName || 'main'}`);
         // Schedule enhance+sync. If orchestrator is disabled, we may still do a best-effort push below.
-        get().enqueueEnhanceAndSync(context, { commitHash, branchName, commitMessage });
+        get().enqueueEnhanceAndSync(context, { commitHash: commitHash as string, branchName, commitMessage });
 
         // 💾 NEW: Save auto-commit to persistent storage
         const finalCommitMessage = generateCommitMessage(context, config, branchName);
@@ -694,15 +707,15 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
             console.log('📋 executeAutoCommit: Updating conversation JSON with commit hash...');
             
             // Create a branch info object for JSON update
-            const branchInfo: ConversationBranchInfo = {
-              branchName: branchName,
-              conversationId: context.conversationId,
-              interactionCount: parseInt(branchName.split('-step-')[1]) || 1,
-              baseBranch: 'main', // This would be set correctly in createConversationBranch
-              startingHash: '', // This would be set correctly in createConversationBranch  
-              createdAt: Date.now(),
-              commitHash: commitHash
-            };
+            // const branchInfo: ConversationBranchInfo = {
+            //   branchName: branchName,
+            //   conversationId: context.conversationId,
+            //   interactionCount: parseInt(branchName.split('-step-')[1]) || 1,
+            //   baseBranch: 'main', // This would be set correctly in createConversationBranch
+            //   startingHash: '', // This would be set correctly in createConversationBranch  
+            //   createdAt: Date.now(),
+            //   commitHash: commitHash
+            // };
             
             // We'll update the JSON via the project generation API which already handles this
             console.log('📋 executeAutoCommit: Conversation branch info ready for JSON update');
@@ -838,7 +851,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
 
                 // After successful sync/push, try flushing any buffered enhanced-commit updates
                 try {
-                  const flushed = await (get() as any)._flushBufferedEnhancedCommits(context.projectId);
+                  const flushed = await (get() as unknown as { _flushBufferedEnhancedCommits: (projectId: string) => Promise<number> })._flushBufferedEnhancedCommits(context.projectId);
                   if (flushed > 0) console.log(`🧹 Flushed ${flushed} buffered enhanced-commit updates`);
                 } catch {}
               } else {

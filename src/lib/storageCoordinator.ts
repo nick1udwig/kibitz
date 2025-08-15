@@ -10,7 +10,6 @@
  */
 
 import { 
-  saveState as saveIndexedDbState, 
   loadState as loadIndexedDbState,
   saveAutoCommitBranch,
   loadAutoCommitBranches,
@@ -19,7 +18,7 @@ import {
 } from './db';
 
 import { LocalPersistenceService } from './localPersistenceService';
-import { Project, ConversationBrief, AutoCommitBranch, ConversationBranchHistory } from '../components/LlmChat/context/types';
+import { AutoCommitBranch, ConversationBranchHistory } from '../components/LlmChat/context/types';
 import { getProjectPath } from './projectPathService';
 
 export interface BranchInfo {
@@ -218,8 +217,8 @@ export class StorageCoordinator {
    */
   async saveConversationInfo(
     conversationInfo: ConversationInfo,
-    serverId: string,
-    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+    // serverId: string,
+    // executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<{ success: boolean; error?: string }> {
     try {
       console.log(`💾 Saving conversation info: ${conversationInfo.name} for project ${conversationInfo.projectId}`);

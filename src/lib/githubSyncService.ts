@@ -1,7 +1,7 @@
 import { createSyncAPI } from './server/githubSync/github-sync-api.js';
 
 class GitHubSyncService {
-  private api: any = null;
+  private api: unknown = null;
   private isStarted = false;
 
   constructor() {
@@ -15,7 +15,7 @@ class GitHubSyncService {
       
       // Create a mock MCP client for now (replace with real client when available)
       const mockMcpClient = {
-        execute: async (command: string, args: any) => {
+        execute: async (command: string, args: Record<string, unknown>) => {
           console.log('🔧 Mock MCP Command:', command, args);
           
           // Simulate git commands for demo

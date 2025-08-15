@@ -17,8 +17,7 @@ import {
   addCommitToConversationJSON,
   ConversationCommitInfo
 } from './conversationBranchService';
-import { generateCommitDiff } from './gitDiffService';
-import { generateLLMCommitMessage } from './llmCommitMessageGenerator';
+// import { generateLLMCommitMessage } from './llmCommitMessageGenerator';
 import { ProjectSettings } from '../components/LlmChat/context/types';
 
 export interface EnhancedCommitRequest {
@@ -119,8 +118,8 @@ export async function processEnhancedCommit(
     
     // Calculate metrics
     const metrics = {
-      diffGenerationTime: (commitResult as any).diffGenerationTime,
-      llmGenerationTime: (commitResult as any).llmGenerationTime,
+      diffGenerationTime: (commitResult as Record<string, unknown>).diffGenerationTime,
+      llmGenerationTime: (commitResult as Record<string, unknown>).llmGenerationTime,
       totalProcessingTime: Date.now() - startTime,
       filesChanged: commitInfo.filesChanged.length,
       linesChanged: commitInfo.linesAdded + commitInfo.linesRemoved
@@ -155,10 +154,10 @@ export async function processEnhancedCommit(
       if (!response || !response.ok) {
         console.log('🕒 Buffering enhanced-commit update for retry');
         // Buffer in-memory; a later call to generate API will flush via server
-        (window as any).__kibitzBufferedEnhancedCommits = (window as any).__kibitzBufferedEnhancedCommits || {};
-        const list = (window as any).__kibitzBufferedEnhancedCommits[projectId] || [];
+        (window as Record<string, unknown>).__kibitzBufferedEnhancedCommits = (window as Record<string, unknown>).__kibitzBufferedEnhancedCommits || {};
+        const list = ((window as Record<string, unknown>).__kibitzBufferedEnhancedCommits as Record<string, unknown[]>)[projectId] || [];
         list.push(payload);
-        (window as any).__kibitzBufferedEnhancedCommits[projectId] = list;
+        ((window as Record<string, unknown>).__kibitzBufferedEnhancedCommits as Record<string, unknown[]>)[projectId] = list;
       }
     } catch (jsonError) {
       console.error('❌ Failed to send enhanced commit data to server:', jsonError);
@@ -375,7 +374,7 @@ async function createCommitInfoWithoutLLM(
  * Update project JSON with commit information
  */
 export async function updateProjectJSONWithCommit(
-  projectData: any,
+  projectData: Record<string, unknown>,
   conversationId: string,
   branchName: string,
   commitInfo: ConversationCommitInfo
@@ -383,7 +382,7 @@ export async function updateProjectJSONWithCommit(
   try {
     console.log(`📝 Updating project JSON with commit ${commitInfo.hash.substring(0, 8)}`);
     
-    const updatedProjectData = addCommitToConversationJSON(
+    addCommitToConversationJSON(
       projectData,
       conversationId,
       branchName,
@@ -456,7 +455,7 @@ export function validateLLMSettings(projectSettings: ProjectSettings): {
  * Get detailed commit history for a conversation branch
  */
 export function getConversationCommitHistory(
-  projectData: any,
+  projectData: Record<string, unknown>,
   conversationId: string,
   branchName?: string
 ): ConversationCommitInfo[] {
@@ -464,7 +463,7 @@ export function getConversationCommitHistory(
 
   // Get commits from conversation-specific data
   if (projectData.conversations) {
-    const conversation = projectData.conversations.find((c: any) => c.conversationId === conversationId);
+    const conversation = projectData.conversations.find((c: Record<string, unknown>) => c.conversationId === conversationId);
     if (conversation && conversation.branches) {
       for (const branch of conversation.branches) {
         if (!branchName || branch.branchName === branchName) {
@@ -562,7 +561,7 @@ export async function performSystemHealthCheck(
 
   try {
     // Test git access
-    const gitTestResult = await generateCommitDiff(projectPath, 'HEAD', serverId, executeTool);
+    await generateCommitDiff(projectPath, 'HEAD', serverId, executeTool);
     checks.gitAccess = true;
     details.push('✅ Git access working');
   } catch (error) {

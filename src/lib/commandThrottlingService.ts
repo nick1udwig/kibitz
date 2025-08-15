@@ -16,7 +16,7 @@ export interface ThrottledCommand {
   projectPath: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>;
-  resolve: (result: any) => void;
+  resolve: (result: string) => void;
   reject: (error: Error) => void;
   createdAt: number;
   retryCount: number;

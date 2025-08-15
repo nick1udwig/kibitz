@@ -22,17 +22,12 @@ import { ConversationCheckpointManager } from '@/components/CheckpointManager/Co
 import { GitHubSyncToggle } from '../../GitHubSyncToggle';
 
 export const AdminView = () => {
-  const { projects, activeProjectId, updateProjectSettings, servers, apiKeys, saveApiKeysToServer, updateApiKeys } = useStore();
+  const { projects, activeProjectId, updateProjectSettings, updateApiKeys, apiKeys } = useStore();
   const [projectsBaseDir, setProjectsBaseDir] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
   const [showSavePromptDialog, setShowSavePromptDialog] = useState(false);
   const [newPromptName, setNewPromptName] = useState('');
-  const [showSystemPromptModal, setShowSystemPromptModal] = useState(false);
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [customPromptName, setCustomPromptName] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
 
   // One-time fetch of persisted server config (projects base dir)
   useEffect(() => {

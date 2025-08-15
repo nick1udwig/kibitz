@@ -284,13 +284,13 @@ export class RollbackSystem {
 
   private async checkBranchExists(branchName: string): Promise<boolean> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
+      await this.executeTool(this.serverId, 'BashCommand', {
         action_json: { 
           command: `cd "${this.projectPath}" && git show-ref --verify --quiet refs/heads/${branchName}` 
         }
       });
       return true; // Command succeeds if branch exists
-    } catch (error) {
+    } catch {
       return false; // Command fails if branch doesn't exist
     }
   }

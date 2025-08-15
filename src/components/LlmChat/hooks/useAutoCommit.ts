@@ -337,7 +337,6 @@ export const detectTestSuccess = (toolName: string, toolOutput: string): boolean
 // 🔧 MISSING FUNCTION: Detect file changes from tool output
 export const detectFileChanges = (toolName: string, toolOutput: string): string[] => {
   const toolNameLower = toolName.toLowerCase();
-  const outputLower = toolOutput.toLowerCase();
   
   // 🔧 DEBUG: Log file detection attempts
   console.log(`🔍 detectFileChanges: Analyzing tool "${toolName}" for file changes`);

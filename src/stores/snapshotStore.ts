@@ -113,7 +113,7 @@ export const useSnapshotStore = create<SnapshotState>((set, get) => ({
   
   // Update configuration
   updateConfig: (updates: Partial<SnapshotConfig>) => {
-    set(state => ({
+    set(() => ({
       config: updateSnapshotConfig(updates)
     }));
   },

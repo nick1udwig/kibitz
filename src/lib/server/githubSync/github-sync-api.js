@@ -59,7 +59,7 @@ export class GitHubSyncAPI {
     });
     
     // Error handling
-    this.app.use((err, req, res, next) => {
+    this.app.use((err, req, res) => {
       this.logger.error('API Error:', err.message);
       res.status(500).json({
         success: false,

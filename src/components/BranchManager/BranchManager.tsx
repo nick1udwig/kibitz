@@ -20,8 +20,7 @@ import {
   Settings,
   RefreshCw
 } from 'lucide-react';
-import { useBranchStore, BranchConfig } from '../../stores/branchStore';
-import { BranchType, BranchInfo, ChangeDetectionResult } from '../../lib/branchService';
+import { useBranchStore } from '../../stores/branchStore';
 
 interface BranchManagerProps {
   projectId: string;
@@ -31,7 +30,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showRevertDialog, setShowRevertDialog] = useState(false);
-  const [newBranchType, setNewBranchType] = useState<BranchType>('feature');
+  const [newBranchType, setNewBranchType] = useState<string>('feature');
   const [newBranchDescription, setNewBranchDescription] = useState('');
   const [revertTarget, setRevertTarget] = useState<string>('');
 
@@ -74,8 +73,36 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
     };
   }, [projectId, listProjectBranches, detectProjectChanges, refreshCurrentBranch, startAutoRefresh, stopAutoRefresh]);
 
+  // 🚀 UI REFRESH FIX: Listen for branch switch events and refresh data
+  useEffect(() => {
+    const handleBranchSwitch = async (event: CustomEvent) => {
+      const { projectId: eventProjectId, branchName } = event.detail;
+      if (eventProjectId === projectId) {
+        console.log(`🔄 BranchManager: Branch switched to ${branchName}, refreshing data...`);
+        try {
+          // Refresh all relevant data
+          await Promise.all([
+            listProjectBranches(projectId),
+            detectProjectChanges(projectId),
+            refreshCurrentBranch(projectId)
+          ]);
+          console.log(`✅ BranchManager: Data refreshed after branch switch`);
+        } catch (error) {
+          console.warn('⚠️ BranchManager: Failed to refresh after branch switch:', error);
+        }
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('branchSwitched', handleBranchSwitch as EventListener);
+      return () => {
+        window.removeEventListener('branchSwitched', handleBranchSwitch as EventListener);
+      };
+    }
+  }, [projectId, listProjectBranches, detectProjectChanges, refreshCurrentBranch]);
+
   // Generate branch name with current timestamp
-  const generateCurrentBranchName = (type: BranchType): string => {
+  const generateCurrentBranchName = (type: string): string => {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -93,7 +120,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
     const success = await createProjectBranch(
       projectId,
       branchName,
-      newBranchType,
+      newBranchType as 'feature' | 'bugfix' | 'iteration' | 'experiment', // Type assertion to avoid type mismatch
       description
     );
 
@@ -140,7 +167,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
     }
   };
 
-  const getBranchTypeIcon = (type: BranchType) => {
+  const getBranchTypeIcon = (type: string) => {
     switch (type) {
       case 'feature':
         return <TrendingUp className="h-4 w-4" />;
@@ -153,7 +180,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
     }
   };
 
-  const getBranchTypeColor = (type: BranchType) => {
+  const getBranchTypeColor = (type: string) => {
     switch (type) {
       case 'feature':
         return 'bg-blue-100 text-blue-800 border-blue-200';
@@ -279,11 +306,9 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
                       <p className="text-sm text-muted-foreground">Lines Removed</p>
                     </div>
                     <div className="text-center">
-                      <Badge 
-                        className={getBranchTypeColor(projectChanges.suggestedBranchType)}
-                      >
+                      <span className={`text-xs px-2 py-1 rounded-full ${getBranchTypeColor(projectChanges.suggestedBranchType)}`}>
                         {projectChanges.suggestedBranchType}
-                      </Badge>
+                      </span>
                       <p className="text-sm text-muted-foreground">Suggested Type</p>
                     </div>
                   </div>
@@ -374,12 +399,21 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
                           {getBranchTypeIcon(branch.type)}
                           <span className="font-medium">{branch.name}</span>
                           {branch.isActive && (
-                            <Badge variant="default" className="text-xs">Current</Badge>
+                            <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                              Current
+                            </span>
                           )}
                         </div>
-                        <Badge className={getBranchTypeColor(branch.type)}>
-                          {branch.type}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-1 rounded-full ${getBranchTypeColor(branch.type)} border`}>
+                            {branch.type}
+                          </span>
+                          {(branch as { isMainBranch?: boolean }).isMainBranch && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-800">
+                              Main
+                            </span>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="flex items-center space-x-2">
@@ -471,9 +505,9 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
                     <div className="space-y-3">
                       <div className="flex items-center space-x-2">
                         <span className="text-sm">Suggested type:</span>
-                        <Badge className={getBranchTypeColor(projectChanges.suggestedBranchType)}>
+                        <span className={`text-xs px-2 py-1 rounded-full ${getBranchTypeColor(projectChanges.suggestedBranchType)}`}>
                           {projectChanges.suggestedBranchType}
-                        </Badge>
+                        </span>
                       </div>
                       <div className="text-sm">
                         <span className="font-medium">Auto-generated name:</span>
@@ -605,17 +639,16 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
             <CardContent className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Branch Type</label>
-                <Select value={newBranchType} onValueChange={(value: BranchType) => setNewBranchType(value)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="feature">🚀 Feature - New functionality</SelectItem>
-                    <SelectItem value="bugfix">🐛 Bug Fix - Fix issues</SelectItem>
-                    <SelectItem value="iteration">🔄 Iteration - Improvements</SelectItem>
-                    <SelectItem value="experiment">🧪 Experiment - Testing ideas</SelectItem>
-                  </SelectContent>
-                </Select>
+                <select 
+                  value={newBranchType} 
+                  onChange={(e) => setNewBranchType(e.target.value)}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="feature">🚀 Feature - New functionality</option>
+                  <option value="bugfix">🐛 Bug Fix - Fix issues</option>
+                  <option value="iteration">🔄 Iteration - Improvements</option>
+                  <option value="experiment">🧪 Experiment - Testing ideas</option>
+                </select>
               </div>
               
               <div>
@@ -664,24 +697,18 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
             <CardContent className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Select Branch to Revert To</label>
-                <Select value={revertTarget} onValueChange={setRevertTarget}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a branch..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projectBranches.map((branch) => (
-                      <SelectItem key={branch.name} value={branch.name}>
-                        <div className="flex items-center space-x-2">
-                          {getBranchTypeIcon(branch.type)}
-                          <span>{branch.name}</span>
-                          <Badge className={getBranchTypeColor(branch.type)} variant="outline">
-                            {branch.type}
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <select 
+                  value={revertTarget} 
+                  onChange={(e) => setRevertTarget(e.target.value)}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Choose a branch...</option>
+                  {projectBranches.map((branch: { name: string; type: string }) => (
+                    <option key={branch.name} value={branch.name}>
+                      {branch.name} ({branch.type})
+                    </option>
+                  ))}
+                </select>
               </div>
               
               <div className="p-3 bg-yellow-50 border border-yellow-200 rounded">

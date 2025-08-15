@@ -15,10 +15,7 @@ export function ConversationMetadataPanel() {
   const {
     conversationMetadata,
     projectMetadata,
-    isLoading,
-    error,
     revertToCommit,
-    canRevert,
     recentCommits
   } = useConversationMetadata();
 
@@ -26,7 +23,7 @@ export function ConversationMetadataPanel() {
   const { activeProjectId } = useStore();
 
   // Handle revert by switching to the branch instead of checking out the commit
-  const handleRevert = async (commit: any) => {
+  const handleRevert = async (commit: { branchName?: string; commitHash: string }) => {
     if (!activeProjectId) {
       console.warn('No active project ID');
       return;

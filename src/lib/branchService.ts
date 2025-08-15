@@ -8,6 +8,239 @@
 import { executeGitCommand } from './gitService';
 
 /**
+ * Project.json management for branch switching
+ * Option 3: Merge project.json files during branch switches
+ * 
+ * IMPLEMENTATION OVERVIEW:
+ * ========================
+ * 
+ * This implementation solves the branch switching issue where project.json files
+ * may be missing on target branches, causing API failures and project data loss.
+ * 
+ * WHAT IT DOES:
+ * 1. Before switching branches, checks if project.json exists on target branch
+ * 2. If missing, copies project.json from source branch to target branch
+ * 3. Commits the copied file to maintain git history
+ * 4. Continues with normal branch switching
+ * 
+ * WHERE IT'S INTEGRATED:
+ * - revertToState() - Main branch switching function used by UI
+ * - mergeBranch() - Branch merging operations  
+ * - All branch switches go through these enhanced functions
+ * 
+ * SAFETY FEATURES:
+ * - Never overwrites existing project.json files
+ * - Only copies if target branch is missing the file
+ * - Continues operation even if project.json merge fails
+ * - Proper error handling and logging throughout
+ * 
+ * TESTING SCENARIOS:
+ * 1. Switch from main (with project.json) to feature branch (without project.json)
+ *    → project.json should be copied to feature branch
+ * 2. Switch between branches that both have project.json
+ *    → No copying, normal switch
+ * 3. Switch from branch without project.json to branch with project.json
+ *    → No copying, normal switch
+ * 4. Merge operation between branches with different project.json states
+ *    → Appropriate copying as needed
+ * 
+ * LOGS TO WATCH FOR:
+ * - "📋 revertToState: Implementing Option 3 - checking project.json merge..."
+ * - "🚀 mergeProjectJsonForBranchSwitch: Target branch missing project.json, copying..."
+ * - "✅ mergeProjectJsonForBranchSwitch: project.json committed to [branch]"
+ */
+
+/**
+ * Checks if project.json exists on a specific branch
+ */
+export async function checkProjectJsonOnBranch(
+  projectPath: string,
+  branchName: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<boolean> {
+  try {
+    console.log(`🔍 checkProjectJsonOnBranch: Checking project.json on branch ${branchName}...`);
+    
+    // Check if .kibitz/api/project.json exists on the target branch
+    const checkResult = await executeGitCommand(
+      serverId,
+      `git show ${branchName}:.kibitz/api/project.json`,
+      projectPath,
+      executeTool
+    );
+    
+    const exists = checkResult.success && !checkResult.output.includes('does not exist in');
+    console.log(`📋 checkProjectJsonOnBranch: project.json exists on ${branchName}? ${exists}`);
+    
+    return exists;
+  } catch (error) {
+    console.warn(`⚠️ checkProjectJsonOnBranch: Error checking project.json on ${branchName}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Copies/merges project.json from source branch to target branch before switching
+ */
+export async function mergeProjectJsonForBranchSwitch(
+  projectPath: string,
+  sourceBranch: string,
+  targetBranch: string,
+  serverId: string,
+  executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    console.log(`📋 mergeProjectJsonForBranchSwitch: Merging project.json from ${sourceBranch} to ${targetBranch}...`);
+    
+    // 1. Check if project.json exists on source branch
+    const sourceHasProjectJson = await checkProjectJsonOnBranch(projectPath, sourceBranch, serverId, executeTool);
+    if (!sourceHasProjectJson) {
+      console.log(`ℹ️ mergeProjectJsonForBranchSwitch: No project.json on source branch ${sourceBranch}, nothing to merge`);
+      return { success: true };
+    }
+    
+    // 2. Check if project.json exists on target branch
+    const targetHasProjectJson = await checkProjectJsonOnBranch(projectPath, targetBranch, serverId, executeTool);
+    if (targetHasProjectJson) {
+      console.log(`ℹ️ mergeProjectJsonForBranchSwitch: project.json already exists on target branch ${targetBranch}, skipping merge`);
+      return { success: true };
+    }
+    
+    console.log(`🚀 mergeProjectJsonForBranchSwitch: Target branch ${targetBranch} missing project.json, copying from ${sourceBranch}...`);
+    
+    // 3. Get the project.json content from source branch
+    const sourceContentResult = await executeGitCommand(
+      serverId,
+      `git show ${sourceBranch}:.kibitz/api/project.json`,
+      projectPath,
+      executeTool
+    );
+    
+    if (!sourceContentResult.success) {
+      return {
+        success: false,
+        error: `Failed to read project.json from source branch ${sourceBranch}: ${sourceContentResult.error}`
+      };
+    }
+    
+    // 4. Switch to target branch first (we need to be on it to create files)
+    const checkoutResult = await executeGitCommand(
+      serverId,
+      `git checkout ${targetBranch}`,
+      projectPath,
+      executeTool
+    );
+    
+    if (!checkoutResult.success) {
+      return {
+        success: false,
+        error: `Failed to checkout target branch ${targetBranch}: ${checkoutResult.error}`
+      };
+    }
+    
+    // 5. Ensure .kibitz/api directory exists on target branch
+    if (typeof window === 'undefined') {
+      // Server-side filesystem approach
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      const kibitzDir = path.join(projectPath, '.kibitz', 'api');
+      const jsonFilePath = path.join(kibitzDir, 'project.json');
+      
+      try {
+        // Create directory if it doesn't exist
+        fs.mkdirSync(kibitzDir, { recursive: true });
+        
+        // Write the project.json content from source branch
+        fs.writeFileSync(jsonFilePath, sourceContentResult.output, 'utf8');
+        
+        console.log(`✅ mergeProjectJsonForBranchSwitch: Successfully copied project.json to ${targetBranch}`);
+        
+        // 6. Commit the new project.json file to target branch
+        const addResult = await executeGitCommand(
+          serverId,
+          'git add .kibitz/api/project.json',
+          projectPath,
+          executeTool
+        );
+        
+        if (addResult.success) {
+          const commitResult = await executeGitCommand(
+            serverId,
+            `git commit -m "Copy project.json from ${sourceBranch}"`,
+            projectPath,
+            executeTool
+          );
+          
+          if (commitResult.success) {
+            console.log(`✅ mergeProjectJsonForBranchSwitch: project.json committed to ${targetBranch}`);
+          } else {
+            console.warn(`⚠️ mergeProjectJsonForBranchSwitch: Failed to commit project.json, but file copied successfully`);
+          }
+        }
+        
+      } catch (fsError) {
+        console.error(`❌ mergeProjectJsonForBranchSwitch: Filesystem error:`, fsError);
+        return {
+          success: false,
+          error: `Failed to write project.json to target branch: ${fsError instanceof Error ? fsError.message : String(fsError)}`
+        };
+      }
+    } else {
+      // Browser environment - use tool-based approach
+      const kibitzDir = `${projectPath}/.kibitz/api`;
+      const jsonFilePath = `${kibitzDir}/project.json`;
+      
+      // Create directory
+      await executeTool(serverId, 'BashCommand', {
+        action_json: {
+          command: `mkdir -p "${kibitzDir}"`,
+          type: 'command'
+        },
+        thread_id: 'git-operations'
+      });
+      
+      // Write file using echo (escape JSON content properly)
+      const escapedContent = sourceContentResult.output.replace(/"/g, '\\"');
+      await executeTool(serverId, 'BashCommand', {
+        action_json: {
+          command: `echo "${escapedContent}" > "${jsonFilePath}"`,
+          type: 'command'
+        },
+        thread_id: 'git-operations'
+      });
+      
+      console.log(`✅ mergeProjectJsonForBranchSwitch: Successfully copied project.json to ${targetBranch} via tools`);
+      
+      // 6. Commit the new project.json file to target branch
+      await executeGitCommand(
+        serverId,
+        'git add .kibitz/api/project.json',
+        projectPath,
+        executeTool
+      );
+      
+      await executeGitCommand(
+        serverId,
+        `git commit -m "Copy project.json from ${sourceBranch}"`,
+        projectPath,
+        executeTool
+      );
+    }
+    
+    return { success: true };
+    
+  } catch (error) {
+    console.error(`❌ mergeProjectJsonForBranchSwitch: Error merging project.json:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+/**
  * Creates simple commit-focused JSON files for API
  * 🎯 SIMPLE APPROACH: Direct filesystem operations - no complex tools
  */
@@ -387,7 +620,7 @@ export const detectChanges = async (
     
     // Suggest branch type based on file patterns and changes
     const suggestedBranchType = suggestBranchType(changedFiles, linesAdded, linesRemoved);
-    const suggestedBranchName = generateBranchName(suggestedBranchType, changedFiles);
+    const suggestedBranchName = generateBranchName(suggestedBranchType);
 
     return {
       filesChanged,
@@ -481,8 +714,7 @@ export const suggestBranchType = (
  * Generates a branch name based on type with date/time convention
  */
 export const generateBranchName = (
-  branchType: BranchType,
-  changedFiles: string[]
+  branchType: BranchType
 ): string => {
   const now = new Date();
   
@@ -657,6 +889,7 @@ export const listBranches = async (
 
 /**
  * Reverts to a specific branch or commit
+ * Enhanced with Option 3: Merge project.json files during branch switches
  */
 export const revertToState = async (
   projectPath: string,
@@ -666,6 +899,45 @@ export const revertToState = async (
 ): Promise<{ success: boolean; backupBranch?: string; error?: string }> => {
   try {
     let backupBranch: string | undefined;
+    let stashCreated = false;
+    
+    // Get current branch before switching
+    const currentBranchResult = await executeGitCommand(
+      serverId,
+      'git branch --show-current',
+      projectPath,
+      executeTool
+    );
+    const currentBranch = currentBranchResult.success ? currentBranchResult.output.trim() : 'main';
+    
+    // Check for uncommitted changes first
+    const statusResult = await executeGitCommand(
+      serverId,
+      'git status --porcelain',
+      projectPath,
+      executeTool
+    );
+    
+    const hasUncommittedChanges = statusResult.success && statusResult.output.trim().length > 0;
+    
+    // Stash uncommitted changes if they exist
+    if (hasUncommittedChanges) {
+      console.log('📦 Stashing uncommitted changes before branch switch...');
+      const stashMessage = `pre-branch-switch-${Date.now()}`;
+      const stashResult = await executeGitCommand(
+        serverId,
+        `git stash push -u -m "${stashMessage}"`,
+        projectPath,
+        executeTool
+      );
+      
+      if (stashResult.success) {
+        stashCreated = true;
+        console.log(`✅ Changes stashed: ${stashMessage}`);
+      } else {
+        console.warn('⚠️ Failed to stash changes, attempting switch anyway');
+      }
+    }
     
     // Create backup branch if requested
     if (options.createBackupBranch) {
@@ -687,6 +959,34 @@ export const revertToState = async (
       }
       
       console.log(`Created backup branch: ${backupBranch}`);
+      
+      // Switch back to current branch after creating backup
+      await executeGitCommand(
+        serverId,
+        `git checkout ${currentBranch}`,
+        projectPath,
+        executeTool
+      );
+    }
+    
+    // 🚀 OPTION 3: Handle project.json merging before switching branches
+    if (options.targetBranch && options.targetBranch !== currentBranch) {
+      console.log(`📋 revertToState: Implementing Option 3 - checking project.json merge from ${currentBranch} to ${options.targetBranch}...`);
+      
+      const mergeResult = await mergeProjectJsonForBranchSwitch(
+        projectPath,
+        currentBranch,
+        options.targetBranch,
+        serverId,
+        executeTool
+      );
+      
+      if (!mergeResult.success) {
+        console.warn(`⚠️ revertToState: project.json merge failed: ${mergeResult.error}, continuing with branch switch...`);
+        // Don't fail the entire operation, just log the warning
+      } else {
+        console.log(`✅ revertToState: project.json merge completed successfully`);
+      }
     }
     
     // Revert to target
@@ -710,6 +1010,17 @@ export const revertToState = async (
     );
     
     if (!revertResult.success) {
+      // If the switch failed and we stashed changes, try to pop them back
+      if (stashCreated) {
+        console.log('🔄 Branch switch failed, attempting to restore stashed changes...');
+        await executeGitCommand(
+          serverId,
+          'git stash pop',
+          projectPath,
+          executeTool
+        );
+      }
+      
       return {
         success: false,
         error: `Failed to revert: ${revertResult.error || revertResult.output}`,
@@ -717,7 +1028,14 @@ export const revertToState = async (
       };
     }
     
-    console.log(`Successfully reverted to ${options.targetBranch || options.targetCommit}`);
+    console.log(`✅ Successfully reverted to ${options.targetBranch || options.targetCommit} with project.json merging support`);
+    
+    // Note: We intentionally don't pop the stash after a successful switch
+    // because the user might want to apply those changes to the new branch manually
+    if (stashCreated) {
+      console.log('ℹ️ Your previous changes are safely stashed. Use "git stash pop" to restore them if needed.');
+    }
+    
     return { success: true, backupBranch };
     
   } catch (error) {
@@ -867,6 +1185,7 @@ export const autoCreateBranchIfNeeded = async (
 
 /**
  * Merges a branch back to main (or specified target)
+ * Enhanced with Option 3: Merge project.json files during branch operations
  */
 export const mergeBranch = async (
   projectPath: string,
@@ -876,6 +1195,35 @@ export const mergeBranch = async (
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<{ success: boolean; error?: string }> => {
   try {
+    // Get current branch to know what we're coming from
+    const currentBranchResult = await executeGitCommand(
+      serverId,
+      'git branch --show-current',
+      projectPath,
+      executeTool
+    );
+    const currentBranch = currentBranchResult.success ? currentBranchResult.output.trim() : 'main';
+    
+    // 🚀 OPTION 3: Handle project.json merging before switching to target branch
+    if (currentBranch !== targetBranch) {
+      console.log(`📋 mergeBranch: Implementing Option 3 - checking project.json merge from ${currentBranch} to ${targetBranch}...`);
+      
+      const mergeJsonResult = await mergeProjectJsonForBranchSwitch(
+        projectPath,
+        currentBranch,
+        targetBranch,
+        serverId,
+        executeTool
+      );
+      
+      if (!mergeJsonResult.success) {
+        console.warn(`⚠️ mergeBranch: project.json merge failed: ${mergeJsonResult.error}, continuing with branch merge...`);
+        // Don't fail the entire operation, just log the warning
+      } else {
+        console.log(`✅ mergeBranch: project.json merge completed successfully`);
+      }
+    }
+    
     // Switch to target branch
     const checkoutResult = await executeGitCommand(
       serverId,
@@ -889,6 +1237,23 @@ export const mergeBranch = async (
         success: false,
         error: `Failed to checkout ${targetBranch}: ${checkoutResult.error}`
       };
+    }
+    
+    // 🚀 OPTION 3: Also handle project.json merging from source to target
+    console.log(`📋 mergeBranch: Checking project.json merge from source ${sourceBranch} to target ${targetBranch}...`);
+    
+    const mergeSourceJsonResult = await mergeProjectJsonForBranchSwitch(
+      projectPath,
+      sourceBranch,
+      targetBranch,
+      serverId,
+      executeTool
+    );
+    
+    if (!mergeSourceJsonResult.success) {
+      console.warn(`⚠️ mergeBranch: source project.json merge failed: ${mergeSourceJsonResult.error}, continuing with branch merge...`);
+    } else {
+      console.log(`✅ mergeBranch: source project.json merge completed successfully`);
     }
     
     // Merge the source branch
@@ -906,7 +1271,7 @@ export const mergeBranch = async (
       };
     }
     
-    console.log(`Successfully merged ${sourceBranch} into ${targetBranch}`);
+    console.log(`✅ Successfully merged ${sourceBranch} into ${targetBranch} with project.json merging support`);
     return { success: true };
     
   } catch (error) {

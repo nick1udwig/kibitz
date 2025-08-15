@@ -1,15 +1,9 @@
-import { Project, ConversationBrief, WorkspaceMapping, WorkspacePersistenceSchema, ConversationMigrationInfo, AutoCommitBranch, BranchRevert, AutoCommitAgentStatus, ConversationBranchHistory } from '../components/LlmChat/context/types';
+import { Project, ConversationBrief, WorkspaceMapping, AutoCommitBranch, BranchRevert, AutoCommitAgentStatus, ConversationBranchHistory } from '../components/LlmChat/context/types';
 import { convertLegacyToProviderConfig } from '../components/LlmChat/types/provider';
 import { DEFAULT_PROJECT_SETTINGS } from '../stores/rootStore';
 import { Message } from '../components/LlmChat/types';
 import { McpServer } from '../components/LlmChat/types/mcp';
-import { messageToGenericMessage } from '../components/LlmChat/types/genericMessage';
 import { 
-  generateWorkspaceId, 
-  generateWorkspacePath, 
-  createWorkspaceMapping, 
-  addWorkspaceToConversation,
-  createDefaultWorkspaceSettings,
   logWorkspaceOperation
 } from './conversationWorkspaceService';
 
@@ -37,11 +31,7 @@ interface DbState {
   activeConversationId: string | null;
 }
 
-// 🌟 NEW: Extended database state with workspace information
-interface ExtendedDbState extends DbState {
-  workspaceMappings: WorkspaceMapping[];
-  workspaceSettings: Record<string, any>;
-}
+
 
 interface KibitzDb extends IDBDatabase {
   createObjectStore(name: string, options?: IDBObjectStoreParameters): IDBObjectStore;
@@ -169,38 +159,38 @@ async function recreateDatabase(): Promise<KibitzDb> {
 /**
  * Perform database migrations with error handling
  */
-function performDatabaseMigrations(db: KibitzDb, oldVersion: number, newVersion: number): void {
+function performDatabaseMigrations(db: KibitzDb, oldVersion: number, newVersion: number = DB_VERSION): void {
   try {
     if (oldVersion < 1) {
       createV1Schema(db);
               }
     if (oldVersion < 2) {
-      migrateToV2(db);
+      migrateToV2();
           }
     if (oldVersion < 3) {
       migrateToV3(db);
       }
     if (oldVersion < 4) {
-      migrateToV4(db);
+      migrateToV4();
     }
     if (oldVersion < 5) {
-      migrateToV5(db);
+      migrateToV5();
     }
     if (oldVersion < 6) {
-      migrateToV6(db);
+      migrateToV6();
     }
     if (oldVersion < 7) {
-      migrateToV7(db);
+      migrateToV7();
     }
     if (oldVersion < 8) {
-      migrateToV8(db);
+      migrateToV8();
     }
     if (oldVersion < 9) {
       migrateToV9(db);
     }
     if (oldVersion < 10) {
       migrateToV10(db);
-              }
+    }
             } catch (error) {
     console.error('Migration error:', error);
     throw error;
@@ -236,7 +226,7 @@ function createV1Schema(db: KibitzDb): void {
 /**
  * Migrate to version 2
  */
-function migrateToV2(db: KibitzDb): void {
+function migrateToV2(): void {
   console.log('Migrating to v2...');
   // Migration logic for v2 would go here
   // This is a placeholder for the actual migration logic
@@ -257,7 +247,7 @@ function migrateToV3(db: KibitzDb): void {
 /**
  * Migrate to version 4
  */
-function migrateToV4(db: KibitzDb): void {
+function migrateToV4(): void {
   console.log('Migrating to v4...');
   // Add provider field and separate API keys to existing projects
   // This migration would be handled in the transaction
@@ -266,7 +256,7 @@ function migrateToV4(db: KibitzDb): void {
 /**
  * Migrate to version 5
  */
-function migrateToV5(db: KibitzDb): void {
+function migrateToV5(): void {
   console.log('Migrating to v5...');
   // Add new providerConfig field to existing projects
   // This migration would be handled in the transaction
@@ -275,7 +265,7 @@ function migrateToV5(db: KibitzDb): void {
 /**
  * Migrate to version 6
  */
-function migrateToV6(db: KibitzDb): void {
+function migrateToV6(): void {
   console.log('Migrating to v6...');
   // Migrate messages to GenericMessage format
   // This migration would be handled in the transaction
@@ -284,7 +274,7 @@ function migrateToV6(db: KibitzDb): void {
 /**
  * Migrate to version 7
  */
-function migrateToV7(db: KibitzDb): void {
+function migrateToV7(): void {
   console.log('Migrating to v7...');
   // Add savedPrompts array to existing projects
   // This migration would be handled in the transaction
@@ -293,7 +283,7 @@ function migrateToV7(db: KibitzDb): void {
 /**
  * Migrate to version 8
  */
-function migrateToV8(db: KibitzDb): void {
+function migrateToV8(): void {
   console.log('Migrating to v8...');
   // Version 8 migration logic
 }
@@ -582,12 +572,12 @@ export const saveWorkspaceMappings = async (workspaces: WorkspaceMapping[]): Pro
 };
 
 // 🌟 NEW: Load conversation settings from database
-export const loadConversationSettings = async (): Promise<Record<string, any>> => {
+export const loadConversationSettings = async (): Promise<Record<string, unknown>> => {
   return safeDbOperation(async (db) => {
     return safeTransaction(db, ['conversationSettings'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
     const settingsStore = transaction.objectStore('conversationSettings');
-    const settings: Record<string, any> = {};
+    const settings: Record<string, unknown> = {};
 
     settingsStore.openCursor().onsuccess = (event) => {
       const cursor = (event.target as IDBRequest).result;
@@ -608,7 +598,7 @@ export const loadConversationSettings = async (): Promise<Record<string, any>> =
 };
 
 // 🌟 NEW: Save conversation settings to database
-export const saveConversationSettings = async (settings: Record<string, any>): Promise<void> => {
+export const saveConversationSettings = async (settings: Record<string, unknown>): Promise<void> => {
   return safeDbOperation(async (db) => {
     return safeTransaction(db, ['conversationSettings'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
@@ -726,7 +716,7 @@ export const deleteWorkspaceMapping = async (workspaceId: string): Promise<void>
 };
 
 // 🌟 NEW: Get workspace statistics
-export const getWorkspaceStats = async (): Promise<any> => {
+export const getWorkspaceStats = async (): Promise<Record<string, unknown>> => {
   return safeDbOperation(async (db) => {
     return safeTransaction(db, ['workspaceStats'], 'readonly', (transaction) => {
   return new Promise((resolve, reject) => {
@@ -759,8 +749,13 @@ export const getWorkspaceStats = async (): Promise<any> => {
   }, 'getWorkspaceStats');
 };
 
+// Define workspace stats interface
+interface WorkspaceStats {
+  [key: string]: unknown;
+}
+
 // 🌟 NEW: Update workspace statistics
-export const updateWorkspaceStats = async (stats: any): Promise<void> => {
+export const updateWorkspaceStats = async (stats: WorkspaceStats): Promise<void> => {
   return safeDbOperation(async (db) => {
     return safeTransaction(db, ['workspaceStats'], 'readwrite', (transaction) => {
   return new Promise((resolve, reject) => {
@@ -1089,7 +1084,7 @@ export const loadConversationBranchHistory = async (conversationId: string): Pro
       const result = (event.target as IDBRequest).result;
       if (result) {
         // Convert date strings back to Date objects
-        result.branches = result.branches.map((branch: any) => ({
+        result.branches = result.branches.map((branch: { createdAt: string | Date; workspaceSnapshot?: { lastModified: string | Date } }) => ({
           ...branch,
           createdAt: new Date(branch.createdAt),
           workspaceSnapshot: branch.workspaceSnapshot ? {

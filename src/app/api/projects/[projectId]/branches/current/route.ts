@@ -16,11 +16,10 @@ export async function GET(
 
     // Get project path and execute git command to get current branch
     const { getProjectPath } = await import('../../../../../../lib/projectPathService');
-    const { executeGitCommand } = await import('../../../../../../lib/gitService');
     
     // Get the actual project path from the real project structure
-    const fs = require('fs');
-    const path = require('path');
+    const fs = await import('fs');
+    const path = await import('path');
     
     // Try to find the actual project directory
     const { projectsBaseDir, findProjectPath } = await import('../../../../../../lib/server/projectPaths');
@@ -50,8 +49,8 @@ export async function GET(
     console.log(`🔍 Using project path: ${projectPath}`);
     
     // Direct git command execution for more reliable results
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
     const execAsync = promisify(exec);
     
     let currentBranch = 'main'; // Default fallback

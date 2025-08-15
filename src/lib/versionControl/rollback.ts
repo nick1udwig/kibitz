@@ -1,4 +1,4 @@
-import { McpExecutor, RollbackResult, RollbackToCommitParams } from './types';
+import { RollbackResult, RollbackToCommitParams } from './types';
 
 export async function rollbackToCommit(params: RollbackToCommitParams): Promise<RollbackResult> {
   const { projectPath, serverId, executeTool, commitHash, options } = params;

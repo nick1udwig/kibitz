@@ -20,8 +20,7 @@ import {
   Settings,
   RefreshCw
 } from 'lucide-react';
-import { useBranchStore, BranchConfig } from '../../stores/branchStore';
-import { BranchType, BranchInfo, ChangeDetectionResult } from '../../lib/branchService';
+import { useBranchStore } from '../../stores/branchStore';
 
 interface BranchManagerProps {
   projectId: string;
@@ -31,7 +30,7 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
   const [activeTab, setActiveTab] = useState('overview');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showRevertDialog, setShowRevertDialog] = useState(false);
-  const [newBranchType, setNewBranchType] = useState<BranchType>('feature');
+  const [newBranchType, setNewBranchType] = useState<string>('feature');
   const [newBranchDescription, setNewBranchDescription] = useState('');
   const [revertTarget, setRevertTarget] = useState<string>('');
 
@@ -60,10 +59,10 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
   useEffect(() => {
     listProjectBranches(projectId);
     detectProjectChanges(projectId);
-  }, [projectId]);
+  }, [projectId, listProjectBranches, detectProjectChanges]);
 
   // Generate branch name with current timestamp
-  const generateCurrentBranchName = (type: BranchType): string => {
+  const generateCurrentBranchName = (type: string): string => {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -81,7 +80,7 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
     const success = await createProjectBranch(
       projectId,
       branchName,
-      newBranchType,
+      newBranchType as 'feature' | 'bugfix' | 'iteration' | 'experiment', // Type assertion to avoid type mismatch
       description
     );
 
@@ -128,7 +127,7 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
     }
   };
 
-  const getBranchTypeIcon = (type: BranchType) => {
+  const getBranchTypeIcon = (type: string) => {
     switch (type) {
       case 'feature':
         return <TrendingUp className="h-4 w-4" />;
@@ -141,7 +140,7 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
     }
   };
 
-  const getBranchTypeColor = (type: BranchType) => {
+  const getBranchTypeColor = (type: string) => {
     switch (type) {
       case 'feature':
         return 'text-blue-600 bg-blue-100 border-blue-200';
@@ -595,7 +594,7 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
                 <label className="text-sm font-medium">Branch Type</label>
                 <select 
                   value={newBranchType} 
-                  onChange={(e) => setNewBranchType(e.target.value as BranchType)}
+                  onChange={(e) => setNewBranchType(e.target.value)}
                   className="w-full mt-1 p-2 border border-gray-300 rounded-md"
                 >
                   <option value="feature">🚀 Feature - New functionality</option>

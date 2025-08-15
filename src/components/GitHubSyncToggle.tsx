@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { useStore } from '@/stores/rootStore';
 import { Github, Loader2, CheckCircle, XCircle } from 'lucide-react';
@@ -17,47 +17,41 @@ export function GitHubSyncToggle({ className = '' }: GitHubSyncToggleProps) {
   // Get active project
   const activeProject = projects.find(p => p.id === activeProjectId);
 
-  // Load GitHub sync status when project changes (single run per project)
-  useEffect(() => {
-    const load = async () => {
-      if (!activeProjectId || !activeProject || initBusyRef.current) return;
-      initBusyRef.current = true;
-      try {
-        setIsLoading(true);
-        // Server truth
-        let serverEnabled: boolean | undefined = undefined;
-        try {
-          const res = await fetch(`/api/github-sync/config?projectId=${activeProjectId}`);
-          if (res.ok) {
-            const data = await res.json();
-            serverEnabled = data.github?.enabled;
-            if (data.github?.syncStatus) setSyncStatus(data.github.syncStatus);
-          }
-        } catch {}
+  // Trigger manual sync
+  const triggerSync = useCallback(async () => {
+    if (!activeProjectId) return;
 
-        const desiredEnabled = activeProject.settings.enableGitHub ?? true; // default ON
+    try {
+      setSyncStatus('syncing');
+      
+      // Use Next.js API route, not background service directly
+      const response = await fetch('/api/github-sync/trigger', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectId: activeProjectId,
+          immediate: true,
+          // Force allows a manual sync even if server hasn't yet persisted enabled flag
+          force: true
+        }),
+      });
 
-        if (serverEnabled === undefined) {
-          // No server config yet → apply desired state once
-          if (desiredEnabled !== syncEnabled) await handleToggleChange(desiredEnabled);
-          else if (desiredEnabled) await handleToggleChange(true);
-        } else {
-          setSyncEnabled(serverEnabled);
-          if (serverEnabled !== desiredEnabled) {
-            await handleToggleChange(desiredEnabled);
-          }
-        }
-      } finally {
-        setIsLoading(false);
-        initBusyRef.current = false;
+      if (response.ok) {
+        setSyncStatus('success');
+        setTimeout(() => setSyncStatus('idle'), 3000); // Reset after 3 seconds
+      } else {
+        setSyncStatus('error');
       }
-    };
-    load();
-    // Only re-run when projectId changes to avoid loops
+    } catch (error) {
+      console.error('❌ Failed to trigger sync:', error);
+      setSyncStatus('error');
+    }
   }, [activeProjectId]);
 
   // Handle toggle change
-  const handleToggleChange = async (enabled: boolean) => {
+  const handleToggleChange = useCallback(async (enabled: boolean) => {
     if (!activeProjectId || !activeProject) return;
     if (enabled === syncEnabled && syncStatus !== 'error') return; // no-op if state is already correct
 
@@ -109,40 +103,46 @@ export function GitHubSyncToggle({ className = '' }: GitHubSyncToggleProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeProjectId, activeProject, syncEnabled, syncStatus, updateProjectSettings, triggerSync]);
 
-  // Trigger manual sync
-  const triggerSync = async () => {
-    if (!activeProjectId) return;
+  // Load GitHub sync status when project changes (single run per project)
+  useEffect(() => {
+    const load = async () => {
+      if (!activeProjectId || !activeProject || initBusyRef.current) return;
+      initBusyRef.current = true;
+      try {
+        setIsLoading(true);
+        // Server truth
+        let serverEnabled: boolean | undefined = undefined;
+        try {
+          const res = await fetch(`/api/github-sync/config?projectId=${activeProjectId}`);
+          if (res.ok) {
+            const data = await res.json();
+            serverEnabled = data.github?.enabled;
+            if (data.github?.syncStatus) setSyncStatus(data.github.syncStatus);
+          }
+        } catch {}
 
-    try {
-      setSyncStatus('syncing');
-      
-      // Use Next.js API route, not background service directly
-      const response = await fetch('/api/github-sync/trigger', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          projectId: activeProjectId,
-          immediate: true,
-          // Force allows a manual sync even if server hasn't yet persisted enabled flag
-          force: true
-        }),
-      });
+        const desiredEnabled = activeProject.settings.enableGitHub ?? true; // default ON
 
-      if (response.ok) {
-        setSyncStatus('success');
-        setTimeout(() => setSyncStatus('idle'), 3000); // Reset after 3 seconds
-      } else {
-        setSyncStatus('error');
+        if (serverEnabled === undefined) {
+          // No server config yet → apply desired state once
+          if (desiredEnabled !== syncEnabled) await handleToggleChange(desiredEnabled);
+          else if (desiredEnabled) await handleToggleChange(true);
+        } else {
+          setSyncEnabled(serverEnabled);
+          if (serverEnabled !== desiredEnabled) {
+            await handleToggleChange(desiredEnabled);
+          }
+        }
+      } finally {
+        setIsLoading(false);
+        initBusyRef.current = false;
       }
-    } catch (error) {
-      console.error('❌ Failed to trigger sync:', error);
-      setSyncStatus('error');
-    }
-  };
+    };
+    load();
+    // Only re-run when projectId changes to avoid loops
+  }, [activeProjectId, activeProject, syncEnabled, handleToggleChange]);
 
   // Get status icon and color
   const getStatusIcon = () => {

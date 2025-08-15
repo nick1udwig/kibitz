@@ -86,19 +86,23 @@ export class LlmAgentGitHandler {
         
         // Enforce UI-configured min files before auto commit/push
         if (hasChanges) {
+          let changedCount = 0;
+          let minFiles = 0;
+          let activeConversationId: string | null = null;
           try {
             const { useStore } = await import('../stores/rootStore');
             const st = useStore.getState();
             // projectId is passed in; resolve current project
             const project = st.projects.find(p => p.id === projectId);
+            activeConversationId = st.activeConversationId || null;
             // Count changed files now
             const listRes = await executeTool(mcpServerId, 'BashCommand', {
               action_json: { command: `cd "${projectPath}" && git status --porcelain`, type: 'command' },
               thread_id: threadId
             });
             const output = this.extractCommandOutput(listRes).trim();
-            const changedCount = output ? output.split('\n').filter(l => l.trim()).length : 0;
-            const minFiles = (project?.settings?.minFilesForAutoCommitPush ?? 0) as number;
+            changedCount = output ? output.split('\n').filter(l => l.trim()).length : 0;
+            minFiles = (project?.settings?.minFilesForAutoCommitPush ?? 0) as number;
             if (minFiles > 0 && changedCount < minFiles) {
               console.log(`ℹ️ LlmAgentGitHandler: Skipping auto-commit (changed ${changedCount} < min ${minFiles})`);
               // Still proceed to JSON extraction for freshness if repo exists
@@ -110,6 +114,60 @@ export class LlmAgentGitHandler {
             }
           } catch (e) {
             console.warn('⚠️ LlmAgentGitHandler: Could not enforce minFilesForAutoCommitPush, continuing', e);
+          }
+
+          // Fallback step-branch creation here too (when auto-commit path didn't run)
+          // If we have an active conversation and threshold satisfied, ensure we advance to next conv-<id>-step-N
+          try {
+            if (activeConversationId && (changedCount >= Math.max(2, minFiles))) {
+              const convPrefix = `conv-${activeConversationId}-step-`;
+              // Determine current branch
+              const curBrRes = await executeTool(mcpServerId, 'BashCommand', {
+                action_json: { command: `cd "${projectPath}" && git branch --show-current`, type: 'command' },
+                thread_id: threadId
+              });
+              const curBranch = this.extractCommandOutput(curBrRes).trim() || 'main';
+              // Scan existing steps to find highest
+              const refsRes = await executeTool(mcpServerId, 'BashCommand', {
+                action_json: { command: `cd "${projectPath}" && git for-each-ref refs/heads --format="%(refname:short)"`, type: 'command' },
+                thread_id: threadId
+              });
+              const namesText = this.extractCommandOutput(refsRes);
+              let highestStep = 0;
+              if (namesText.trim()) {
+                namesText.split('\n').map(s => s.trim()).filter(Boolean)
+                  .filter(n => n.startsWith(convPrefix))
+                  .forEach(n => { const m = n.match(/step-(\d+)$/); if (m) highestStep = Math.max(highestStep, parseInt(m[1], 10)); });
+              }
+              const baseBranch = highestStep === 0 ? 'main' : `${convPrefix}${highestStep}`;
+              const nextBranch = `${convPrefix}${highestStep + 1}`;
+              if (curBranch !== nextBranch) {
+                // Try to create directly from base
+                let mkRes = await executeTool(mcpServerId, 'BashCommand', {
+                  action_json: { command: `cd "${projectPath}" && git checkout -b ${nextBranch} ${baseBranch}`, type: 'command' },
+                  thread_id: threadId
+                });
+                let mkOk = !this.extractCommandOutput(mkRes).includes('fatal:');
+                if (!mkOk) {
+                  // Fallback: stash → checkout base → create → pop
+                  await executeTool(mcpServerId, 'BashCommand', { action_json: { command: `cd "${projectPath}" && git stash push -u -m "kibitz-autobranch" || true`, type: 'command' }, thread_id: threadId });
+                  const coRes = await executeTool(mcpServerId, 'BashCommand', { action_json: { command: `cd "${projectPath}" && git checkout ${baseBranch}`, type: 'command' }, thread_id: threadId });
+                  const coOk = !this.extractCommandOutput(coRes).includes('fatal:');
+                  if (coOk) {
+                    mkRes = await executeTool(mcpServerId, 'BashCommand', { action_json: { command: `cd "${projectPath}" && git checkout -b ${nextBranch}`, type: 'command' }, thread_id: threadId });
+                    mkOk = !this.extractCommandOutput(mkRes).includes('fatal:');
+                  }
+                  await executeTool(mcpServerId, 'BashCommand', { action_json: { command: `cd "${projectPath}" && git stash pop || true`, type: 'command' }, thread_id: threadId });
+                }
+                if (mkOk) {
+                  console.log(`🌿 LlmAgentGitHandler: Created step branch ${nextBranch}`);
+                } else {
+                  console.log(`⚠️ LlmAgentGitHandler: Could not create step branch, continuing on ${curBranch}`);
+                }
+              }
+            }
+          } catch (stepErr) {
+            console.warn('⚠️ LlmAgentGitHandler: Step-branch fallback failed:', stepErr);
           }
 
           console.log(`🔄 LlmAgentGitHandler: Changes detected, creating commit...`);
@@ -181,7 +239,7 @@ export class LlmAgentGitHandler {
     mcpServerId: string
   ): Promise<string> {
     const initKey = `${mcpServerId}|${projectPath}`;
-    const g: any = global as any;
+    const g: Record<string, unknown> = global as Record<string, unknown>;
 
     // Prefer our own precise cache first
     const cached = LlmAgentGitHandler.threadIdCache.get(initKey);
@@ -210,8 +268,10 @@ export class LlmAgentGitHandler {
     } catch (error) {
       console.warn('⚠️ LlmAgentGitHandler: Initialize failed, using default thread_id', error);
     } finally {
-      if (!g.__kibitzInitCache) g.__kibitzInitCache = new Set<string>();
-      g.__kibitzInitCache.add(initKey);
+      if (!(g as { __kibitzInitCache?: Set<string> }).__kibitzInitCache) {
+        (g as { __kibitzInitCache?: Set<string> }).__kibitzInitCache = new Set<string>();
+      }
+      (g as { __kibitzInitCache?: Set<string> }).__kibitzInitCache!.add(initKey);
       LlmAgentGitHandler.threadIdCache.set(initKey, resolvedThreadId);
     }
     return resolvedThreadId;
@@ -338,7 +398,7 @@ export class LlmAgentGitHandler {
   ): Promise<{ success: boolean; commitSha?: string; error?: string }> {
     try {
       // Add all changes
-      const addResult = await executeTool(mcpServerId, 'BashCommand', {
+      await executeTool(mcpServerId, 'BashCommand', {
         action_json: {
           command: `cd "${projectPath}" && git add .`,
           type: 'command'
@@ -423,11 +483,11 @@ export class LlmAgentGitHandler {
             const headOk = this.extractCommandOutput(headCheck).toLowerCase().includes('fatal') === false;
             if (!headOk || !currentBranch) {
               console.log('ℹ️ LLM-AGENT PUSH: No commits or branch missing; skipping orchestrator request.');
-              return { success: true } as any;
+              return { success: true } as { success: boolean };
             }
           } catch {
             console.log('ℹ️ LLM-AGENT PUSH: HEAD not found; skipping orchestrator request.');
-            return { success: true } as any;
+            return { success: true } as { success: boolean };
           }
 
           if (typeof fetch !== 'undefined') {

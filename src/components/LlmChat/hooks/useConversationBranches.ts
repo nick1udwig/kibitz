@@ -22,7 +22,7 @@ export interface BranchSwitchState {
  * 🚀 FEATURE: Switch between conversation branches and sync frontend state
  */
 export const useConversationBranches = () => {
-  const { activeProjectId, executeTool } = useStore();
+  const { activeProjectId } = useStore();
   const [state, setState] = useState<BranchSwitchState>({
     loading: false,
     error: null,
@@ -120,8 +120,8 @@ export const useConversationBranches = () => {
 
       // Filter for conversation branches and map to our interface
       const conversationBranches = (data.branches || [])
-        .filter((branch: any) => branch.branchName?.startsWith('conversation/'))
-        .map((branch: any): ConversationBranch => ({
+        .filter((branch: { branchName?: string }) => branch.branchName?.startsWith('conversation/'))
+        .map((branch: { branchName: string; commitHash?: string; timestamp?: number; filesChanged?: string[] }): ConversationBranch => ({
           branchName: branch.branchName,
           conversationId: branch.branchName.replace('conversation/', ''),
           commitHash: branch.commitHash || '',

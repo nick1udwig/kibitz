@@ -42,9 +42,9 @@ export function getProjectsBaseDir(): string {
   }
 
   // Client runtime hint set by Admin save
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fromWindow = (typeof window !== 'undefined' && (window as any).__KIBITZ_PROJECTS_BASE_DIR__)
-    ? normalizePathNoTrailingSlash((window as any).__KIBITZ_PROJECTS_BASE_DIR__)
+
+  const fromWindow = (typeof window !== 'undefined' && (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__)
+    ? normalizePathNoTrailingSlash((window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ as string)
     : undefined;
 
   // Client-side/compile-time env (Next.js exposes NEXT_PUBLIC_* to browser)

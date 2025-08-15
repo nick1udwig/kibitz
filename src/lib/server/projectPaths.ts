@@ -27,7 +27,7 @@ export function findProjectPath(projectId: string): string | null {
       }
     }
     return null;
-  } catch (error) {
+  } catch {
     // Swallow errors and return null – callers can decide how to respond
     return null;
   }

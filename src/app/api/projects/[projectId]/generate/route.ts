@@ -8,9 +8,7 @@ export const runtime = 'nodejs';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';
-import { projectsBaseDir, findProjectPath as findExistingProjectPath } from '../../../../../lib/server/projectPaths';
-
-const BASE_PROJECTS_DIR = projectsBaseDir();
+import { findProjectPath as findExistingProjectPath } from '../../../../../lib/server/projectPaths';
 
 export async function POST(
   request: NextRequest,
@@ -50,13 +48,13 @@ export async function POST(
         gitHubEnabled = existingData.github?.enabled || false;
         console.log(`📋 Generate API: Existing GitHub enabled state: ${gitHubEnabled}`);
       }
-    } catch (error) {
+    } catch {
       console.log(`📋 Generate API: No existing project.json, using default GitHub disabled`);
     }
     
     // Extract ALL real git data - NO HARDCODING
-    let repositoryData: any = {};
-    let branchesData: any[] = [];
+    let repositoryData: Record<string, unknown> = {};
+    const branchesData: unknown[] = [];
     
     try {
       console.log(`📋 Generate API: Extracting ALL real git data from ${projectPath}`);
@@ -97,7 +95,7 @@ export async function POST(
       
              // Get language stats from actual files
        const findFilesCommand = 'find . -type f -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" -o -name "*.java" -o -name "*.cpp" -o -name "*.c" -o -name "*.go" -o -name "*.rs" | grep -v node_modules | grep -v .git';
-       let languageStats: Record<string, number> = {};
+       const languageStats: Record<string, number> = {};
        try {
          const filesOutput = execSync(findFilesCommand, { 
            cwd: projectPath, 
@@ -114,7 +112,7 @@ export async function POST(
              }
            });
          }
-       } catch (e) {
+       } catch {
          console.warn('Could not get language stats, using empty');
        }
       
@@ -171,13 +169,13 @@ export async function POST(
                   linesRemoved += parseInt(removed) || 0;
                 });
               }
-            } catch (e) {
+            } catch {
               console.warn(`Could not get diff stats for branch ${branchName}`);
             }
             
             // Check if this is a conversation branch to add conversation metadata
             let conversationMetadata = null;
-            let commits: any[] = [];
+            let commits: unknown[] = [];
             let diffData = null;
             
             if (branchName.startsWith('conv-')) {
@@ -247,15 +245,15 @@ export async function POST(
     }
     
     // Create project data with the structure the API expects
-    const mainBranch = branchesData.find(b => b.isMainBranch) || branchesData[0];
+    const mainBranch = branchesData.find((b: unknown) => (b as { isMainBranch?: boolean }).isMainBranch) || branchesData[0];
     
     const projectData = {
       // Simple fields that API reads directly
-      commit_hash: mainBranch?.commitHash || 'unknown',
+      commit_hash: (mainBranch as { commitHash?: string })?.commitHash || 'unknown',
       branch: repositoryData.defaultBranch || 'main', 
-      author: mainBranch?.author || 'Unknown',
-      date: mainBranch?.timestamp ? new Date(mainBranch.timestamp).toISOString() : new Date().toISOString(),
-      message: mainBranch?.commitMessage || 'No commit message',
+      author: (mainBranch as { author?: string })?.author || 'Unknown',
+      date: (mainBranch as { timestamp?: number })?.timestamp ? new Date((mainBranch as { timestamp?: number }).timestamp!).toISOString() : new Date().toISOString(),
+      message: (mainBranch as { commitMessage?: string })?.commitMessage || 'No commit message',
       remote_url: null,
       is_dirty: false,
       
@@ -352,25 +350,26 @@ export async function POST(
 /**
  * Extract conversation data from conversation branches
  */
-async function extractConversationData(projectPath: string, branchesData: any[]): Promise<any[]> {
+async function extractConversationData(projectPath: string, branchesData: unknown[]): Promise<unknown[]> {
   try {
     console.log('🔍 Extracting conversation data from branches...');
-    const conversations: { [conversationId: string]: any } = {};
+    const conversations: { [conversationId: string]: unknown } = {};
     
     // Process conversation branches
-    branchesData.forEach(branch => {
-      if (branch.branchName.startsWith('conv-')) {
-        const conversationMatch = branch.branchName.match(/conv-([^-]+)-step-(\d+)/);
+    branchesData.forEach((branch: unknown) => {
+      const branchData = branch as { branchName?: string; timestamp?: number; commitHash?: string; commits?: unknown[] };
+      if (branchData.branchName?.startsWith('conv-')) {
+        const conversationMatch = branchData.branchName.match(/conv-([^-]+)-step-(\d+)/);
         if (conversationMatch) {
           const conversationId = conversationMatch[1];
           const stepNumber = parseInt(conversationMatch[2]);
           
-          console.log(`🔍 Found conversation branch: ${branch.branchName} (${conversationId}, step ${stepNumber})`);
+          console.log(`🔍 Found conversation branch: ${branchData.branchName} (${conversationId}, step ${stepNumber})`);
           
           if (!conversations[conversationId]) {
             conversations[conversationId] = {
               conversationId,
-              createdAt: branch.timestamp || Date.now(),
+              createdAt: branchData.timestamp || Date.now(),
               branches: [],
               currentBranch: null
             };
@@ -384,28 +383,28 @@ async function extractConversationData(projectPath: string, branchesData: any[])
           }
 
           // Add branch to conversation
-          conversations[conversationId].branches.push({
-            branchName: branch.branchName,
+          (conversations[conversationId] as { branches: unknown[] }).branches.push({
+            branchName: branchData.branchName,
             baseBranch: baseBranch, // ← Now correctly calculated!
-            startingHash: branch.commitHash,
+            startingHash: branchData.commitHash,
             interactionIndex: stepNumber,
-            createdAt: branch.timestamp || Date.now(),
-            commitHash: branch.commitHash,
-            commits: branch.commits || [], // Enhanced commit data
-            lastLLMMessage: branch.commits && branch.commits.length > 0 
-              ? branch.commits[branch.commits.length - 1].llmGeneratedMessage 
+            createdAt: branchData.timestamp || Date.now(),
+            commitHash: branchData.commitHash,
+            commits: branchData.commits || [], // Enhanced commit data
+            lastLLMMessage: branchData.commits && Array.isArray(branchData.commits) && branchData.commits.length > 0 
+              ? (branchData.commits[branchData.commits.length - 1] as { llmGeneratedMessage?: string })?.llmGeneratedMessage 
               : undefined
           });
 
-          console.log(`🔍 Set baseBranch for ${branch.branchName}: ${baseBranch}`);
+          console.log(`🔍 Set baseBranch for ${branchData.branchName}: ${baseBranch}`);
           
           // Set as current branch (latest step)
-          const currentStep = conversations[conversationId].currentBranch 
-            ? parseInt(conversations[conversationId].currentBranch.match(/step-(\d+)$/)?.[1] || '0')
+          const currentStep = (conversations[conversationId] as { currentBranch?: string })?.currentBranch 
+            ? parseInt((conversations[conversationId] as { currentBranch?: string }).currentBranch?.match(/step-(\d+)$/)?.[1] || '0')
             : 0;
           
           if (stepNumber > currentStep) {
-            conversations[conversationId].currentBranch = branch.branchName;
+            (conversations[conversationId] as { currentBranch?: string }).currentBranch = branchData.branchName;
           }
         }
       }
@@ -419,25 +418,5 @@ async function extractConversationData(projectPath: string, branchesData: any[])
   } catch (error) {
     console.error('❌ Error extracting conversation data:', error);
     return [];
-  }
-}
-
-/**
- * Find project directory by ID
- */
-async function findProjectPath(projectId: string): Promise<string | null> {
-  try {
-    const entries = fs.readdirSync(BASE_PROJECTS_DIR, { withFileTypes: true });
-    
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith(`${projectId}_`)) {
-        return path.join(BASE_PROJECTS_DIR, entry.name);
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Error finding project path:', error);
-    return null;
   }
 } 

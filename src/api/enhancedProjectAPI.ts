@@ -57,8 +57,8 @@ export class EnhancedProjectAPI {
 
   // Delegate base API methods
   async analyzeProject() { return this.baseAPI.analyzeProject(); }
-  async switchToBranch(branchName: string, createBackup: boolean = true) { return this.baseAPI.switchToBranch(branchName, createBackup); }
-  async createCheckpoint(description?: string, branchType: 'feature' | 'bugfix' | 'experiment' | 'checkpoint' = 'checkpoint', force: boolean = false) { return this.baseAPI.createCheckpoint(description, branchType, force); }
+  async switchToBranch() { return this.baseAPI.switchToBranch(); }
+  async createCheckpoint() { return this.baseAPI.createCheckpoint(); }
   async listCheckpoints() { return this.baseAPI.listCheckpoints(); }
   async getProjectHealth() { return this.baseAPI.getProjectHealth(); }
 
@@ -71,8 +71,7 @@ export class EnhancedProjectAPI {
     },
     serverId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
-  ): Promise<APIResponse<any>> {
-    const startTime = Date.now();
+  ): Promise<APIResponse<unknown>> {
     const requestId = Math.random().toString(36).substring(7);
     
     try {
@@ -333,7 +332,7 @@ export class EnhancedProjectAPI {
   /**
    * 📊 Get comprehensive project status with v1.1 features
    */
-  async getEnhancedProjectStatus(): Promise<APIResponse<any>> {
+  async getEnhancedProjectStatus(): Promise<APIResponse<unknown>> {
     try {
       // Get base project health from parent class
       const baseHealth = await this.getProjectHealth();
@@ -345,7 +344,7 @@ export class EnhancedProjectAPI {
       ]);
 
       const enhancedStatus = {
-        ...baseHealth.data,
+        ...(baseHealth.data || {}),
         snapshotConfig: this.snapshotConfig,
         recentSnapshots: recentSnapshots.data || [],
         recentBranches: recentBranches.data || [],
@@ -378,8 +377,7 @@ export class EnhancedProjectAPI {
    * 🔄 Auto-snapshot trigger for significant changes
    */
   async triggerAutoSnapshotIfNeeded(
-    operation: string,
-    changeMetadata?: { filesChanged?: number; linesChanged?: number }
+    operation: string
   ): Promise<GitSnapshot | null> {
     try {
       // Only create auto-snapshots for significant operations

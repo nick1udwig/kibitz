@@ -11,17 +11,17 @@ import { getProjectsBaseDir } from './pathConfig';
 /**
  * Cache to prevent multiple simultaneous directory creation attempts
  */
-const projectCreationCache = new Map<string, Promise<string>>();
+// const projectCreationCache = new Map<string, Promise<string>>();
 
 /**
  * Cache timeout tracking
  */
-const cacheTimeouts = new Map<string, NodeJS.Timeout>();
+// const cacheTimeouts = new Map<string, NodeJS.Timeout>();
 
 /**
  * Maximum time to wait for directory creation (30 seconds)
  */
-const DIRECTORY_CREATION_TIMEOUT = 30000;
+// const DIRECTORY_CREATION_TIMEOUT = 30000;
 
 /**
  * Dynamically detect the current working directory
@@ -75,8 +75,12 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
   // If custom path is provided (for cloned repos or UI override), normalize and use that
   if (cleanCustomPath && cleanCustomPath !== 'undefined' && cleanCustomPath.trim() !== '') {
     let normalizedCustom = cleanCustomPath.trim();
-    // Strip masked bullets and trailing slashes
-    normalizedCustom = normalizedCustom.replace(/[•\u2022]+/g, '').replace(/\/+$/g, '');
+    // Strip masked bullets, zero‑width/control chars, and trailing slashes
+    normalizedCustom = normalizedCustom
+      .replace(/[•\u2022]+/g, '')
+      .replace(/[\u200B\u200C\u200D\u2060\uFEFF\u00A0\u202F]+/g, '')
+      .replace(/[\u0000-\u001F\u007F]+/g, '')
+      .replace(/\/+$/g, '');
     // If it looks like a macOS path missing leading slash (e.g., "Users/..."), add it
     if (!normalizedCustom.startsWith('/') && /^Users\//.test(normalizedCustom)) {
       normalizedCustom = '/' + normalizedCustom;
@@ -92,19 +96,9 @@ export const getProjectPath = (projectId: string, projectName?: string, customPa
   }
   
   // Create project-specific subdirectories in the base projects directory  
-  // Prefer server-only resolution to include persisted UI override when available
-  let baseDir = getCurrentWorkingDirectory();
-  if (typeof process !== 'undefined' && (process as any).versions?.node) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const srv = require('./server/pathConfigServer') as typeof import('./server/pathConfigServer');
-      if (srv && typeof srv.getServerProjectsBaseDir === 'function') {
-        baseDir = srv.getServerProjectsBaseDir();
-      }
-    } catch {
-      // fall back to client-safe base dir
-    }
-  }
+  // Use client-safe base directory resolution
+  const baseDir = getCurrentWorkingDirectory();
+  
   // Extra hardening: strip invisible/zero-width/control characters from base dir
   const cleanBaseDir = String(baseDir)
     .replace(/[•\u2022]+/g, '')
@@ -182,7 +176,10 @@ export const detectClonedRepository = async (
 
     // Check for remote origin (indicates cloned repo)
     const remoteResult = await executeTool(mcpServerId, 'BashCommand', {
-      command: `cd "${directoryPath}" && git remote get-url origin 2>/dev/null || echo "no_remote"`,
+      action_json: {
+        command: `cd "${directoryPath}" && git remote get-url origin 2>/dev/null || echo "no_remote"`,
+        type: 'command'
+      },
       thread_id: 'git-operations'
     });
 
@@ -190,7 +187,10 @@ export const detectClonedRepository = async (
     
     // Get default branch
     const branchResult = await executeTool(mcpServerId, 'BashCommand', {
-      command: `cd "${directoryPath}" && git branch --show-current 2>/dev/null || echo "main"`,
+      action_json: {
+        command: `cd "${directoryPath}" && git branch --show-current 2>/dev/null || echo "main"`,
+        type: 'command'
+      },
       thread_id: 'git-operations'
     });
 
@@ -223,7 +223,10 @@ export const createProjectDirectory = async (
     console.log(`🔧 Creating project directory: ${projectPath}`);
     
     const result = await executeTool(mcpServerId, 'BashCommand', {
-      command: `mkdir -p "${projectPath}" && echo "directory_created"`,
+      action_json: {
+        command: `mkdir -p "${projectPath}" && echo "directory_created"`,
+        type: 'command'
+      },
       thread_id: 'git-operations'
     });
 
@@ -254,7 +257,8 @@ export const projectDirectoryExists = async (
     
     const checkResult = await executeTool(mcpServerId, 'BashCommand', {
       action_json: {
-        command: `test -d "${projectPath}" && echo "exists" || echo "not_exists"`
+        command: `test -d "${projectPath}" && echo "exists" || echo "not_exists"`,
+        type: 'command'
       },
       thread_id: 'git-operations'
     });
@@ -286,7 +290,10 @@ export const isGitRepository = async (
   try {
     // Check if this is a Git repository with proper thread_id
     const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-      command: `test -d "${projectPath}/.git" && echo "is_git_repo" || echo "not_git_repo"`,
+      action_json: {
+        command: `test -d "${projectPath}/.git" && echo "is_git_repo" || echo "not_git_repo"`,
+        type: 'command'
+      },
       thread_id: 'git-operations'
     });
 
@@ -334,14 +341,12 @@ export const ensureProjectDirectory = async (
     throw new Error(`Project has invalid name: "${project.name}"`);
   }
   
-  const projectPath = getProjectPath(project.id, project.name, project.customPath);
+  const projectPath = await getProjectPath(project.id, project.name, project.customPath);
   console.log(`🔧 ensureProjectDirectory: Generated project path: ${projectPath}`);
   
   // 🚨 CRITICAL: Validate project path is absolute and complete.
   // Use server base dir when available for strict validation.
-  const baseDir = (typeof process !== 'undefined' && (process as any).versions?.node)
-    ? (() => { try { const srv = require('./server/pathConfigServer'); return srv.getServerProjectsBaseDir?.() || getProjectsBaseDir(); } catch { return getProjectsBaseDir(); } })()
-    : getProjectsBaseDir();
+  const baseDir = getProjectsBaseDir();  // Simplified for now
   // If a customPath was provided, only require an absolute path
   const hasCustom = !!(project.customPath && String(project.customPath).trim());
   const pathIsAbsolute = projectPath.startsWith('/');
@@ -356,9 +361,9 @@ export const ensureProjectDirectory = async (
   console.log(`🔧 Preparing MCP environment for project directory: ${projectPath}`);
   // Initialize at most once per (server, projectPath)
   const initKey = `${mcpServerId}|${projectPath}`;
-  const g: any = globalThis as any;
+  const g: Record<string, unknown> = globalThis as Record<string, unknown>;
   if (!g.__kibitzInitCache) g.__kibitzInitCache = new Set<string>();
-  if (!g.__kibitzInitCache.has(initKey)) {
+  if (!(g.__kibitzInitCache as Set<string>).has(initKey)) {
     try {
       const initArgs = {
         type: 'first_call',
@@ -383,7 +388,7 @@ export const ensureProjectDirectory = async (
         // Do not throw here; avoid blocking app due to transient init issues
       }
     } finally {
-      g.__kibitzInitCache.add(initKey);
+      (g.__kibitzInitCache as Set<string>).add(initKey);
     }
   }
 

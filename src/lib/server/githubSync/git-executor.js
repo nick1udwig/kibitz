@@ -1,4 +1,4 @@
-import path from 'path';
+// import path from 'path';
 
 /**
  * GitExecutor class for executing git and GitHub CLI commands via MCP server
@@ -15,7 +15,7 @@ export class GitExecutor {
   }
 
   async executeGitCommand(command, args = [], options = {}) {
-    const { cwd = process.cwd(), timeout = 30000, ignoreErrors = false } = options;
+    const { cwd = process.cwd(), ignoreErrors = false } = options;
     const fullCommand = ['git', command, ...args].join(' ');
     this.logger.debug(`Executing git command: ${fullCommand} in ${cwd}`);
     try {
@@ -47,7 +47,7 @@ export class GitExecutor {
   }
 
   async executeGhCommand(args = [], options = {}) {
-    const { cwd = process.cwd(), timeout = 30000, ignoreErrors = false } = options;
+    const { cwd = process.cwd(), ignoreErrors = false } = options;
     const fullCommand = ['gh', ...args].join(' ');
     this.logger.debug(`Executing gh command: ${fullCommand} in ${cwd}`);
     try {

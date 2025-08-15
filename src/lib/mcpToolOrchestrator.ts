@@ -15,7 +15,7 @@
 import { 
   StorageCoordinator, 
   initializeStorageCoordinator,
-  saveBranchToAllSystems,
+  // saveBranchToAllSystems,
   BranchInfo
 } from './storageCoordinator';
 import { 
@@ -84,7 +84,7 @@ export interface ExecutionContext {
 export interface ExecutionStep {
   stepId: string;
   toolName: string;
-  args: any;
+  args: Record<string, unknown>;
   startTime: Date;
   endTime?: Date;
   result?: string;
@@ -95,7 +95,7 @@ export interface ExecutionStep {
 export interface QueuedCommand {
   commandId: string;
   toolName: string;
-  args: any;
+  args: Record<string, unknown>;
   priority: number;
   dependencies?: string[];
   retryCount: number;
@@ -395,7 +395,7 @@ export class MCPToolOrchestrator {
   private async queueCommand(
     contextId: string,
     toolName: string,
-    args: any
+    args: Record<string, unknown>
   ): Promise<string> {
     const commandId = generateWorkspaceId();
     
@@ -413,7 +413,7 @@ export class MCPToolOrchestrator {
     console.log(`⏳ Queued command ${commandId} for context ${contextId}`);
     
     // Return a promise that resolves when the command is executed
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const checkQueue = () => {
         const executed = this.commandQueue.find(cmd => 
           cmd.commandId === commandId && cmd.retryCount === -1
@@ -498,7 +498,7 @@ export class MCPToolOrchestrator {
         } else {
           console.log(`ℹ️ MCP Orchestrator: Skipping auto-commit (changed ${filesChanged.length} < min ${minFiles})`);
         }
-      } catch (_err) {
+      } catch {
         // Fallback to legacy behavior if store not available
         if (filesChanged.length >= 2) {
           await this.createAutoCommit(context, filesChanged);
@@ -663,7 +663,7 @@ export class MCPToolOrchestrator {
   private async executeToolDirectly(
     serverId: string,
     toolName: string,
-    args: Record<string, unknown>
+    // _args: Record<string, unknown>
   ): Promise<string> {
     // This would use the actual executeTool function
     // For now, return a mock response

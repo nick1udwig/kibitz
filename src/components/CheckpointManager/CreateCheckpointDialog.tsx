@@ -3,7 +3,6 @@ import { useCheckpointStore } from '../../stores/checkpointStore';
 import { useStore } from '../../stores/rootStore';
 import { X } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Project } from '../../components/LlmChat/context/types';
 
 interface CreateCheckpointDialogProps {
   projectId: string;

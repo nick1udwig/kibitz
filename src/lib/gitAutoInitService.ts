@@ -8,7 +8,7 @@
  * Optimized for production with dynamic path detection.
  */
 import { executeGitCommand } from './versionControl/git';
-import { getProjectPath } from './projectPathService';
+// import { getProjectPath } from './projectPathService';
 
 // 🚀 PREVENT REPETITIVE OPERATIONS - Cache initialization results
 const initializationCache = new Map<string, Promise<{ success: boolean; message?: string }>>();

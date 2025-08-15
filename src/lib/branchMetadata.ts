@@ -222,7 +222,7 @@ export class BranchMetadataManager {
       
       // Convert date strings back to Date objects
       history.lastUpdated = new Date(history.lastUpdated);
-      history.branches = history.branches.map((branch: any) => ({
+      history.branches = history.branches.map((branch: { timestamp: string | number | Date }) => ({
         ...branch,
         timestamp: new Date(branch.timestamp)
       }));

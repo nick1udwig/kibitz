@@ -10,7 +10,7 @@ import { useStore } from './rootStore';
 import { LocalPersistenceService, CheckpointMetadata } from '../lib/localPersistenceService';
 import { ensureProjectDirectory } from '../lib/projectPathService';
 import { createCommit, autoInitGitIfNeeded } from '../lib/gitService';
-import { Project } from '../components/LlmChat/context/types';
+// import { Project } from '../components/LlmChat/context/types';
 
 /**
  * Enhanced checkpoint configuration
@@ -415,7 +415,7 @@ export const useEnhancedCheckpointStore = create<EnhancedCheckpointState>((set, 
   },
   
   // Rebuild checkpoints from Git history
-  rebuildFromGit: async (projectId: string, force: boolean = false): Promise<{ success: boolean; error?: string }> => {
+  rebuildFromGit: async (projectId: string, /* _force: boolean = false */): Promise<{ success: boolean; error?: string }> => {
     const rootStore = useStore.getState();
     const project = rootStore.projects.find(p => p.id === projectId);
     

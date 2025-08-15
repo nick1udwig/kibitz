@@ -26,18 +26,18 @@ import {
 import { 
   StorageCoordinator,
   BranchInfo,
-  ConversationInfo,
+  // ConversationInfo,
   getStorageStatistics 
 } from './storageCoordinator';
 
 import { 
   EnhancedBranchPersistence,
   SessionInfo,
-  BranchState,
+  // BranchState,
   getBranchPersistenceStatistics
 } from './enhancedBranchPersistence';
 
-import { getProjectPath } from './projectPathService';
+// import { getProjectPath } from './projectPathService';
 
 export interface WorkflowSession {
   sessionId: string;

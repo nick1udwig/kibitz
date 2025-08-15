@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import path from 'path';
-import { Checkpoint, ProjectSnapshot, ProjectFile } from '../types/Checkpoint';
+import { Checkpoint, ProjectFile } from '../types/Checkpoint';
 import { Project, ConversationBrief } from '../components/LlmChat/context/types';
 import { BranchInfo } from './branchService';
 
@@ -240,7 +240,7 @@ export class KibitzStorage {
       SELECT * FROM projects WHERE id = ?
     `);
     
-    const row = stmt.get(projectId) as any;
+    const row = stmt.get(projectId) as Record<string, unknown>;
     if (!row) return null;
 
     // Get conversations for this project
@@ -266,7 +266,7 @@ export class KibitzStorage {
       SELECT * FROM projects ORDER BY order_index, created_at DESC
     `);
     
-    const rows = stmt.all() as any[];
+    const rows = stmt.all() as Record<string, unknown>[];
     return rows.map(row => {
       const conversations = this.getConversations(row.id);
       
@@ -387,7 +387,7 @@ export class KibitzStorage {
       LIMIT ?
     `);
     
-    const rows = stmt.all(projectId, limit) as any[];
+    const rows = stmt.all(projectId, limit) as Record<string, unknown>[];
     
     return rows.map(row => {
       const project = this.getProject(projectId);
@@ -413,7 +413,7 @@ export class KibitzStorage {
    */
   public getCheckpoint(checkpointId: string): Checkpoint | null {
     const stmt = this.db.prepare(`SELECT * FROM checkpoints WHERE id = ?`);
-    const row = stmt.get(checkpointId) as any;
+    const row = stmt.get(checkpointId) as Record<string, unknown>;
     
     if (!row) return null;
 
@@ -444,7 +444,7 @@ export class KibitzStorage {
       ORDER BY file_path
     `);
     
-    const rows = stmt.all(checkpointId) as any[];
+    const rows = stmt.all(checkpointId) as Record<string, unknown>[];
     
     return rows.map(row => ({
       path: row.file_path,
@@ -514,7 +514,7 @@ export class KibitzStorage {
       ORDER BY created_at DESC
     `);
     
-    const rows = stmt.all(projectId) as any[];
+    const rows = stmt.all(projectId) as Record<string, unknown>[];
     
     return rows.map(row => ({
       name: row.name,
@@ -581,7 +581,7 @@ export class KibitzStorage {
       ORDER BY last_updated DESC
     `);
     
-    const rows = stmt.all(projectId) as any[];
+    const rows = stmt.all(projectId) as Record<string, unknown>[];
     
     return rows.map(row => ({
       id: row.id,
@@ -595,7 +595,7 @@ export class KibitzStorage {
   /**
    * Update conversation messages
    */
-  public updateConversation(conversationId: string, messages: any[], nodeId?: string): void {
+  public updateConversation(conversationId: string, messages: Record<string, unknown>[], nodeId?: string): void {
     const stmt = this.db.prepare(`
       UPDATE conversations 
       SET messages = ?, last_updated = ?
@@ -640,9 +640,9 @@ export class KibitzStorage {
   /**
    * Get sync operations since timestamp (for peer coordination)
    */
-  public getSyncOperationsSince(timestamp: number, nodeId?: string): any[] {
+  public getSyncOperationsSince(timestamp: number, nodeId?: string): Record<string, unknown>[] {
     let stmt;
-    let params: any[];
+    let params: Record<string, unknown>[];
     
     if (nodeId) {
       // Exclude operations from the requesting node to avoid echo
@@ -663,7 +663,7 @@ export class KibitzStorage {
       params = [timestamp];
     }
     
-    return stmt.all(...params) as any[];
+    return stmt.all(...params) as Record<string, unknown>[];
   }
 
   /**
@@ -685,7 +685,7 @@ export class KibitzStorage {
   /**
    * Get comprehensive database statistics
    */
-  public getStats(): any {
+  public getStats(): Record<string, unknown> {
     const stats = this.db.prepare(`
       SELECT 
         (SELECT COUNT(*) FROM projects) as project_count,
@@ -708,7 +708,7 @@ export class KibitzStorage {
    * Get database file size
    */
   private getDatabaseSize(): number {
-    const result = this.db.prepare(`SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()`).get() as any;
+    const result = this.db.prepare(`SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()`).get() as Record<string, unknown>;
     return result.size;
   }
 

@@ -6,7 +6,7 @@ import { Message, MessageContent } from '../types';
 import { useStore } from '@/stores/rootStore';
 import { wakeLock } from '@/lib/wakeLock';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '../types/genericMessage';
-import { useAutoCommit, detectToolSuccess, detectFileChanges, detectBuildSuccess, detectTestSuccess } from './useAutoCommit';
+import { useAutoCommit, detectToolSuccess, detectFileChanges } from './useAutoCommit';
 import { useAutoCommitStore } from '../../../stores/autoCommitStore';
 import { getProjectPath } from '../../../lib/projectPathService';
 import { useDelayedJSONGeneration } from './useDelayedJSONGeneration';
@@ -32,9 +32,6 @@ export const useMessageSender = () => {
 
   // Add auto-commit functionality
   const { 
-    onToolExecution, 
-    onBuildSuccess, 
-    onTestSuccess, 
     trackFileChange 
   } = useAutoCommit();
 
@@ -48,7 +45,7 @@ export const useMessageSender = () => {
   const [lastActivityTime, setLastActivityTime] = useState(Date.now());
 
   // Track files created in this conversation (analytics only; branching handled elsewhere)
-  const trackConversationFile = useCallback((filename: string) => {
+  const trackConversationFile = useCallback(() => {
     setConversationFileCount(prev => prev + 1);
     setLastActivityTime(Date.now());
     console.log(`🌿 Conversation file tracker: ${conversationFileCount + 1} files created in this conversation`);
@@ -75,11 +72,11 @@ export const useMessageSender = () => {
 
   // 🌿 DEBUG: Expose manual branch creation to window for testing
   useEffect(() => {
-    (window as any).createConversationBranch = manualCreateBranch;
-    (window as any).conversationFileCount = conversationFileCount;
+    (window as { createConversationBranch?: () => void; conversationFileCount?: number }).createConversationBranch = manualCreateBranch;
+    (window as { createConversationBranch?: () => void; conversationFileCount?: number }).conversationFileCount = conversationFileCount;
     return () => {
-      delete (window as any).createConversationBranch;
-      delete (window as any).conversationFileCount;
+      delete (window as { createConversationBranch?: () => void; conversationFileCount?: number }).createConversationBranch;
+      delete (window as { createConversationBranch?: () => void; conversationFileCount?: number }).conversationFileCount;
     };
   }, [manualCreateBranch, conversationFileCount]);
 
@@ -470,7 +467,7 @@ Format: Only output the title, no quotes or explanation`
                       console.log(`📁 Tracking ${changedFiles.length} changed files for end-of-turn commit`);
                       changedFiles.forEach(filePath => {
                         trackFileChange(filePath);
-                        trackConversationFile(filePath);
+                        trackConversationFile();
                       });
                     }
                   }
@@ -685,7 +682,7 @@ Format: Only output the title, no quotes or explanation`
                     console.log(`📁 Tracking ${changedFiles.length} changed files for end-of-turn commit`);
                     changedFiles.forEach(filePath => {
                       trackFileChange(filePath);
-                      trackConversationFile(filePath);
+                      trackConversationFile();
                     });
                   }
                 }

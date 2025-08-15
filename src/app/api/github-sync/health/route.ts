@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 import { resolveServerAuthFromAnySource } from '../../../../lib/server/configVault';
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     const auth = resolveServerAuthFromAnySource();
     const payload = {
@@ -14,7 +14,7 @@ export async function GET(_request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
     return NextResponse.json(payload);
-  } catch (error) {
+  } catch {
     return NextResponse.json({ success: false, error: 'health-check-failed' }, { status: 500 });
   }
 }

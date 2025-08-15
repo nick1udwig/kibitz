@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Conditional import to avoid loading SQLite during build
-const getStorage = () => {
+const getStorage = async () => {
   if (process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE === 'phase-production-build') {
     throw new Error('SQLite not available during build time');
   }
-  const { ensureStorage } = require('../../../lib/sqliteStorage');
+  const { ensureStorage } = await import('../../../lib/sqliteStorage');
   return ensureStorage();
 };
 
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     // Try to get storage, fall back to adapter if SQLite fails
     let storage;
     try {
-      storage = getStorage();
+      storage = await getStorage();
     } catch (sqliteError) {
       console.warn('SQLite not available, using fallback:', sqliteError);
       // Use basic info for fallback
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
     // Try to get storage, fall back to adapter if SQLite fails
     let storage;
     try {
-      storage = getStorage();
+      storage = await getStorage();
     } catch (sqliteError) {
       console.warn('SQLite not available for POST operation:', sqliteError);
       
@@ -213,7 +213,6 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const operation = searchParams.get('operation');
     const projectId = searchParams.get('projectId');
-    const checkpointId = searchParams.get('checkpointId');
     const nodeId = searchParams.get('nodeId');
     
     // Skip database operations during build time
@@ -227,7 +226,7 @@ export async function DELETE(request: NextRequest) {
     // Try to get storage, fall back to adapter if SQLite fails
     let storage;
     try {
-      storage = getStorage();
+      storage = await getStorage();
     } catch (sqliteError) {
       console.warn('SQLite not available for DELETE operation:', sqliteError);
       return NextResponse.json({ 

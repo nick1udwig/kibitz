@@ -70,7 +70,7 @@ export interface ProjectApiData {
   recentActivity: Array<{
     type: 'commit' | 'branch_create' | 'conversation_start' | 'conversation_end';
     timestamp: number;
-    details: any;
+    details: Record<string, unknown>;
   }>;
   
   // Statistics (like GitHub stats API)
@@ -194,7 +194,7 @@ export class ProjectDataExtractor {
     if (cached) return cached;
 
     // Always acquire the real thread id via Initialize exactly once per key
-    const g: any = globalThis as any;
+    const g: Record<string, unknown> = globalThis as Record<string, unknown>;
     if (ProjectDataExtractor.initGuard.has(key)) {
       // Another call is initializing; provide a stable fallback until cached
       return 'git-operations';
@@ -493,7 +493,7 @@ export class ProjectDataExtractor {
    */
   private async saveJsonFile(
     filePath: string,
-    data: any,
+    data: Record<string, unknown>,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
     mcpServerId: string,
     threadId: string
@@ -503,12 +503,12 @@ export class ProjectDataExtractor {
     try {
       // Prefer BashCommand here for maximum compatibility with MCP servers that
       // validate FileWriteOrEdit args strictly (observed: "Additional properties 'content'")
-      const escaped = jsonContent
-        .replace(/\\/g, '\\\\')
-        .replace(/\n/g, '\\n')
-        .replace(/\r/g, '')
-        .replace(/\"/g, '\\\"')
-        .replace(/`/g, '\\`');
+      // const escaped = jsonContent
+      //   .replace(/\\/g, '\\\\')
+      //   .replace(/\n/g, '\\n')
+      //   .replace(/\r/g, '')
+      //   .replace(/\"/g, '\\\"')
+      //   .replace(/`/g, '\\`');
       await executeTool(mcpServerId, 'BashCommand', {
         action_json: {
           command: `cat > "${filePath}" <<'JSON'\n${jsonContent}\nJSON`,
@@ -516,7 +516,7 @@ export class ProjectDataExtractor {
         },
         thread_id: threadId
       });
-    } catch (_e1) {
+    } catch {
       try {
         // Secondary fallback: echo with escaped content
         const escapedContent = jsonContent.replace(/"/g, '\\"').replace(/\n/g, '\\n');
@@ -527,7 +527,7 @@ export class ProjectDataExtractor {
           },
           thread_id: threadId
         });
-      } catch (_e2) {
+      } catch {
         // Final fallback: attempt FileWriteOrEdit minimal schema if supported
         try {
           await executeTool(mcpServerId, 'FileWriteOrEdit', {
@@ -546,8 +546,8 @@ export class ProjectDataExtractor {
   /**
    * Build activity timeline
    */
-  private buildActivityTimeline(gitData: any, conversationData: ConversationSnapshot[]): any[] {
-    const activities: any[] = [];
+  private buildActivityTimeline(gitData: Record<string, unknown>, /* _conversationData: ConversationSnapshot[] */): Record<string, unknown>[] {
+    const activities: Record<string, unknown>[] = [];
     
     // Add commit activities
     gitData.branches.forEach((branch: BranchSnapshot) => {
@@ -570,7 +570,7 @@ export class ProjectDataExtractor {
   /**
    * Calculate project statistics
    */
-  private calculateStatistics(gitData: any, conversationData: ConversationSnapshot[]): any {
+  private calculateStatistics(gitData: Record<string, unknown>, conversationData: ConversationSnapshot[]): Record<string, unknown> {
     return {
       commitsPerDay: {},
       branchesPerConversation: conversationData.length > 0 ? gitData.branches.length / conversationData.length : 0,

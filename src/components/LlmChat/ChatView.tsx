@@ -18,16 +18,11 @@ import { useCommitTracking } from './hooks/useCommitTracking';
 import { CommitDisplay } from './components/CommitDisplay';
 import { FileChangeCounter } from './components/FileChangeCounter';
 import GitSessionService from '@/lib/gitSessionService';
-import { ensureProjectDirectory } from '../../lib/projectPathService';
 import { autoInitializeGitForProject } from '../../lib/gitAutoInitService';
 import { getProjectPath } from '../../lib/projectPathService';
-import { useAutoCommit } from './hooks/useAutoCommit';
-import { useConversationGitHandler } from './hooks/useConversationGitHandler';
-import { ConversationMetadataPanel } from './components/ConversationMetadataPanel';
-import { useConversationMetadata } from './hooks/useConversationMetadata';
 
-// Default message window size if not configured
-const DEFAULT_MESSAGE_WINDOW = 30;
+import { useConversationGitHandler } from './hooks/useConversationGitHandler';
+import { useConversationMetadata } from './hooks/useConversationMetadata';
 
 export interface ChatViewRef {
   focus: () => void;
@@ -47,7 +42,6 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
     projects,
     activeProjectId,
     activeConversationId,
-    updateProjectSettings,
     servers,
     executeTool
   } = useStore();
@@ -82,24 +76,20 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   useFocusControl();
   const { isLoading, error: sendError, handleSendMessage, cancelCurrentCall, clearError: clearSendError } = useMessageSender();
   const { error, showError, clearError } = useErrorDisplay();
-  const { getConversationCommits, hasAutoCommit, manuallyAssociateLastCommit, lastCommitHash } = useCommitTracking();
+  const { getConversationCommits, hasAutoCommit, manuallyAssociateLastCommit } = useCommitTracking();
   const { scheduleGitOperations, triggerImmediateGitOperations } = useConversationGitHandler();
-  
-  // 🚨 CRITICAL FIX: Add auto-commit hook
-  const { triggerAutoCommit } = useAutoCommit();
   
   // 🔄 NEW: Conversation metadata tracking
   const { 
     startConversation, 
-    incrementMessageCount, 
-    completeConversation,
+    incrementMessageCount,
     conversationMetadata 
   } = useConversationMetadata();
 
   // Listen for auto-commit events to associate commits with messages
   useEffect(() => {
     const handleAutoCommit = (event: CustomEvent) => {
-      const { commitHash, projectId, trigger } = event.detail;
+      const { projectId } = event.detail;
       console.log('🔗 ChatView: Auto-commit event received:', event.detail);
       
       // Only handle commits for the current project
@@ -127,10 +117,10 @@ const ChatViewComponent = React.forwardRef<ChatViewRef>((props, ref) => {
   useEffect(() => {
     const key = activeProject ? `${activeProject.id}` : '';
     // Avoid re-running initialization multiple times during re-renders
-    const w: any = window as any;
+    const w = window as { __kibitzChatInit?: Set<string> };
     if (!activeProject || servers.length === 0) return;
     if (!w.__kibitzChatInit) w.__kibitzChatInit = new Set<string>();
-    if (w.__kibitzChatInit.has(key)) {
+    if (w.__kibitzChatInit!.has(key)) {
       // Already initialized; just ensure projectPath is set
       const pp = getProjectPath(activeProject.id, activeProject.name);
       setProjectPath(pp);

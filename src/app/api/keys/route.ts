@@ -20,7 +20,7 @@ try {
   }
 } catch {}
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Never return raw secrets. Return shape with masked indicators only.
     const masked: Record<string, string> = {};
@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
       masked[k] = `••••••••${tail}`;
     }
     return NextResponse.json({ keys: masked, source: 'memory' });
-  } catch (error) {
-    console.error('Error retrieving API keys:', error);
+  } catch {
+    console.error('Error retrieving API keys');
     return NextResponse.json({ error: 'Failed to retrieve API keys' }, { status: 500 });
   }
 }
@@ -77,7 +77,7 @@ export async function GET_CONFIG() {
       updatedAt: cfg.updatedAt || ''
     };
     return NextResponse.json({ success: true, config: masked });
-  } catch (e) {
+  } catch {
     return NextResponse.json({ success: false }, { status: 500 });
   }
 }

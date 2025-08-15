@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { CheckpointList } from './CheckpointList';
 import { CreateCheckpointDialog } from './CreateCheckpointDialog';
-import { AutoCommitSettings } from './AutoCommitSettings';
 import { useStore } from '../../stores/rootStore';
 import { useCheckpointStore } from '../../stores/checkpointStore';
 import { useAutoCommitStore } from '../../stores/autoCommitStore';
 import { useEnhancedCheckpointStore } from '../../stores/enhancedCheckpointStore';
 import { useBranchStore } from '../../stores/branchStore';
 import { Button } from '../ui/button';
-import { CheckCircle, GitBranch, GitCommit, RotateCcw, Settings, Zap } from 'lucide-react';
+import { CheckCircle, GitBranch, GitCommit, RotateCcw, Settings } from 'lucide-react';
 import { Project } from '../../components/LlmChat/context/types';
 import { ensureProjectDirectory, getGitHubRepoName } from '../../lib/projectPathService';
 import { connectToGitHubRemote } from '../../lib/gitService';
@@ -19,7 +18,6 @@ interface CheckpointManagerProps {
 
 export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showAutoCommitSettings, setShowAutoCommitSettings] = useState(false);
   const [gitCommandOutput, setGitCommandOutput] = useState<string | null>(null);
   const [isExecutingGitCommand, setIsExecutingGitCommand] = useState(false);
   
@@ -27,7 +25,6 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
     initializeGitRepository, 
     createGitHubRepo, 
     createGitCommit,
-    createManualCheckpoint,
     isLoading: isCheckpointLoading
   } = useCheckpointStore();
 
@@ -39,7 +36,6 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
     isProcessing: isPersistentProcessing,
     createProjectCheckpoint,
     loadProjectCheckpoints,
-    revertToCheckpoint,
     initializeProjectPersistence,
     rebuildFromGit
   } = useEnhancedCheckpointStore();
@@ -132,7 +128,7 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
     };
     
     autoInitializeAndLoad();
-  }, [projectId, project?.name, activeMcpServers.length, listProjectBranches]);
+  }, [projectId, project?.name, activeMcpServers.length, listProjectBranches, initializeProjectPersistence, loadProjectCheckpoints, persistentCheckpoints, project, rebuildFromGit]);
 
   // Auto-refresh branches when commits change (throttled)
   useEffect(() => {
@@ -163,7 +159,7 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
     if (autoCommitConfig.enabled && lastPushTimestamp) {
       refreshBranches();
     }
-  }, [lastPushTimestamp, projectId, project?.name, autoCommitConfig.enabled, listProjectBranches]);
+  }, [lastPushTimestamp, projectId, project?.name, autoCommitConfig.enabled, listProjectBranches, activeMcpServers.length, project]);
   
   // Handler for rollback
   const handleRollback = (updatedProject: Project) => {
@@ -537,20 +533,7 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
             Create Checkpoint
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowAutoCommitSettings(true)}
-            disabled={isExecutingGitCommand || isCheckpointLoading}
-            className={autoCommitConfig.enabled ? 'bg-green-50 border-green-300' : ''}
-          >
-            {autoCommitConfig.enabled ? (
-              <Zap className="mr-1 h-4 w-4 text-green-600" />
-            ) : (
-              <Settings className="mr-1 h-4 w-4" />
-            )}
-            Auto-Commit {autoCommitConfig.enabled ? 'ON' : 'OFF'}
-          </Button>
+
         </div>
         
         {/* Status Area */}
@@ -635,10 +618,7 @@ export const CheckpointManager: React.FC<CheckpointManagerProps> = ({ projectId 
         onSuccess={() => setGitCommandOutput("Checkpoint created successfully!")}
       />
 
-      <AutoCommitSettings
-        isOpen={showAutoCommitSettings}
-        onClose={() => setShowAutoCommitSettings(false)}
-      />
+      {/* Removed AutoCommitSettings component */}
     </div>
   );
 }; 

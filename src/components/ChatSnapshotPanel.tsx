@@ -11,8 +11,8 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, GitBranch, FileText, ArrowLeft, Cloud, CloudOff, AlertCircle } from 'lucide-react';
 import { Project } from './LlmChat/context/types';
-import { useSnapshotStore, useRecentSnapshots, useRecentBranches, useSnapshotOperations } from '../stores/snapshotStore';
-import { GitSnapshot, BranchInfo } from '../lib/gitSnapshotService';
+import { useSnapshotStore, useSnapshotOperations } from '../stores/snapshotStore';
+import { GitSnapshot } from '../lib/gitSnapshotService';
 import { getFastBranches, FastBranchInfo } from '../lib/fastBranchService';
 import { format } from 'date-fns';
 
@@ -31,7 +31,7 @@ export function ChatSnapshotPanel({
   onSnapshotReverted,
   className = ""
 }: ChatSnapshotPanelProps) {
-  const { snapshots, loadSnapshots, isLoading: snapshotsLoading } = useRecentSnapshots(project.id);
+  const { snapshots, loadSnapshots, isLoading: snapshotsLoading } = useSnapshotStore();
   const { revertToSnapshot, isLoading: reverting, lastOperation } = useSnapshotOperations();
   
   const [selectedSnapshot, setSelectedSnapshot] = useState<GitSnapshot | null>(null);
@@ -62,7 +62,7 @@ export function ChatSnapshotPanel({
     };
 
     loadData();
-  }, [project.id, projectPath, serverId, loadSnapshots]);
+  }, [project.id, projectPath, serverId, executeTool, loadSnapshots]);
 
   const handleRevert = async (snapshot: GitSnapshot) => {
     setSelectedSnapshot(snapshot);

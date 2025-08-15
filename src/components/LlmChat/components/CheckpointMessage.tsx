@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Checkpoint } from '@/types/Checkpoint';
-import { CheckCircle, GitCommit, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, GitCommit, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDistance } from 'date-fns';
 

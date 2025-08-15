@@ -8,9 +8,7 @@ import {
   ConversationBrief,
   WorkspaceMapping,
   WorkspaceCreationOptions,
-  ConversationWorkspaceSettings,
-  BranchInfo,
-  Project
+  ConversationWorkspaceSettings
 } from '../components/LlmChat/context/types';
 import { buildProjectsSubpath, getProjectsBaseDir } from './pathConfig';
 
@@ -27,12 +25,8 @@ export const generateWorkspaceId = (): string => {
 export const generateWorkspacePath = (
   projectId: string,
   conversationId: string,
-  conversationName?: string
+  // _conversationName?: string
 ): string => {
-  const safeName = conversationName 
-    ? conversationName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase()
-    : conversationId;
-  
   // Conversations live under the project workspace directory
   return buildProjectsSubpath(`${projectId}`, 'conversations', `${conversationId}`);
 };
@@ -134,7 +128,7 @@ export const validateWorkspacePath = (path: string): boolean => {
 /**
  * Log workspace operation for debugging
  */
-export const logWorkspaceOperation = (operation: string, details: any): void => {
+export const logWorkspaceOperation = (operation: string, details: Record<string, unknown>): void => {
   console.log(`🔧 Workspace Operation: ${operation}`, {
     timestamp: new Date().toISOString(),
     ...details
@@ -245,7 +239,7 @@ export const removeBranchFromWorkspace = (
  */
 export const updateWorkspaceSettings = (
   workspace: WorkspaceMapping,
-  settings: Partial<ConversationWorkspaceSettings>
+  // _settings: Partial<ConversationWorkspaceSettings>
 ): WorkspaceMapping => {
   return {
     ...workspace,

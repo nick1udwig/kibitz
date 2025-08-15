@@ -10,7 +10,7 @@ export interface DebugLogEntry {
   level: 'info' | 'warn' | 'error' | 'debug';
   category: 'auto-commit' | 'file-change' | 'branch' | 'git' | 'system';
   message: string;
-  data?: any;
+  data?: Record<string, unknown>;
   projectId?: string;
   conversationId?: string;
 }
@@ -168,7 +168,7 @@ class DebugStorageService {
   }
 
   // 🔍 Debug Utilities
-  getDebugSummary(projectId?: string): any {
+  getDebugSummary(projectId?: string): Record<string, unknown> {
     const summary = {
       totalLogs: this.getDebugLogs().length,
       totalAutoCommits: this.getAutoCommitEvents(projectId).length,
@@ -184,7 +184,7 @@ class DebugStorageService {
   }
 
   // 📤 Export Debug Data
-  exportDebugData(projectId?: string): any {
+  exportDebugData(projectId?: string): Record<string, unknown> {
     return {
       timestamp: Date.now(),
       projectId: projectId,
@@ -208,7 +208,7 @@ class DebugStorageService {
   }
 
   // 📊 Statistics
-  getStatistics(): any {
+  getStatistics(): Record<string, unknown> {
     const logs = this.getDebugLogs();
     const autoCommits = this.getAutoCommitEvents();
     const fileChanges = this.getFileChangeEvents();
@@ -250,7 +250,7 @@ export function logDebug(
   level: 'info' | 'warn' | 'error' | 'debug',
   category: 'auto-commit' | 'file-change' | 'branch' | 'git' | 'system',
   message: string,
-  data?: any,
+  data?: Record<string, unknown>,
   projectId?: string,
   conversationId?: string
 ): void {
@@ -337,9 +337,9 @@ export function logSystemState(
 
 // 🌐 Make available globally for debugging
 if (typeof window !== 'undefined') {
-  (window as any).debugStorage = debugStorage;
-  (window as any).logDebug = logDebug;
-  (window as any).logAutoCommit = logAutoCommit;
-  (window as any).logFileChange = logFileChange;
-  (window as any).logSystemState = logSystemState;
+  (window as Record<string, unknown>).debugStorage = debugStorage;
+  (window as Record<string, unknown>).logDebug = logDebug;
+  (window as Record<string, unknown>).logAutoCommit = logAutoCommit;
+  (window as Record<string, unknown>).logFileChange = logFileChange;
+  (window as Record<string, unknown>).logSystemState = logSystemState;
 } 

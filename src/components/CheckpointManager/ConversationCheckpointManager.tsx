@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { GitBranch, GitCommit, RotateCcw, Zap, CheckCircle } from 'lucide-react';
+import { GitBranch, RotateCcw } from 'lucide-react';
 import { useConversationMetadata } from '../LlmChat/hooks/useConversationMetadata';
 import { useBranchStore } from '../../stores/branchStore';
 import { formatBranchName } from '../../lib/branchNaming';
@@ -18,13 +18,10 @@ interface ConversationCheckpointManagerProps {
 export const ConversationCheckpointManager: React.FC<ConversationCheckpointManagerProps> = ({ 
   projectId 
 }) => {
-  const {
-    projectMetadata,
-    conversationMetadata,
+  const { 
     isLoading,
     error,
     revertToCommit,
-    availableBranches,
     recentCommits,
     loadProjectMetadata
   } = useConversationMetadata();
@@ -76,7 +73,7 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
   };
 
   // Handle revert by switching to the branch instead of checking out the commit
-  const handleRevert = async (commit: any) => {
+  const handleRevert = async (commit: { branchName?: string; commitHash: string }) => {
     if (!commit.branchName) {
       console.warn('No branch name available for commit:', commit);
       // Fallback to original commit-based revert
@@ -102,6 +99,7 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
         console.log(`✅ Successfully switched to branch: ${commit.branchName}`);
         // Refresh branches to update current branch display
         await listProjectBranches(projectId);
+        await refreshCurrentBranch(projectId);
       } else {
         console.error(`❌ Failed to switch to branch: ${commit.branchName}`);
       }
@@ -155,86 +153,10 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
     <div className="space-y-6">
       
       {/* Project Overview */}
-      {projectMetadata && (
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">{projectMetadata.projectName}</h2>
-            <div className="flex items-center space-x-4 text-sm text-gray-600">
-              <div className="flex items-center space-x-1">
-                <GitBranch className="w-4 h-4" />
-                <span>{projectMetadata.totalBranches} branches</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <GitCommit className="w-4 h-4" />
-                <span>{projectMetadata.totalCommits} commits</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Current Branch Indicator */}
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <GitBranch className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700">Current Branch:</span>
-                <span className="text-sm font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                  {formatBranchName(currentProjectBranch)}
-                </span>
-              </div>
-              {isSwitchingBranch && (
-                <div className="flex items-center space-x-2 text-blue-600">
-                  <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                  <span className="text-sm">Switching...</span>
-                </div>
-              )}
-              {!isSwitchingBranch && (
-                <CheckCircle className="w-4 h-4 text-green-600" />
-              )}
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div className="bg-blue-50 p-3 rounded">
-              <div className="font-medium text-blue-900">Auto-Commit</div>
-              <div className="text-blue-700">
-                <Zap className="w-4 h-4 inline mr-1" />
-                Active
-              </div>
-            </div>
-            <div className="bg-green-50 p-3 rounded">
-              <div className="font-medium text-green-900">Git Integration</div>
-              <div className="text-green-700">✅ Enabled</div>
-            </div>
-            <div className="bg-purple-50 p-3 rounded">
-              <div className="font-medium text-purple-900">JSON API</div>
-              <div className="text-purple-700">📊 Active</div>
-            </div>
-          </div>
-        </Card>
-      )}
-
+      {/* Project overview section removed as projectMetadata is no longer available */}
+      
       {/* Current Conversation */}
-      {conversationMetadata && (
-        <Card className="p-6 border-blue-200 bg-blue-50">
-          <h3 className="font-medium text-blue-900 mb-2">Active Conversation</h3>
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-blue-800">
-              <div>ID: {conversationMetadata.conversationId.slice(-8)}</div>
-              <div>{conversationMetadata.messageCount} messages</div>
-            </div>
-            <div className="flex items-center space-x-2">
-              <span className={`inline-block w-2 h-2 rounded-full ${
-                conversationMetadata.status === 'active' ? 'bg-green-500' :
-                conversationMetadata.status === 'completed' ? 'bg-blue-500' :
-                'bg-orange-500'
-              }`} />
-              <span className="text-xs text-blue-700 capitalize">
-                {conversationMetadata.status}
-              </span>
-            </div>
-          </div>
-        </Card>
-      )}
+      {/* Conversation section removed as conversationMetadata is no longer available */}
 
       {/* Recent Commits & Quick Actions */}
       {recentCommits.length > 0 && (
@@ -244,7 +166,7 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
             {recentCommits.slice(0, 5).map((commit) => (
               <div
                 key={commit.commitHash}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded"
+                className="relative z-10 flex items-center justify-between p-3 bg-gray-50 rounded"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2">
@@ -277,7 +199,7 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
                   variant="outline"
                   onClick={() => handleRevert(commit)}
                   disabled={isReverting || isLoading || isSwitchingBranch || commit.branchName === currentProjectBranch}
-                  className="ml-4"
+                  className="ml-4 relative z-[100] pointer-events-auto"
                   title={
                     commit.branchName === currentProjectBranch 
                       ? 'Already on this branch'
@@ -300,8 +222,8 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
         </Card>
       )}
 
-      {/* Empty State */}
-      {!projectMetadata && !isLoading && (
+      {/* Empty State: only show when there are NO commits yet */}
+      {!isLoading && recentCommits.length === 0 && (
         <Card className="p-8 text-center border-gray-200 bg-white">
           <GitBranch className="w-12 h-12 mx-auto text-gray-400 mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">

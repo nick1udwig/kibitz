@@ -31,7 +31,7 @@ export const useCommitTracking = () => {
 
     const updatedConversations = activeProject.conversations.map(conv => {
       if (conv.id === activeConversationId) {
-        const commits = (conv as any).commits || [];
+        const commits = (conv as { commits?: CommitInfo[] }).commits || [];
         return {
           ...conv,
           commits: [commitInfo, ...commits].slice(0, 10) // Keep last 10 commits
@@ -48,7 +48,7 @@ export const useCommitTracking = () => {
   // Get commits for current conversation
   const getConversationCommits = useCallback((): CommitInfo[] => {
     if (!activeConversation) return [];
-    return (activeConversation as any).commits || [];
+    return (activeConversation as { commits?: CommitInfo[] }).commits || [];
   }, [activeConversation]);
 
   // Trigger automatic branch detection and UI refresh

@@ -9,10 +9,10 @@
  */
 
 import { executeGitCommand } from './versionControl/git';
-import { ensureProjectDirectory } from './projectPathService';
+// import { ensureProjectDirectory } from './projectPathService';
 import { getProjectsBaseDir } from './pathConfig';
-import { Checkpoint } from '../types/Checkpoint';
-import { BranchInfo } from './branchService';
+// import { Checkpoint } from '../types/Checkpoint';
+// import { BranchInfo } from './branchService';
 
 // Base directory for all projects
 const BASE_PROJECTS_DIR = getProjectsBaseDir();
@@ -240,7 +240,7 @@ export class LocalPersistenceService {
   private static async writeMetadataFileRobust(
     projectPath: string,
     filename: string,
-    data: any,
+    data: Record<string, unknown>,
     serverId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<{ success: boolean; error?: string }> {
@@ -260,7 +260,7 @@ export class LocalPersistenceService {
         if (writeResult.includes('Error:')) {
           throw new Error(writeResult);
         }
-      } catch (_e1) {
+      } catch {
         // Fallback: echo with escaped content
         const escaped = content.replace(/"/g, '\\"').replace(/\n/g, '\\n');
         const echoResult = await executeTool(serverId, 'BashCommand', {
@@ -301,7 +301,7 @@ export class LocalPersistenceService {
       // Parse to verify JSON is valid
       try {
         JSON.parse(verifyResult);
-      } catch (parseError) {
+      } catch {
         return { success: false, error: 'Written file contains invalid JSON' };
       }
       
@@ -565,7 +565,7 @@ export class LocalPersistenceService {
       for (const line of lines) {
         const parts = line.split('|');
         if (parts.length >= 6) {
-          const [commitHash, shortHash, author, email, dateStr, message] = parts;
+          const [commitHash, shortHash, , , dateStr, message] = parts;
           
           // Get files changed in this commit
           const filesResult = await executeGitCommand(
@@ -882,7 +882,7 @@ export class LocalPersistenceService {
   private static async writeMetadataFile(
     projectPath: string,
     filename: string,
-    data: any,
+    data: Record<string, unknown>,
     serverId: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
   ): Promise<void> {

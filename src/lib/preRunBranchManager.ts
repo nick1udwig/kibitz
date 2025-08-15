@@ -152,7 +152,7 @@ export class PreRunBranchManager {
           filesChanged: changes.map(c => c.path),
           canRevert: true,
           isAutoCreated: true,
-          createdBy: `auto-${context}` as any
+          createdBy: `auto-${context}` as string
         });
       }
 

@@ -5,7 +5,7 @@
  * higher-level modules import from a single place.
  */
 
-import type { McpExecutor } from './types';
+// import type { McpExecutor } from './types';
 import { executeGitCommand as coreExecuteGitCommand, pushToRemote as corePushToRemote, createCommit as coreCreateCommit } from '../gitService';
 
 export type ExecuteTool = (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>;
