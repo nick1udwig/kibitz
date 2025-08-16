@@ -25,12 +25,10 @@ export async function POST(
     }
 
     const { switchToConversationBranch } = await import('../../../../../../lib/conversationBranchService');
-    const { useBranchStore } = await import('../../../../../../stores/branchStore');
     const { useStore } = await import('../../../../../../stores/rootStore');
     
     // Get the real executeTool from the store
     const rootStore = useStore.getState();
-    const branchStore = useBranchStore.getState();
     
     // Find the project and get an active MCP server
     const project = rootStore.projects.find(p => p.id === projectId);

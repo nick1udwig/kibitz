@@ -218,12 +218,17 @@ export const MessageContentRenderer: React.FC<MessageContentProps> = ({
           }`}
         >
           <div className="space-y-2">
-            <button
-              onClick={() => onToolClick?.((content as any).name, (content as any).input, toolResult)}
-              className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline group"
-            >
-              🛠️: {(content as any).name}
-            </button>
+            {(() => {
+              const toolUse = content as Extract<MessageContentType, { type: 'tool_use' }>; 
+              return (
+                <button
+                  onClick={() => onToolClick?.(toolUse.name, toolUse.input, toolResult)}
+                  className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline group"
+                >
+                  🛠️: {toolUse.name}
+                </button>
+              );
+            })()}
           </div>
         </div>
       </div>

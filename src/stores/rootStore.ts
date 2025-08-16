@@ -710,7 +710,7 @@ export const useStore = create<RootState>((set, get) => {
               const cleaned = dir.trim().replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
               set(state => ({ apiKeys: { ...state.apiKeys, projectsBaseDir: cleaned } } as Record<string, unknown>));
               try {
-                (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ = cleaned;
+                (window as unknown as { __KIBITZ_PROJECTS_BASE_DIR__?: string }).__KIBITZ_PROJECTS_BASE_DIR__ = cleaned;
               } catch {}
             }
           }
@@ -798,7 +798,7 @@ export const useStore = create<RootState>((set, get) => {
               ...DEFAULT_PROJECT_SETTINGS,
               apiKey: apiKeys.apiKey ?? '',
               groqApiKey: apiKeys.groqApiKey ?? '',
-              mcpServers: []
+              mcpServerIds: []
             },
             conversations: [defaultConversation],
             createdAt: new Date(),
@@ -819,7 +819,16 @@ export const useStore = create<RootState>((set, get) => {
             await dbService.createProjectWithTracking(
               defaultConversation.id,
               defaultProject.name,
-              defaultProject.settings
+              {
+                provider: defaultProject.settings.provider,
+                model: defaultProject.settings.model,
+                systemPrompt: defaultProject.settings.systemPrompt,
+                mcpServerIds: defaultProject.settings.mcpServerIds,
+                elideToolResults: defaultProject.settings.elideToolResults,
+                messageWindowSize: defaultProject.settings.messageWindowSize,
+                enableGitHub: defaultProject.settings.enableGitHub,
+                providerConfig: defaultProject.settings.providerConfig as unknown as Record<string, unknown>
+              }
             );
             
             console.log(`✅ Default project tracked in database with ID: ${defaultProject.id}`);
@@ -831,12 +840,12 @@ export const useStore = create<RootState>((set, get) => {
         set({ initialized: true });
       } catch {
         console.error('Error initializing data');
-        const defaultProject = {
+        const defaultProject: Project = {
           id: generateId(),
           name: 'Default Project',
           settings: {
             ...DEFAULT_PROJECT_SETTINGS,
-            mcpServers: []
+            mcpServerIds: []
           },
           conversations: [],
           createdAt: new Date(),
@@ -883,7 +892,7 @@ export const useStore = create<RootState>((set, get) => {
           uiBaseDir = uiBaseDir.trim().replace(/[•\u2022]+/g, '').replace(/\/+$/, '');
           if (!uiBaseDir.startsWith('/') && /^Users\//.test(uiBaseDir)) uiBaseDir = '/' + uiBaseDir;
           // expose runtime hint so client resolvers see it
-          try { (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ = uiBaseDir; } catch {}
+          try { (window as unknown as { __KIBITZ_PROJECTS_BASE_DIR__?: string }).__KIBITZ_PROJECTS_BASE_DIR__ = uiBaseDir; } catch {}
         }
       } catch {}
 
@@ -924,7 +933,16 @@ export const useStore = create<RootState>((set, get) => {
           await dbService.createProjectWithTracking(
             conversationId,
             name,
-            mergedSettings
+            {
+              provider: mergedSettings.provider,
+              model: mergedSettings.model,
+              systemPrompt: mergedSettings.systemPrompt,
+              mcpServerIds: mergedSettings.mcpServerIds,
+              elideToolResults: mergedSettings.elideToolResults,
+              messageWindowSize: mergedSettings.messageWindowSize,
+              enableGitHub: mergedSettings.enableGitHub,
+              providerConfig: mergedSettings.providerConfig as unknown as Record<string, unknown>
+            }
           );
           
           console.log(`✅ Project ${name} tracked in database with ID: ${projectId}`);
@@ -1685,7 +1703,7 @@ export const useStore = create<RootState>((set, get) => {
           try {
             const uiBase = (get().apiKeys as Record<string, unknown>)?.projectsBaseDir as string | undefined;
             if (uiBase && uiBase.trim()) {
-              (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
+              (window as unknown as { __KIBITZ_PROJECTS_BASE_DIR__?: string }).__KIBITZ_PROJECTS_BASE_DIR__ = uiBase.trim().replace(/\/+$/, '');
             }
           } catch {}
         
@@ -1749,7 +1767,7 @@ export const useStore = create<RootState>((set, get) => {
               .replace(/[\u0000-\u001F\u007F]+/g, '')
               .replace(/\/+$/, '');
             if (!sanitized.startsWith('/') && /^Users\//.test(sanitized)) sanitized = '/' + sanitized;
-            (window as Record<string, unknown>).__KIBITZ_PROJECTS_BASE_DIR__ = sanitized;
+            (window as unknown as { __KIBITZ_PROJECTS_BASE_DIR__?: string }).__KIBITZ_PROJECTS_BASE_DIR__ = sanitized;
           }
         } catch {}
         
@@ -1794,7 +1812,8 @@ export const useStore = create<RootState>((set, get) => {
           console.log(`🔧 Final BashCommand: ${command}`);
           
           // Remove the raw command property and use only action_json format
-          const { command: _unused, ...argsWithoutCommand } = modifiedArgs;
+          const argsWithoutCommand = { ...modifiedArgs } as Record<string, unknown>;
+          delete (argsWithoutCommand as Record<string, unknown>).command;
           // Use cached thread_id from last Initialize for this project/server if available
           let desiredThreadId = 'git-operations';
           try {
@@ -1892,7 +1911,7 @@ export const useStore = create<RootState>((set, get) => {
             hasCommand: !!modifiedArgs.command,
             hasActionJson: !!modifiedArgs.action_json,
             hasType: !!actionJson.type,
-            command: actionJson.command ? actionJson.command.substring(0, 100) + '...' : 'no command'
+            command: typeof actionJson.command === 'string' ? (actionJson.command as string).substring(0, 100) + '...' : 'no command'
           });
         }
       }
@@ -1952,7 +1971,9 @@ export const useStore = create<RootState>((set, get) => {
                         
                         // Track file changes for FileWriteOrEdit
                         if (toolName === 'FileWriteOrEdit') {
-                          const filePath = (args as Record<string, unknown>).file_path || 'unknown_file';
+                          const filePath = typeof (args as Record<string, unknown>).file_path === 'string'
+                            ? (args as Record<string, unknown>).file_path as string
+                            : 'unknown_file';
                           trackFileChange(filePath);
                         }
                         

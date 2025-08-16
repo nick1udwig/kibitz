@@ -1,11 +1,12 @@
 import EventEmitter from 'events';
 import { createGitHubSyncManager } from './github-sync-manager.js';
-import { getAllPendingProjects } from './sync-detection-service.js';
-import { getAllProjectsWithGitHub } from './project-json-manager.js';
-import Database from 'better-sqlite3';
+// Removed unused imports to satisfy lint rules (they can be re-added when used)
+// import { getAllPendingProjects } from './sync-detection-service.js';
+// import { getAllProjectsWithGitHub } from './project-json-manager.js';
+// import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+// import { existsSync, mkdirSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

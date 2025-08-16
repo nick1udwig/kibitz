@@ -368,6 +368,12 @@ export const useBranchStore = create<BranchState>((set, get) => ({
                 const generateRes = await fetch(`/api/projects/${projectId}/generate`, { method: 'POST' });
                 if (generateRes.ok) {
                   console.log(`✅ Project data generated for branch ${branchName}`);
+                  // Notify UI that project data is ready so components can refresh automatically
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('projectDataReady', {
+                      detail: { projectId, branchName, timestamp: Date.now() }
+                    }));
+                  }
                 } else {
                   console.warn(`⚠️ Failed to generate project data for branch ${branchName}`);
                 }

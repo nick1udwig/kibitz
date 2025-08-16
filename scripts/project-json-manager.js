@@ -27,22 +27,10 @@ function getEnvProjectsBaseDir() {
   if (fromRuntime) return fromRuntime;
 
   // 2) In-memory apiKeysStorage (set by /api/keys/config PUT)
-  try {
-    const keysModule = require('./src/app/api/keys/route');
-    const mem = keysModule && keysModule.apiKeysStorage && keysModule.apiKeysStorage.projectsBaseDir;
-    const fromMemory = normalize(mem);
-    if (fromMemory) return fromMemory;
-  } catch {}
+  // Skipped in scripts to avoid importing TS modules from JS during build
 
   // 3) Persisted encrypted config
-  try {
-    const { loadPersistedServerConfig } = require('./src/lib/server/configVault');
-    const cfg = loadPersistedServerConfig && loadPersistedServerConfig();
-    if (cfg && typeof cfg.projectsBaseDir === 'string' && cfg.projectsBaseDir.trim()) {
-      const fromPersisted = normalize(cfg.projectsBaseDir.trim());
-      if (fromPersisted) return fromPersisted;
-    }
-  } catch {}
+  // Skipped in scripts to avoid importing TS modules from JS during build
 
   // 4) Client env hint
   const fromClient = normalize(process.env.NEXT_PUBLIC_PROJECTS_DIR);

@@ -106,8 +106,8 @@ export function ConversationMetadataPanel() {
         {recentCommits.length > 0 && (
           <div className="space-y-2">
             <div className="text-sm font-medium">Recent Commits:</div>
-            <div className="space-y-1 max-h-32 overflow-y-auto">
-              {recentCommits.slice(0, 3).map((commit) => (
+            <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
+              {recentCommits.map((commit) => (
                 <div key={commit.commitHash} className="flex items-center justify-between text-xs bg-white dark:bg-gray-700 p-2 rounded">
                   <div className="flex-1 min-w-0">
                     <div className="truncate font-mono">
@@ -127,7 +127,7 @@ export function ConversationMetadataPanel() {
                     variant="outline"
                     onClick={() => handleRevert(commit)}
                     disabled={isLoading || isSwitchingBranch}
-                    className="ml-2 text-xs"
+                    className="ml-2 text-xs hover:shadow-sm hover:-translate-y-[1px] transition-all"
                     title={commit.branchName ? `Switch to branch: ${formatBranchName(commit.branchName)}` : 'Revert to this commit'}
                   >
                     <RotateCcw className="w-3 h-3 mr-1" />

@@ -271,14 +271,14 @@ export function useConversationMetadata() {
     }
   }, [activeProject, executeTool, loadProjectMetadata]);
 
-  // 🚀 UI REFRESH FIX: Listen for branch switch events and refresh metadata
+  // 🚀 UI REFRESH FIX: Listen for branch switch and project-data-ready events and refresh metadata
   useEffect(() => {
-    const handleBranchSwitch = async (event: CustomEvent) => {
-      const { projectId: eventProjectId, branchName } = event.detail;
+    const onBranchSwitched = async (evt: Event) => {
+      const event = evt as CustomEvent;
+      const { projectId: eventProjectId, branchName } = event.detail || {};
       if (eventProjectId === activeProject?.id) {
         console.log(`🔄 useConversationMetadata: Branch switched to ${branchName}, refreshing metadata...`);
         try {
-          // Clear existing metadata and reload
           setMetadata(null);
           await loadProjectMetadata(eventProjectId);
           console.log(`✅ useConversationMetadata: Metadata refreshed after branch switch`);
@@ -288,10 +288,25 @@ export function useConversationMetadata() {
       }
     };
 
+    const onProjectDataReady = async (evt: Event) => {
+      const event = evt as CustomEvent;
+      const { projectId: eventProjectId } = event.detail || {};
+      if (eventProjectId === activeProject?.id) {
+        console.log('📥 useConversationMetadata: Project data ready, reloading metadata...');
+        try {
+          await loadProjectMetadata(eventProjectId);
+        } catch (error) {
+          console.warn('⚠️ useConversationMetadata: Failed to load metadata after project data generation:', error);
+        }
+      }
+    };
+
     if (typeof window !== 'undefined') {
-      window.addEventListener('branchSwitched', handleBranchSwitch as EventListener);
+      window.addEventListener('branchSwitched', onBranchSwitched);
+      window.addEventListener('projectDataReady', onProjectDataReady);
       return () => {
-        window.removeEventListener('branchSwitched', handleBranchSwitch as EventListener);
+        window.removeEventListener('branchSwitched', onBranchSwitched);
+        window.removeEventListener('projectDataReady', onProjectDataReady);
       };
     }
   }, [activeProject?.id, loadProjectMetadata]);
@@ -315,12 +330,17 @@ export function useConversationMetadata() {
     canRevert: Boolean(metadata?.commitHash),
     conversationDuration: metadata ? Date.now() - metadata.startTime : 0,
     availableBranches: projectMetadata?.branches || [],
-    recentCommits: projectMetadata?.branches?.slice(0, 5).map(branch => ({
-      commitHash: branch.commitHash,
-      commitMessage: branch.commitMessage,
-      timestamp: branch.timestamp,
-      branchName: branch.branchName,
-      filesChanged: branch.filesChanged
-    })) || []
+    // Return ALL commits sorted by recency; UI components can slice or virtualize
+    recentCommits: (projectMetadata?.branches
+      ? [...projectMetadata.branches]
+          .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+          .map(branch => ({
+            commitHash: branch.commitHash,
+            commitMessage: branch.commitMessage,
+            timestamp: branch.timestamp,
+            branchName: branch.branchName,
+            filesChanged: branch.filesChanged
+          }))
+      : [])
   };
 } 

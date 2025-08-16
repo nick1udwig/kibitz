@@ -162,8 +162,8 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
       {recentCommits.length > 0 && (
         <Card className="p-6">
           <h3 className="font-medium mb-4">Recent Commits</h3>
-          <div className="space-y-3">
-            {recentCommits.slice(0, 5).map((commit) => (
+          <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+            {recentCommits.map((commit) => (
               <div
                 key={commit.commitHash}
                 className="relative z-10 flex items-center justify-between p-3 bg-gray-50 rounded"
@@ -199,7 +199,7 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
                   variant="outline"
                   onClick={() => handleRevert(commit)}
                   disabled={isReverting || isLoading || isSwitchingBranch || commit.branchName === currentProjectBranch}
-                  className="ml-4 relative z-[100] pointer-events-auto"
+                  className="ml-4 relative z-[100] pointer-events-auto hover:shadow-sm hover:-translate-y-[1px] transition-all"
                   title={
                     commit.branchName === currentProjectBranch 
                       ? 'Already on this branch'

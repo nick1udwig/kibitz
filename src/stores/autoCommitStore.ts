@@ -377,9 +377,9 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
   _flushBufferedEnhancedCommits: async (projectId: string): Promise<number> => {
     try {
       if (typeof window === 'undefined') return 0;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const bufRoot: any = (window as any).__kibitzBufferedEnhancedCommits;
-      const list = bufRoot?.[projectId];
+      // Access optional buffered commits with a typed window projection
+      const bufRoot = (window as unknown as { __kibitzBufferedEnhancedCommits?: Record<string, unknown[]> }).__kibitzBufferedEnhancedCommits || {};
+      const list = bufRoot[projectId] as unknown[] | undefined;
       if (!Array.isArray(list) || list.length === 0) return 0;
       const flushed = [] as number[];
       for (let i = 0; i < list.length; i++) {
@@ -832,7 +832,7 @@ export const useAutoCommitStore = create<AutoCommitState>((set, get) => ({
                           mcpServerId,
                           rootStore.executeTool
                         );
-                        pushResult = { success: batchResult.success, output: batchResult.output, error: batchResult.error } as any;
+                        pushResult = { success: batchResult.success, output: batchResult.output, error: batchResult.error };
                       } catch (retryErr) {
                         console.warn('⚠️ AUTO-PUSH AFTER SYNC (fallback): Batch push error:', retryErr);
                       }

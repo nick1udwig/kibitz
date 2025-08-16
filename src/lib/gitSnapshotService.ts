@@ -58,6 +58,8 @@ export async function generateCommitMessage(
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
   _provider?: 'openai' | 'anthropic' | 'custom'
 ): Promise<string> {
+  // Mark optional parameter as intentionally unused for now
+  void _provider;
   try {
     // Get git diff for staged changes
     const diffResult = await executeTool(serverId, 'BashCommand', {

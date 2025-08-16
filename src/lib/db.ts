@@ -159,7 +159,9 @@ async function recreateDatabase(): Promise<KibitzDb> {
 /**
  * Perform database migrations with error handling
  */
-function performDatabaseMigrations(db: KibitzDb, oldVersion: number, newVersion: number = DB_VERSION): void {
+function performDatabaseMigrations(db: KibitzDb, oldVersion: number, _newVersion: number = DB_VERSION): void {
+  // Mark parameter as intentionally unused to satisfy lint rules
+  void _newVersion;
   try {
     if (oldVersion < 1) {
       createV1Schema(db);

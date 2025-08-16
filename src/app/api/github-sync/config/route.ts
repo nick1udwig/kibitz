@@ -6,7 +6,7 @@ import { updateGitHubConfig, readProjectJson, ensureKibitzDirectory } from '@/li
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { projectId, projectName, enabled, syncBranches, authentication } = body || {};
+    const { projectId, enabled, syncBranches, authentication } = body || {};
 
     if (!projectId) {
       return NextResponse.json(

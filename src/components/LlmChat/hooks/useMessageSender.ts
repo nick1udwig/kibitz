@@ -235,18 +235,33 @@ export const useMessageSender = () => {
           } catch (error) {
             lastError = error;
             console.log(`got error ${JSON.stringify(error)}`);
+            // Determine if the error is transient and worth retrying
+            let shouldRetry = false;
+            let reason = 'transient error';
             if (typeof error === 'object' && error !== null) {
-              const errorObj = error as { error?: { type?: string }; status?: number };
+              const errorObj = error as { error?: { type?: string; message?: string }; status?: number; message?: string };
               const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-
-              if (isOverloaded && attempt < maxAttempts - 1) {
-                const delay = calculateBackoffDelay(attempt);
-                console.log(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
-                setError(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
+              const isNetwork = /network error|Failed to fetch|NetworkError|ECONNRESET|ETIMEDOUT/i.test(
+                String(errorObj.message || errorObj.error?.message || '')
+              );
+              shouldRetry = isOverloaded || isNetwork;
+              reason = isOverloaded ? 'server overloaded' : (isNetwork ? 'network error' : reason);
+            } else if (error instanceof Error) {
+              const isNetwork = /network error|Failed to fetch|NetworkError|ECONNRESET|ETIMEDOUT/i.test(error.message);
+              if (isNetwork) {
+                shouldRetry = true;
+                reason = 'network error';
               }
             }
+
+            if (shouldRetry && attempt < maxAttempts - 1) {
+              const delay = calculateBackoffDelay(attempt);
+              console.log(`Retrying due to ${reason}. Waiting ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+              setError(`Recovering from ${reason}. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+
             throw error;
           }
         }
@@ -542,32 +557,54 @@ Format: Only output the title, no quotes or explanation`
             systemPrompt,
           );
 
-          const stream = await streamWithRetry({
+          // Build request once so we can reuse for fallback
+          const anthropicRequest = {
             model: activeProject.settings.model || DEFAULT_MODEL,
             max_tokens: 8192,
             messages: anthropicApiMessages.messages,
             ...(anthropicApiMessages.system && { system: anthropicApiMessages.system }),
-            ...(systemPromptContent && systemPromptContent.length > 0 && {
-              system: systemPromptContent
-            }),
-            ...(tools.length > 0 && {
-              tools: toolsCached
-            })
-          });
+            ...(systemPromptContent && systemPromptContent.length > 0 && { system: systemPromptContent }),
+            ...(tools.length > 0 && { tools: toolsCached })
+          } as Parameters<typeof anthropic.messages.create>[0];
 
-          stream.on('text', (text) => {
-            textContent.text += text;
-            const updatedMessages = [...currentMessages, currentStreamMessage];
-            updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
-          });
+          let finalResponse: Message;
+          try {
+            const stream = await streamWithRetry(anthropicRequest);
 
-          streamRef.current = stream;
+            // Attach handlers early to avoid unhandled rejections in SDK
+            stream.on('error', (err: unknown) => {
+              if (shouldCancelRef.current) return;
+              console.error('Anthropic stream error:', err);
+              const formatted = formatErrorMessage(err);
+              setError(formatted);
+            });
+            stream.on('abort', () => {
+              if (shouldCancelRef.current) return;
+              console.warn('Anthropic stream aborted');
+            });
 
-          if (shouldCancelRef.current) break;
+            stream.on('text', (text) => {
+              textContent.text += text;
+              const updatedMessages = [...currentMessages, currentStreamMessage];
+              updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+            });
 
-          const finalResponse = await stream.finalMessage();
+            streamRef.current = stream;
 
-          const processedContent = finalResponse.content.map((content: MessageContent) => {
+            if (shouldCancelRef.current) break;
+
+            finalResponse = await stream.finalMessage() as unknown as Message;
+          } catch (streamErr) {
+            // Fallback: if streaming fails (e.g., network error), try non-streaming request
+            console.warn('Streaming failed, falling back to non-streaming request:', streamErr);
+            try {
+              finalResponse = await anthropic.messages.create(anthropicRequest) as unknown as Message;
+            } catch (nonStreamErr) {
+              throw nonStreamErr;
+            }
+          }
+
+          const processedContent = (Array.isArray(finalResponse.content) ? finalResponse.content : []).map((content: MessageContent) => {
             if (!content['type']) return content;
             if (content.type !== 'text') return content;
 
@@ -596,13 +633,15 @@ Format: Only output the title, no quotes or explanation`
               return !isWhitespace;
             });
 
-          const processedResponse = {
-            ...finalResponse,
-            content: processedContent
+          const processedResponse: Message = {
+            role: 'assistant',
+            content: processedContent,
+            timestamp: new Date()
           };
 
           currentMessages.push(processedResponse);
           updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+          setError(null);
 
           const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
           if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
@@ -636,7 +675,7 @@ Format: Only output the title, no quotes or explanation`
             }
           }
 
-          const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
+          const toolUseContent = (Array.isArray(finalResponse.content) ? finalResponse.content : []).find((c: MessageContent) => c.type === 'tool_use');
           if (toolUseContent && toolUseContent.type === 'tool_use') {
             try {
               if (shouldCancelRef.current) break;
