@@ -1,0 +1,20 @@
+services:
+  ws-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ws-mcp-server
+    ports:
+      - "10125:10125"
+    volumes:
+      # Mount the parent of this repo (adjust if you want a different path)
+      - "/Users/test/Documents/workx:/workspace:rw"
+      # Mirror host path inside container at the identical absolute path so Kibitz-sent
+      # absolute paths (e.g., /Users/test/Documents/workx/<project>) resolve without translation
+      - "/Users/test/Documents/workx:/Users/test/Documents/workx:rw"
+    environment:
+      # Pass through any env as needed; none required for defaults
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
+

@@ -1,0 +1,1 @@
+export { SimpleBranchManager as BranchManager } from './SimpleBranchManager'; 

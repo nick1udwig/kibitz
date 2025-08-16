@@ -173,7 +173,7 @@ export const usePagination = ({
         }
       });
     }
-  }, [isLoadingMore, visibleMessages.length]);
+  }, [isLoadingMore, visibleMessages.length, scrollContainerRef]);
 
   return {
     visibleMessages,

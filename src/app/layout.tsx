@@ -7,6 +7,9 @@ export const metadata = {
 };
 
 const PATH_PREFIX = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+// Expose the projects base dir to the client (optional UI-only needs)
+// Note: Do NOT rely on this for server-side filesystem operations.
+export const PROJECTS_BASE_DIR = process.env.NEXT_PUBLIC_PROJECTS_DIR;
 export default function RootLayout({
   children,
 }: {

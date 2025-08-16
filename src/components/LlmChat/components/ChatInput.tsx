@@ -67,7 +67,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     };
 
     // Set up mutation observer to detect content changes
-    const observer = new MutationObserver((mutations) => {
+    const observer = new MutationObserver(() => {
       handleValueChange();
     });
 

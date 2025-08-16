@@ -46,6 +46,8 @@ export type Message = {
   content: MessageContent[] | string;
   timestamp: Date;
   toolInput?: Record<string, unknown>;
+  commitHash?: string; // Git commit hash after this message (for rollback)
+  canRevert?: boolean; // Whether this message can be reverted to
 };
 
 export type ConversationSettings = {
