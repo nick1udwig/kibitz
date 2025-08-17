@@ -324,6 +324,54 @@ export const useBranchStore = create<BranchState>((set, get) => ({
           }
         }));
         
+        // Ensure the target branch contains project.json so UI features remain available
+        try {
+          const { checkProjectJsonOnBranch, mergeProjectJsonForBranchSwitch } = await import('../lib/branchService');
+          const hasProjectJson = await checkProjectJsonOnBranch(
+            projectPath,
+            branchName,
+            mcpServerId,
+            rootStore.executeTool
+          );
+          if (!hasProjectJson) {
+            // Determine best source branch: previous step if conv-*-step-N, else main
+            let sourceBranch = 'main';
+            const match = branchName.match(/^conv-[^-]+-step-(\d+)$/);
+            if (match) {
+              const stepNum = parseInt(match[1], 10);
+              if (!Number.isNaN(stepNum) && stepNum > 1) {
+                const prevStepBranch = branchName.replace(/step-\d+$/, `step-${stepNum - 1}`);
+                sourceBranch = prevStepBranch;
+              }
+            }
+
+            // If chosen source branch lacks project.json, fall back to main
+            try {
+              const sourceHasJson = await checkProjectJsonOnBranch(
+                projectPath,
+                sourceBranch,
+                mcpServerId,
+                rootStore.executeTool
+              );
+              if (!sourceHasJson) {
+                sourceBranch = 'main';
+              }
+            } catch {}
+
+            console.log(`📦 project.json missing on ${branchName}. Copying from ${sourceBranch}...`);
+            await mergeProjectJsonForBranchSwitch(
+              projectPath,
+              sourceBranch,
+              branchName,
+              mcpServerId,
+              rootStore.executeTool
+            );
+            console.log(`✅ project.json ensured on ${branchName}`);
+          }
+        } catch (projectJsonError) {
+          console.warn('⚠️ Failed to ensure project.json on target branch:', projectJsonError);
+        }
+
         // Ensure the local workspace is now on the requested branch by asking Git directly
         try {
           const res = await fetch(`/api/projects/${projectId}/branches/current`);
@@ -358,13 +406,36 @@ export const useBranchStore = create<BranchState>((set, get) => ({
             }
           }, 100);
           
-          // 2. Generate project metadata if missing on new branch (trigger the project.json creation)
+          // 2. Generate project metadata if missing or stale on new branch (trigger the project.json creation)
           setTimeout(async () => {
             try {
               console.log(`📋 Checking if project data needs regeneration on branch ${branchName}...`);
               const checkRes = await fetch(`/api/projects/${projectId}`);
-              if (!checkRes.ok) {
+              let needsGenerate = !checkRes.ok;
+              if (checkRes.ok) {
+                try {
+                  const data = await checkRes.json();
+                  const branches = Array.isArray(data?.branches) ? data.branches : [];
+                  const hasCurrent = branches.some((b: { branchName?: string; name?: string }) =>
+                    (b?.branchName || b?.name) === branchName
+                  );
+                  if (!hasCurrent) {
+                    console.log(`📋 Project data exists but does not include current branch ${branchName}. Will regenerate.`);
+                    needsGenerate = true;
+                  }
+                } catch (e) {
+                  console.warn('⚠️ Failed to parse project data JSON; will regenerate:', e);
+                  needsGenerate = true;
+                }
+              }
+              if (needsGenerate) {
                 console.log(`🔄 Generating project data for new branch ${branchName}...`);
+                // Notify UI that generation has started so empty states can reflect progress
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('projectDataGenerating', {
+                    detail: { projectId, branchName, timestamp: Date.now() }
+                  }));
+                }
                 const generateRes = await fetch(`/api/projects/${projectId}/generate`, { method: 'POST' });
                 if (generateRes.ok) {
                   console.log(`✅ Project data generated for branch ${branchName}`);
@@ -376,12 +447,22 @@ export const useBranchStore = create<BranchState>((set, get) => ({
                   }
                 } else {
                   console.warn(`⚠️ Failed to generate project data for branch ${branchName}`);
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('projectDataFailed', {
+                      detail: { projectId, branchName, timestamp: Date.now() }
+                    }));
+                  }
                 }
               } else {
                 console.log(`✅ Project data already exists on branch ${branchName}`);
               }
             } catch (generateError) {
               console.warn('⚠️ Failed to check/generate project data:', generateError);
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('projectDataFailed', {
+                  detail: { projectId, branchName, timestamp: Date.now() }
+                }));
+              }
             }
           }, 200);
           
@@ -405,6 +486,11 @@ export const useBranchStore = create<BranchState>((set, get) => ({
         return true;
       } else {
         console.error('Failed to switch branch:', result.error);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('branchSwitchFailed', {
+            detail: { projectId, targetBranch: branchName, error: result.error }
+          }));
+        }
         return false;
       }
     } finally {

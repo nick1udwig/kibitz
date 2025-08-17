@@ -91,6 +91,24 @@ export async function GET(
       console.log(`📋 API: Reading JSON file for project ${projectId}`);
       const jsonData = fs.readFileSync(jsonFilePath, 'utf8');
       const projectData = JSON.parse(jsonData);
+
+      // 🩹 Hardening: if JSON exists but does not include the current branch, regenerate
+      try {
+        const { execSync } = await import('child_process');
+        const currentBranch = execSync('git branch --show-current', { cwd: projectPath, encoding: 'utf8', timeout: 5000 }).trim() || 'main';
+        const branches = Array.isArray(projectData?.branches) ? projectData.branches : [];
+        const hasCurrent = branches.some((b: { branchName?: string; name?: string }) => (b?.branchName || b?.name) === currentBranch);
+        if (!hasCurrent) {
+          console.log(`📋 API: JSON missing current branch ${currentBranch}. Regenerating...`);
+          const res = await fetch(`${request.nextUrl.origin}/api/projects/${projectId}/generate`, { method: 'POST' });
+          if (res.ok) {
+            const refreshed = JSON.parse(fs.readFileSync(jsonFilePath, 'utf8'));
+            return NextResponse.json(refreshed);
+          }
+        }
+      } catch (regenGuardErr) {
+        console.warn('⚠️ API: Regen guard failed (non-fatal):', regenGuardErr);
+      }
       
       console.log(`✅ API: Successfully loaded project data for ${projectId}:`, {
         commit_hash: projectData.commit_hash?.substring(0, 12) + '...',

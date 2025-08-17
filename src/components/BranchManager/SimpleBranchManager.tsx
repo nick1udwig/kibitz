@@ -21,6 +21,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { useBranchStore } from '../../stores/branchStore';
+import { CurrentBranchChip } from '@/components/ui/current-branch-chip';
 
 interface BranchManagerProps {
   projectId: string;
@@ -37,9 +38,9 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
   const {
     config,
     branches,
-    currentBranch,
     pendingChanges,
     isProcessing,
+    isSwitching,
     lastOperation,
     updateConfig,
     detectProjectChanges,
@@ -52,7 +53,6 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
   } = useBranchStore();
 
   const projectBranches = branches[projectId] || [];
-  const currentProjectBranch = currentBranch[projectId] || 'main';
   const projectChanges = pendingChanges[projectId];
 
   // Load branches on mount
@@ -206,10 +206,7 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Current Branch</p>
-                  <span className="inline-flex items-center space-x-1 px-2 py-1 bg-gray-100 border border-gray-200 rounded text-sm">
-                    <GitBranch className="h-3 w-3" />
-                    <span>{currentProjectBranch}</span>
-                  </span>
+                  <CurrentBranchChip projectId={projectId} />
                 </div>
                 
                 <div className="space-y-2">
@@ -376,8 +373,17 @@ export const SimpleBranchManager: React.FC<BranchManagerProps> = ({ projectId })
                               size="sm" 
                               variant="outline"
                               onClick={() => handleSwitchBranch(branch.name)}
+                              disabled={isSwitching}
+                              className="cursor-pointer hover:bg-primary/10 hover:text-primary hover:border-primary focus-visible:ring-ring active:translate-y-[1px]"
                             >
-                              Switch
+                              {isSwitching ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <span className="inline-block w-3 h-3 border-2 border-blue-300 border-t-blue-700 rounded-full animate-spin" />
+                                  Switching…
+                                </span>
+                              ) : (
+                                'Switch'
+                              )}
                             </Button>
                             <Button 
                               size="sm" 

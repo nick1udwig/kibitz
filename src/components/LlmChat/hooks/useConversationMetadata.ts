@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore } from '@/stores/rootStore';
+import { useBranchStore } from '@/stores/branchStore';
 import { getProjectPath } from '@/lib/projectPathService';
 
 interface ConversationMetadata {
@@ -50,6 +51,10 @@ export function useConversationMetadata() {
   // Get active project from store
   const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
 
+  // Centralized branch state from branch store (single source of truth)
+  const { currentBranch, refreshCurrentBranch } = useBranchStore();
+  const activeBranchFromStore = activeProject?.id ? (currentBranch[activeProject.id] || 'main') : 'main';
+
   // Generate conversation ID
   const generateConversationId = useCallback(() => {
     return `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -63,7 +68,8 @@ export function useConversationMetadata() {
     const newMetadata: ConversationMetadata = {
       conversationId,
       projectId: activeProject.id,
-      branchName: 'main', // Default branch - will be updated by branch refresh
+      // Use centralized store value to avoid divergent branch state
+      branchName: activeBranchFromStore,
       startTime: Date.now(),
       messageCount: 0,
       status: 'active'
@@ -72,30 +78,13 @@ export function useConversationMetadata() {
     setMetadata(newMetadata);
     console.log('🔄 Started conversation tracking:', conversationId);
     
-    // 🔄 NEW: Start auto-refresh of branch info every 30 seconds
-    const refreshInterval = setInterval(async () => {
-      if (activeProject?.id) {
-        try {
-          const response = await fetch(`/api/projects/${activeProject.id}/branches/current`);
-          const data = await response.json();
-          
-          if (!data.error && data.currentBranch) {
-            setMetadata(prev => prev ? {
-              ...prev,
-              branchName: data.currentBranch
-            } : null);
-          }
-        } catch (error) {
-          console.warn('Failed to auto-refresh branch in conversation metadata:', error);
-        }
-      }
-    }, 30000); // 30 seconds
-    
-    // Store interval for cleanup
-    (newMetadata as { _refreshInterval?: NodeJS.Timeout })._refreshInterval = refreshInterval;
-    
+    // Kick an initial current-branch refresh to ensure store is up-to-date
+    if (activeProject?.id) {
+      void refreshCurrentBranch(activeProject.id);
+    }
+
     return conversationId;
-  }, [activeProject, generateConversationId]);
+  }, [activeProject, generateConversationId, activeBranchFromStore, refreshCurrentBranch]);
 
   // Update message count
   const incrementMessageCount = useCallback(() => {
@@ -118,11 +107,6 @@ export function useConversationMetadata() {
   const completeConversation = useCallback(() => {
     setMetadata(prev => {
       if (!prev) return null;
-      
-      // Clear auto-refresh interval
-      if ((prev as { _refreshInterval?: NodeJS.Timeout })._refreshInterval) {
-        clearInterval((prev as { _refreshInterval?: NodeJS.Timeout })._refreshInterval);
-      }
       
       return {
         ...prev,
@@ -226,6 +210,12 @@ export function useConversationMetadata() {
     }
   }, [activeProject, loadProjectMetadata]);
 
+  // Keep conversation branchName in sync with centralized branch store
+  useEffect(() => {
+    if (!activeProject?.id) return;
+    setMetadata(prev => prev ? { ...prev, branchName: activeBranchFromStore } : prev);
+  }, [activeBranchFromStore, activeProject?.id]);
+
   // Auto-generate JSON files for projects that don't have them yet
   useEffect(() => {
     const generateInitialProjectData = async () => {
@@ -279,6 +269,10 @@ export function useConversationMetadata() {
       if (eventProjectId === activeProject?.id) {
         console.log(`🔄 useConversationMetadata: Branch switched to ${branchName}, refreshing metadata...`);
         try {
+          // Ensure branch store has the latest value
+          await refreshCurrentBranch(eventProjectId);
+          // Sync local metadata branch immediately for UI consistency
+          setMetadata(prev => prev ? { ...prev, branchName: branchName || activeBranchFromStore } : prev);
           setMetadata(null);
           await loadProjectMetadata(eventProjectId);
           console.log(`✅ useConversationMetadata: Metadata refreshed after branch switch`);
@@ -309,7 +303,7 @@ export function useConversationMetadata() {
         window.removeEventListener('projectDataReady', onProjectDataReady);
       };
     }
-  }, [activeProject?.id, loadProjectMetadata]);
+  }, [activeProject?.id, loadProjectMetadata, refreshCurrentBranch, activeBranchFromStore]);
 
   return {
     // Current conversation state

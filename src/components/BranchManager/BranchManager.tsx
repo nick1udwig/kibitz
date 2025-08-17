@@ -21,6 +21,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { useBranchStore } from '../../stores/branchStore';
+import { CurrentBranchChip } from '@/components/ui/current-branch-chip';
 
 interface BranchManagerProps {
   projectId: string;
@@ -28,6 +29,7 @@ interface BranchManagerProps {
 
 export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [recentlySwitched, setRecentlySwitched] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showRevertDialog, setShowRevertDialog] = useState(false);
   const [newBranchType, setNewBranchType] = useState<string>('feature');
@@ -37,9 +39,9 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
   const {
     config,
     branches,
-    currentBranch,
     pendingChanges,
     isProcessing,
+    isSwitching,
     lastOperation,
     updateConfig,
     detectProjectChanges,
@@ -55,7 +57,6 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
   } = useBranchStore();
 
   const projectBranches = branches[projectId] || [];
-  const currentProjectBranch = currentBranch[projectId] || 'main';
   const projectChanges = pendingChanges[projectId];
 
   // Load branches on mount and start auto-refresh
@@ -75,28 +76,30 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
 
   // 🚀 UI REFRESH FIX: Listen for branch switch events and refresh data
   useEffect(() => {
-    const handleBranchSwitch = async (event: CustomEvent) => {
-      const { projectId: eventProjectId, branchName } = event.detail;
-      if (eventProjectId === projectId) {
+    const handleBranchSwitch: EventListener = (evt: Event) => {
+      const event = evt as CustomEvent;
+      const { projectId: eventProjectId, branchName } = (event.detail || {}) as { projectId?: string; branchName?: string };
+      if (eventProjectId === projectId && branchName) {
         console.log(`🔄 BranchManager: Branch switched to ${branchName}, refreshing data...`);
-        try {
-          // Refresh all relevant data
-          await Promise.all([
-            listProjectBranches(projectId),
-            detectProjectChanges(projectId),
-            refreshCurrentBranch(projectId)
-          ]);
-          console.log(`✅ BranchManager: Data refreshed after branch switch`);
-        } catch (error) {
-          console.warn('⚠️ BranchManager: Failed to refresh after branch switch:', error);
-        }
+        void (async () => {
+          try {
+            await Promise.all([
+              listProjectBranches(projectId),
+              detectProjectChanges(projectId),
+              refreshCurrentBranch(projectId)
+            ]);
+            console.log(`✅ BranchManager: Data refreshed after branch switch`);
+          } catch (error) {
+            console.warn('⚠️ BranchManager: Failed to refresh after branch switch:', error);
+          }
+        })();
       }
     };
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('branchSwitched', handleBranchSwitch as EventListener);
+      window.addEventListener('branchSwitched', handleBranchSwitch);
       return () => {
-        window.removeEventListener('branchSwitched', handleBranchSwitch as EventListener);
+        window.removeEventListener('branchSwitched', handleBranchSwitch);
       };
     }
   }, [projectId, listProjectBranches, detectProjectChanges, refreshCurrentBranch]);
@@ -132,9 +135,12 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
   };
 
   const handleSwitchBranch = async (branchName: string) => {
+    // Immediate optimistic spinner handled by store's isSwitching flag
     const success = await switchToBranch(projectId, branchName);
     if (success) {
       listProjectBranches(projectId);
+      setRecentlySwitched(branchName);
+      window.setTimeout(() => setRecentlySwitched(null), 1500);
     }
   };
 
@@ -246,10 +252,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Current Branch</p>
-                  <span className="inline-flex items-center space-x-1 px-2 py-1 bg-gray-100 border border-gray-200 rounded text-sm">
-                    <GitBranch className="h-3 w-3" />
-                    <span>{currentProjectBranch}</span>
-                  </span>
+                  <CurrentBranchChip projectId={projectId} />
                 </div>
                 
                 <div className="space-y-2">
@@ -423,8 +426,22 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
                               size="sm" 
                               variant="outline"
                               onClick={() => handleSwitchBranch(branch.name)}
+                              disabled={isSwitching}
+                              className="cursor-pointer hover:bg-primary/10 hover:text-primary hover:border-primary focus-visible:ring-ring active:translate-y-[1px]"
                             >
-                              Switch
+                              {isSwitching ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <span className="inline-block w-3 h-3 border-2 border-blue-300 border-t-blue-700 rounded-full animate-spin" />
+                                  Switching…
+                                </span>
+                              ) : recentlySwitched === branch.name ? (
+                                <span className="inline-flex items-center gap-1 text-green-700">
+                                  <span className="inline-block w-3 h-3 rounded-full bg-green-600" />
+                                  Switched
+                                </span>
+                              ) : (
+                                'Switch'
+                              )}
                             </Button>
                             <Button 
                               size="sm" 
