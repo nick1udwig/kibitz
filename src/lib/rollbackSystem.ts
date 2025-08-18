@@ -6,6 +6,7 @@
  */
 
 import { BranchMetadataManager, BranchMetadata, RollbackOption } from './branchMetadata';
+import { VersionControlManager } from './versionControl';
 
 export interface RevertResult {
   success: boolean;
@@ -125,21 +126,14 @@ export class RollbackSystem {
         }
       }
 
-      // 4. Create backup if requested
-      let backupBranch: string | undefined;
-      if (createBackup && currentBranch !== branchName) {
-        backupBranch = await this.createBackupBranch(currentBranch);
+      // 4-6. Use unified VersionControlManager for revert
+      const vcm = new VersionControlManager(this.projectPath, this.serverId, this.executeTool);
+      const revertRes = await vcm.revertToBranch(branchName, { createBackup, stashChanges, force });
+      if (!revertRes.success) {
+        return { success: false, error: revertRes.error };
       }
-
-      // 5. Stash uncommitted changes if requested
-      let stashCreated = false;
-      if (stashChanges && hasUncommittedChanges) {
-        await this.stashCurrentWork();
-        stashCreated = true;
-      }
-
-      // 6. Switch to target branch
-      await this.switchToBranch(branchName);
+      const backupBranch = revertRes.backupBranch;
+      const stashCreated = stashChanges && hasUncommittedChanges ? true : false;
 
       // 7. Update metadata
       await this.metadataManager.markAsReverted(branchName);
@@ -228,12 +222,9 @@ export class RollbackSystem {
 
   private async getCurrentBranch(): Promise<string> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git branch --show-current` 
-        }
-      });
-      return result.trim();
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, 'git branch --show-current', this.projectPath, this.executeTool);
+      return (res.output || '').trim();
     } catch (error) {
       console.warn('Failed to get current branch:', error);
       return 'main';
@@ -242,12 +233,9 @@ export class RollbackSystem {
 
   private async getCurrentCommit(): Promise<string> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git rev-parse HEAD` 
-        }
-      });
-      return result.trim();
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, 'git rev-parse HEAD', this.projectPath, this.executeTool);
+      return (res.output || '').trim();
     } catch (error) {
       console.warn('Failed to get current commit:', error);
       return '';
@@ -256,12 +244,9 @@ export class RollbackSystem {
 
   private async getBranchCommit(branchName: string): Promise<string> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git rev-parse ${branchName}` 
-        }
-      });
-      return result.trim();
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, `git rev-parse ${branchName}`, this.projectPath, this.executeTool);
+      return (res.output || '').trim();
     } catch (error) {
       console.warn(`Failed to get commit for branch ${branchName}:`, error);
       return '';
@@ -270,12 +255,9 @@ export class RollbackSystem {
 
   private async hasUncommittedChanges(): Promise<boolean> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git status --porcelain` 
-        }
-      });
-      return result.trim().length > 0;
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, 'git status --porcelain', this.projectPath, this.executeTool);
+      return (res.output || '').trim().length > 0;
     } catch (error) {
       console.warn('Failed to check uncommitted changes:', error);
       return false;
@@ -284,12 +266,9 @@ export class RollbackSystem {
 
   private async checkBranchExists(branchName: string): Promise<boolean> {
     try {
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git show-ref --verify --quiet refs/heads/${branchName}` 
-        }
-      });
-      return true; // Command succeeds if branch exists
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, `git show-ref --verify --quiet refs/heads/${branchName}`, this.projectPath, this.executeTool);
+      return res.success; // Command succeeds if branch exists
     } catch {
       return false; // Command fails if branch doesn't exist
     }
@@ -298,13 +277,11 @@ export class RollbackSystem {
   private async checkPotentialConflicts(targetBranch: string): Promise<string[]> {
     try {
       // Check for files that differ between current branch and target
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git diff --name-only HEAD ${targetBranch}` 
-        }
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, `git diff --name-only HEAD ${targetBranch}`, this.projectPath, this.executeTool);
       
-      return result.trim() ? result.trim().split('\n') : [];
+      const out = (res.output || '').trim();
+      return out ? out.split('\n') : [];
     } catch (error) {
       console.warn('Failed to check potential conflicts:', error);
       return [];
@@ -313,21 +290,14 @@ export class RollbackSystem {
 
   private async createBackupBranch(currentBranch: string): Promise<string> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-    const backupBranch = `backup-before-revert-${timestamp}`;
+    const backupBranch = `backup/rollback/${timestamp}`;
     
     try {
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git checkout -b ${backupBranch}` 
-        }
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      await executeGitCommand(this.serverId, `git checkout -b ${backupBranch}`, this.projectPath, this.executeTool);
 
       // Return to original branch
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git checkout ${currentBranch}` 
-        }
-      });
+      await executeGitCommand(this.serverId, `git checkout ${currentBranch}`, this.projectPath, this.executeTool);
 
       console.log(`📦 Created backup branch: ${backupBranch}`);
       return backupBranch;
@@ -341,11 +311,8 @@ export class RollbackSystem {
     try {
       const stashMessage = `auto-stash-before-revert-${Date.now()}`;
       
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git stash push -m "${stashMessage}"` 
-        }
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      await executeGitCommand(this.serverId, `git stash push -m "${stashMessage}"`, this.projectPath, this.executeTool);
       
       console.log(`📦 Stashed current work: ${stashMessage}`);
     } catch (error) {
@@ -356,11 +323,8 @@ export class RollbackSystem {
 
   private async switchToBranch(branchName: string): Promise<void> {
     try {
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git checkout ${branchName}` 
-        }
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      await executeGitCommand(this.serverId, `git checkout ${branchName}`, this.projectPath, this.executeTool);
     } catch (error) {
       throw new Error(`Failed to switch to branch ${branchName}: ${error instanceof Error ? error.message : String(error)}`);
     }

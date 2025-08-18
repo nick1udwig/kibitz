@@ -162,43 +162,30 @@ export const detectClonedRepository = async (
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<{ isCloned: boolean; repoUrl?: string; defaultBranch?: string } | null> => {
   try {
-    // Check if this is a Git repository with proper thread_id
-    const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: {
-        command: `test -d "${directoryPath}/.git" && echo "is_git_repo" || echo "not_git_repo"`
-      },
-      thread_id: 'git-operations'
-    });
+    // Check if this is a Git repository
+    const { executeGitCommand } = await import('./versionControl/git');
+    const gitCheckResult = await executeGitCommand(
+      mcpServerId,
+      'test -d .git && echo "is_git_repo" || echo "not_git_repo"',
+      directoryPath,
+      executeTool
+    );
 
-    if (!gitCheckResult.includes('is_git_repo')) {
+    if (!(gitCheckResult.output || '').includes('is_git_repo')) {
       return null;
     }
 
     // Check for remote origin (indicates cloned repo)
-    const remoteResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: {
-        command: `cd "${directoryPath}" && git remote get-url origin 2>/dev/null || echo "no_remote"`,
-        type: 'command'
-      },
-      thread_id: 'git-operations'
-    });
-
-    const hasRemote = !remoteResult.includes('no_remote') && remoteResult.trim();
+    const remoteRes = await executeGitCommand(mcpServerId, 'git remote get-url origin 2>/dev/null || echo "no_remote"', directoryPath, executeTool);
+    const hasRemote = !(remoteRes.output || '').includes('no_remote') && (remoteRes.output || '').trim();
     
     // Get default branch
-    const branchResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: {
-        command: `cd "${directoryPath}" && git branch --show-current 2>/dev/null || echo "main"`,
-        type: 'command'
-      },
-      thread_id: 'git-operations'
-    });
-
-    const defaultBranch = branchResult.trim() || 'main';
+    const branchRes = await executeGitCommand(mcpServerId, 'git branch --show-current 2>/dev/null || echo "main"', directoryPath, executeTool);
+    const defaultBranch = (branchRes.output || '').trim() || 'main';
 
     return {
       isCloned: !!hasRemote,
-      repoUrl: hasRemote ? remoteResult.trim() : undefined,
+      repoUrl: hasRemote ? (remoteRes.output || '').trim() : undefined,
       defaultBranch
     };
   } catch (error) {

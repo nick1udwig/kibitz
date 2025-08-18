@@ -6,6 +6,7 @@
  */
 
 import { Project } from '../components/LlmChat/context/types';
+import { executeGitCommand } from './versionControl/git';
 
 export interface SnapshotConfig {
   autoPushEnabled: boolean;
@@ -62,14 +63,8 @@ export async function generateCommitMessage(
   void _provider;
   try {
     // Get git diff for staged changes
-    const diffResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git diff --cached`
-      },
-      thread_id: `commit-msg-${Date.now()}`
-    });
-
-    if (diffResult.includes('Error:') || !diffResult.trim()) {
+    const diffRes = await executeGitCommand(serverId, 'git diff --cached', projectPath, executeTool);
+    if (!diffRes.success || !diffRes.output.trim()) {
       return 'Auto-generated commit';
     }
 
@@ -98,28 +93,17 @@ export async function createEnhancedSnapshot(
 ): Promise<{ success: boolean; snapshot?: GitSnapshot; error?: string }> {
   
   const config = { ...currentConfig, ...options.config };
-  const threadId = `snapshot-${Date.now()}`;
+  // const threadId = `snapshot-${Date.now()}`;  // unused
 
   try {
     // Check if there are changes to snapshot
-    const statusResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git status --porcelain`
-      },
-      thread_id: threadId
-    });
-
-    if (!options.force && (!statusResult.trim() || statusResult.includes('Error:'))) {
+    const statusRes = await executeGitCommand(serverId, 'git status --porcelain', projectPath, executeTool);
+    if (!options.force && (!statusRes.success || !statusRes.output.trim())) {
       return { success: false, error: 'No changes to snapshot' };
     }
 
     // Stage all changes
-    await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git add -A`
-      },
-      thread_id: threadId
-    });
+    await executeGitCommand(serverId, 'git add -A', projectPath, executeTool);
 
     // Generate commit message
     let commitMessage = options.description || 'Manual checkpoint';
@@ -139,45 +123,22 @@ export async function createEnhancedSnapshot(
     const branchName = `${branchType}/${dateStr}`;
 
     // Create new branch for this snapshot
-    await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git checkout -b "${branchName}"`
-      },
-      thread_id: threadId
-    });
+    await executeGitCommand(serverId, `git checkout -b "${branchName}"`, projectPath, executeTool);
 
     // Create the commit
-    const commitResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git commit -m "${commitMessage.replace(/"/g, '\\"')}"`
-      },
-      thread_id: threadId
-    });
-
-    if (commitResult.includes('Error:') || commitResult.includes('nothing to commit')) {
+    const commitRes = await executeGitCommand(serverId, `git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, projectPath, executeTool);
+    if (!commitRes.success || commitRes.output.includes('nothing to commit')) {
       return { success: false, error: 'Failed to create commit' };
     }
 
     // Get commit hash
-    const hashResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git rev-parse HEAD`
-      },
-      thread_id: threadId
-    });
-
-    const commitHash = hashResult.trim();
+    const hashRes = await executeGitCommand(serverId, 'git rev-parse HEAD', projectPath, executeTool);
+    const commitHash = (hashRes.output || '').trim();
     const shortHash = commitHash.substring(0, 7);
 
     // Get commit statistics
-    const statsResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git show --stat --format="%an" ${commitHash}`
-      },
-      thread_id: threadId
-    });
-
-    const statsLines = statsResult.split('\n');
+    const statsRes = await executeGitCommand(serverId, `git show --stat --format="%an" ${commitHash}`, projectPath, executeTool);
+    const statsLines = (statsRes.output || '').split('\n');
     const author = statsLines[0] || 'Unknown';
     
     // Parse file and line changes
@@ -248,49 +209,31 @@ export async function getRecentSnapshots(
   maxCount: number = 3
 ): Promise<GitSnapshot[]> {
   try {
-    const threadId = `recent-snapshots-${Date.now()}`;
+    // const threadId = `recent-snapshots-${Date.now()}`;  // unused
     
     // Get recent commits with format: hash|subject|author|date
-    const logResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git log -${maxCount} --format="%H|%s|%an|%ct" --branches`
-      },
-      thread_id: threadId
-    });
+    const logRes = await executeGitCommand(serverId, `git log -${maxCount} --format="%H|%s|%an|%ct" --branches`, projectPath, executeTool);
 
-    if (logResult.includes('Error:')) {
+    if (!logRes.success) {
       return [];
     }
 
     const snapshots: GitSnapshot[] = [];
-    const lines = logResult.trim().split('\n').filter(line => line.trim());
+    const lines = (logRes.output || '').trim().split('\n').filter(line => line.trim());
 
     for (const line of lines) {
       const [hash, subject, author, timestamp] = line.split('|');
       if (!hash || !subject) continue;
 
       // Get branch name for this commit
-      const branchResult = await executeTool(serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git branch --contains ${hash} | head -1 | sed 's/^[ *]*//'`
-        },
-        thread_id: threadId
-      });
-
-      const branchName = branchResult.trim().replace(/^\* /, '') || 'unknown';
+      const branchRes = await executeGitCommand(serverId, `git branch --contains ${hash} | head -1 | sed 's/^[ *]*//'`, projectPath, executeTool);
+      const branchName = (branchRes.output || '').trim().replace(/^\* /, '') || 'unknown';
 
       // Get stats for this commit
-      const statsResult = await executeTool(serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git show --stat --format="" ${hash}`
-        },
-        thread_id: threadId
-      });
-
+      const statsRes = await executeGitCommand(serverId, `git show --stat --format="" ${hash}`, projectPath, executeTool);
       let filesChanged = 0;
       let linesChanged = 0;
-      
-      const statsLines = statsResult.split('\n');
+      const statsLines = (statsRes.output || '').split('\n');
       for (const statLine of statsLines) {
         if (statLine.includes(' file') && statLine.includes('changed')) {
           const fileMatch = statLine.match(/(\d+) files? changed/);
@@ -336,45 +279,34 @@ export async function getRecentBranches(
   maxCount: number = 5
 ): Promise<BranchInfo[]> {
   try {
-    const threadId = `recent-branches-${Date.now()}`;
+    // const threadId = `recent-branches-${Date.now()}`;  // unused
     
     // Get all branches with last commit info
-    const branchResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git for-each-ref --sort=-committerdate --format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)|%(subject)' refs/heads/ | head -${maxCount}`
-      },
-      thread_id: threadId
-    });
+    const branchRes = await executeGitCommand(
+      serverId,
+      `git for-each-ref --sort=-committerdate --format='%(refname:short)|%(objectname:short)|%(committerdate:iso8601)|%(subject)' refs/heads/ | head -${maxCount}`,
+      projectPath,
+      executeTool
+    );
 
-    if (branchResult.includes('Error:')) {
+    if (!branchRes.success || (branchRes.output || '').includes('Error:')) {
       return [];
     }
 
     // Get current branch
-    const currentBranchResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git branch --show-current`
-      },
-      thread_id: threadId
-    });
+    const currentBranchRes = await executeGitCommand(serverId, 'git branch --show-current', projectPath, executeTool);
 
-    const currentBranch = currentBranchResult.trim();
+    const currentBranch = (currentBranchRes.output || '').trim();
     const branches: BranchInfo[] = [];
-    const lines = branchResult.trim().split('\n').filter(line => line.trim());
+    const lines = (branchRes.output || '').trim().split('\n').filter(line => line.trim());
 
     for (const line of lines) {
       const [name, lastCommit, timestamp] = line.split('|');
       if (!name) continue;
 
       // Get commit count for this branch
-      const countResult = await executeTool(serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git rev-list --count ${name}`
-        },
-        thread_id: threadId
-      });
-
-      const commitCount = parseInt(countResult.trim()) || 0;
+      const countRes = await executeGitCommand(serverId, `git rev-list --count ${name}`, projectPath, executeTool);
+      const commitCount = parseInt((countRes.output || '').trim()) || 0;
 
       branches.push({
         name,
@@ -405,36 +337,39 @@ export async function quickRevertToSnapshot(
   createBackup: boolean = true
 ): Promise<{ success: boolean; backupBranch?: string; error?: string }> {
   try {
-    const threadId = `revert-${Date.now()}`;
     let backupBranch: string | undefined;
 
     if (createBackup) {
-      // Create backup branch
-      const timestamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
-      backupBranch = `backup-before-revert-${timestamp}`;
-      
-      await executeTool(serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git checkout -b "${backupBranch}"`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
+      // Create backup branch (unified naming)
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+      backupBranch = `backup/rollback/${timestamp}`;
+
+      const backupRes = await executeGitCommand(
+        serverId,
+        `git checkout -b "${backupBranch}"`,
+        projectPath,
+        executeTool
+      );
+      if (!backupRes.success) {
+        return {
+          success: false,
+          error: `Failed to create backup branch ${backupBranch}: ${backupRes.output || ''}`
+        };
+      }
     }
 
     // Checkout the target snapshot branch
-    const checkoutResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git checkout "${snapshot.branchName}"`,
-        type: 'command'
-      },
-      thread_id: threadId
-    });
+    const checkoutRes = await executeGitCommand(
+      serverId,
+      `git checkout "${snapshot.branchName}"`,
+      projectPath,
+      executeTool
+    );
 
-    if (checkoutResult.includes('Error:')) {
+    if (!checkoutRes.success || (checkoutRes.output || '').includes('fatal:')) {
       return { 
         success: false, 
-        error: `Failed to checkout snapshot branch: ${checkoutResult}`,
+        error: `Failed to checkout snapshot branch: ${checkoutRes.output || ''}`,
         backupBranch 
       };
     }
@@ -470,17 +405,16 @@ export async function pushSnapshotToRemote(
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const threadId = `push-snapshot-${Date.now()}`;
-    
-    const pushResult = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git push origin "${branchName}"`
-      },
-      thread_id: threadId
-    });
+    const pushRes = await executeGitCommand(
+      serverId,
+      `git push origin "${branchName}"`,
+      projectPath,
+      executeTool
+    );
 
-    if (pushResult.includes('Error:') || pushResult.includes('fatal:')) {
-      return { success: false, error: pushResult };
+    const out = pushRes.output || '';
+    if (!pushRes.success || out.includes('fatal:') || out.includes('error:')) {
+      return { success: false, error: out };
     }
 
     return { success: true };

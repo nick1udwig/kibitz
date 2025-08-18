@@ -5,6 +5,7 @@
  * revert the workspace to the state after a specific message was sent.
  */
 
+import { VersionControlManager, RollbackOptions, RollbackResult } from './versionControl';
 
 export interface SessionCommit {
   hash: string;
@@ -18,20 +19,6 @@ export interface SessionInfo {
   commits: SessionCommit[];
   currentCommit?: string;
   currentBranch?: string;
-}
-
-export interface RollbackResult {
-  success: boolean;
-  commitHash?: string;
-  backupBranch?: string;
-  message?: string;
-  error?: string;
-}
-
-export interface RollbackOptions {
-  stashChanges?: boolean;
-  createBackup?: boolean;
-  force?: boolean;
 }
 
 export default class GitSessionService {
@@ -69,26 +56,18 @@ export default class GitSessionService {
       if (currentCommit === commitHash) {
         return {
           success: true,
-          commitHash,
           message: 'Already at target commit'
         };
       }
 
-      // Use unified rollback facade
-      const { rollbackToCommit: vcRollbackToCommit } = await import('./versionControl/rollback');
-      const res = await vcRollbackToCommit({
-        projectPath: this.projectPath,
-        serverId: this.serverId,
-        executeTool: this.executeTool,
-        commitHash,
-        options: { stashChanges, createBackup, force }
-      });
+      // Use unified VersionControlManager
+      const vcm = new VersionControlManager(this.projectPath, this.serverId, this.executeTool);
+      const res = await vcm.rollbackToCommit(commitHash, { stashChanges, createBackup, force });
 
       if (res.success) {
         console.log(`✅ Successfully rolled back to commit: ${commitHash.substring(0, 7)}`);
         return {
           success: true,
-          commitHash,
           backupBranch: res.backupBranch,
           message: res.message || `Rolled back to commit ${commitHash.substring(0, 7)}`
         };
@@ -110,18 +89,14 @@ export default class GitSessionService {
    */
   async getSessionCommits(limit: number = 20): Promise<SessionCommit[]> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git log --oneline -${limit} --format="%H|%s|%ct"`
-        },
-        thread_id: `session-commits-${Date.now()}`
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, `git log --oneline -${limit} --format="%H|%s|%ct"`, this.projectPath, this.executeTool);
 
-      if (result.includes('Error:')) {
+      if (!res.success) {
         return [];
       }
 
-      return result.trim().split('\n').map(line => {
+      return (res.output || '').trim().split('\n').map(line => {
         const [hash, message, timestamp] = line.split('|');
         return {
           hash,
@@ -168,14 +143,9 @@ export default class GitSessionService {
 
   private async verifyCommitExists(commitHash: string): Promise<boolean> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git cat-file -e ${commitHash}`,
-          type: 'command'
-        },
-        thread_id: `verify-commit-${Date.now()}`
-      });
-      return !result.includes('Error:');
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, `git cat-file -e ${commitHash}`, this.projectPath, this.executeTool);
+      return res.success;
     } catch {
       return false;
     }
@@ -183,13 +153,9 @@ export default class GitSessionService {
 
   private async getCurrentCommit(): Promise<string> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git rev-parse HEAD`
-        },
-        thread_id: `current-commit-${Date.now()}`
-      });
-      return result.trim();
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.serverId, 'git rev-parse HEAD', this.projectPath, this.executeTool);
+      return (res.output || '').trim();
           } catch {
         return '';
       }
@@ -198,13 +164,8 @@ export default class GitSessionService {
   private async stashChanges(): Promise<void> {
     try {
       const stashMessage = `auto-stash-before-message-revert-${Date.now()}`;
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git stash push -m "${stashMessage}"`,
-          type: 'command'
-        },
-        thread_id: `stash-changes-${Date.now()}`
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      await executeGitCommand(this.serverId, `git stash push -m "${stashMessage}"`, this.projectPath, this.executeTool);
       console.log(`📦 Stashed changes: ${stashMessage}`);
     } catch (error) {
       console.warn('Failed to stash changes:', error);
@@ -215,25 +176,14 @@ export default class GitSessionService {
   private async createBackupBranch(): Promise<string> {
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-      const backupBranch = `backup-before-message-revert-${timestamp}`;
+      const backupBranch = `backup/rollback/${timestamp}`;
       
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git checkout -b ${backupBranch}`,
-          type: 'command'
-        },
-        thread_id: `backup-branch-${Date.now()}`
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      await executeGitCommand(this.serverId, `git checkout -b ${backupBranch}`, this.projectPath, this.executeTool);
 
       // Return to original branch/commit
       const currentCommit = await this.getCurrentCommit();
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git checkout ${currentCommit}`,
-          type: 'command'
-        },
-        thread_id: `return-to-commit-${Date.now()}`
-      });
+      await executeGitCommand(this.serverId, `git checkout ${currentCommit}`, this.projectPath, this.executeTool);
 
       console.log(`📦 Created backup branch: ${backupBranch}`);
       return backupBranch;

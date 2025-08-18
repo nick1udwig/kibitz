@@ -126,12 +126,12 @@ export function ConversationMetadataPanel() {
                     size="sm"
                     variant="outline"
                     onClick={() => handleRevert(commit)}
-                    disabled={isLoading || isSwitchingBranch}
+                    disabled={isLoading || (activeProjectId && isSwitchingBranch[activeProjectId]) || false}
                     className="ml-2 text-xs hover:shadow-sm hover:-translate-y-[1px] transition-all cursor-pointer hover:bg-primary/10 hover:text-primary hover:border-primary focus-visible:ring-ring"
                     title={commit.branchName ? `Switch to branch: ${formatBranchName(commit.branchName)}` : 'Revert to this commit'}
                   >
                     <RotateCcw className="w-3 h-3 mr-1" />
-                    {isSwitchingBranch ? (
+                    {(activeProjectId && isSwitchingBranch[activeProjectId]) ? (
                       <span className="inline-flex items-center gap-1">
                         <span className="inline-block w-3 h-3 border-2 border-blue-300 border-t-blue-700 rounded-full animate-spin" />
                         {commit.branchName ? 'Switching…' : 'Reverting…'}

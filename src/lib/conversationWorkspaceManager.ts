@@ -29,6 +29,7 @@ import {
   createDefaultWorkspaceSettings,
   logWorkspaceOperation
 } from './conversationWorkspaceService';
+import { executeGitCommand as vcExecuteGitCommand } from './versionControl/git';
 
 // 🌟 PHASE 2.1: Git commands for branch management
 export const GIT_COMMANDS = {
@@ -658,31 +659,19 @@ export class ConversationWorkspaceManager {
       }
 
       // Skip push when repo has no commits or no current branch
-      try {
-        const headCheck = await this.executeTool!(this.mcpServerId, 'BashCommand', {
-          action_json: { command: `cd "${workspace.workspacePath}" && git rev-parse --verify HEAD`, type: 'command' },
-          thread_id: `git-head-check-${Date.now()}`
-        });
-        const headText = (headCheck || '').toString().toLowerCase();
-        if (headText.includes('fatal') || headText.includes('unknown revision')) {
+      {
+        const headCheck = await this.executeGitCommand(workspace.workspacePath, 'git rev-parse --verify HEAD');
+        const headText = (headCheck.output || '').toLowerCase();
+        if (!headCheck.success || headText.includes('fatal') || headText.includes('unknown rev')) {
           return {
             success: false,
             command: '',
-            output: '',
+            output: headCheck.output,
             error: 'Repository has no commits; skipping push',
             timestamp: new Date(),
             workspaceId: workspace.workspaceId
           };
         }
-      } catch {
-        return {
-          success: false,
-          command: '',
-          output: '',
-          error: 'Repository has no commits; skipping push',
-          timestamp: new Date(),
-          workspaceId: workspace.workspaceId
-        };
       }
 
       const targetBranch = branchName || workspace.currentBranch || '';
@@ -977,27 +966,15 @@ export class ConversationWorkspaceManager {
     }
 
     try {
-      const result = await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${workspacePath}" && ${command}`
-        },
-        thread_id: `git-cmd-${Date.now()}`
-      });
-
-      // Check if command was successful (basic check)
-      const isError = result.toLowerCase().includes('error') || 
-                     result.toLowerCase().includes('fatal') ||
-                     result.toLowerCase().includes('not a git repository');
-
+      const res = await vcExecuteGitCommand(this.mcpServerId, command, workspacePath, this.executeTool);
       return {
-        success: !isError,
+        success: res.success,
         command,
-        output: result,
-        error: isError ? result : undefined,
+        output: res.output || '',
+        error: res.success ? undefined : (res.error || res.output || 'unknown error'),
         timestamp: new Date(),
         workspaceId: ''
       };
-
     } catch (error) {
       return {
         success: false,

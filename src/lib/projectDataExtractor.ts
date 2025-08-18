@@ -12,6 +12,7 @@
  */
 
 import { getProjectPath } from './projectPathService';
+import { executeGitCommand } from './versionControl/git';
 
 // 🔒 Singleton pattern to prevent multiple simultaneous extractions
 const extractionInProgress = new Map<string, Promise<ProjectApiData>>();
@@ -241,8 +242,7 @@ export class ProjectDataExtractor {
   private async extractGitData(
     projectPath: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
-    mcpServerId: string,
-    threadId: string
+    mcpServerId: string
   ): Promise<{
     isInitialized: boolean;
     defaultBranch: string;
@@ -253,15 +253,9 @@ export class ProjectDataExtractor {
     console.log(`🔍 Extracting git data from ${projectPath}`);
 
     // Check if git is initialized
-    const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git rev-parse --is-inside-work-tree 2>/dev/null || echo "not_git"`,
-        type: 'command'
-      },
-      thread_id: threadId
-    });
+    const gitCheckResult = await executeGitCommand(mcpServerId, 'git rev-parse --is-inside-work-tree 2>/dev/null || echo "not_git"', projectPath, executeTool);
 
-    const isInitialized = !this.extractCommandOutput(gitCheckResult).includes('not_git');
+    const isInitialized = !(gitCheckResult.output || '').includes('not_git');
     
     if (!isInitialized) {
       return {
@@ -274,15 +268,14 @@ export class ProjectDataExtractor {
     }
 
     // Get local branches only to avoid duplicate remote refs like origin/main
-    const branchesResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git for-each-ref --sort=-committerdate --format="%(refname:short)|%(objectname)|%(committerdate:unix)|%(subject)" refs/heads/ 2>/dev/null || echo "no_branches"`,
-        type: 'command'
-      },
-      thread_id: threadId
-    });
+    const branchesResult = await executeGitCommand(
+      mcpServerId,
+      'git for-each-ref --sort=-committerdate --format="%(refname:short)|%(objectname)|%(committerdate:unix)|%(subject)" refs/heads/ 2>/dev/null || echo "no_branches"',
+      projectPath,
+      executeTool
+    );
 
-    const branchLines = this.extractCommandOutput(branchesResult)
+    const branchLines = (branchesResult.output || '')
       .split('\n')
       // Drop echoed command or noise lines
       .filter(line => line.trim() && !/cd "/.test(line) && !/git\s+for-each-ref/.test(line) && !/status =/.test(line) && !/^---/.test(line));
@@ -307,15 +300,9 @@ export class ProjectDataExtractor {
       seenBranches.add(branchName);
 
       // Get detailed commit info
-      const commitInfoResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git show --stat --format="%an|%ai|%s" ${commitHash} | head -20`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
+      const commitInfoResult = await executeGitCommand(mcpServerId, `git show --stat --format="%an|%ai|%s" ${commitHash} | head -20`, projectPath, executeTool);
 
-      const commitInfo = this.parseCommitInfo(this.extractCommandOutput(commitInfoResult));
+      const commitInfo = this.parseCommitInfo(commitInfoResult.output || '');
 
       branches.push({
         branchName,
@@ -332,15 +319,9 @@ export class ProjectDataExtractor {
     }
 
     // Get total commits
-    const commitCountResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git rev-list --count HEAD 2>/dev/null || echo "0"`,
-        type: 'command'
-      },
-      thread_id: threadId
-    });
+    const commitCountResult = await executeGitCommand(mcpServerId, 'git rev-list --count HEAD 2>/dev/null || echo "0"', projectPath, executeTool);
 
-    const totalCommits = parseInt(this.extractCommandOutput(commitCountResult)) || 0;
+    const totalCommits = parseInt((commitCountResult.output || '').trim()) || 0;
     const lastActivity = branches.length > 0 ? Math.max(...branches.map(b => b.timestamp)) : Date.now();
 
     return {

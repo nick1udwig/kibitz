@@ -239,47 +239,15 @@ export class AutoCommitAgent {
     try {
       console.log(`🔧 AutoCommitAgent: Starting basic git commit for ${projectPath}`);
 
-      // Step 1: Initialize MCP thread first
-      // Use consistent thread ID that matches rootStore.ts expectations
-      let threadId = "git-operations";
-      
-      try {
-        console.log(`🔧 AutoCommitAgent: Initializing MCP thread: ${threadId}`);
-        await this.context!.executeTool(this.context!.mcpServerId, 'Initialize', {
-          type: "first_call",
-          any_workspace_path: projectPath,
-          initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
-          thread_id: threadId
-        });
-        console.log(`✅ AutoCommitAgent: MCP thread initialized: ${threadId}`);
-      } catch (initError) {
-        console.warn(`⚠️ AutoCommitAgent: Failed to initialize MCP thread, using default:`, initError);
-        threadId = "git-operations"; // Keep same ID even on fallback
-      }
+      const { executeGitCommand } = await import('./versionControl/git');
 
-      // Step 2: Initialize git repository if needed. Do not set identity here.
-      const initResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git init`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
+      // Step 1: Initialize git repository if needed
+      const initRes = await executeGitCommand(this.context!.mcpServerId, 'git init -b main || git init', projectPath, this.context!.executeTool);
+      console.log(`🔧 AutoCommitAgent: Git init result:`, (initRes.output || '').includes('Initialized empty Git repository') || (initRes.output || '').includes('Reinitialized existing Git repository'));
 
-      console.log(`🔧 AutoCommitAgent: Git init result:`, initResult.includes('Initialized empty Git repository') || initResult.includes('Reinitialized existing Git repository'));
-
-      // Step 3: Check status
-      const statusResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git status --porcelain`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
-
-      const statusOutput = this.extractCommandOutput(statusResult);
+      // Step 2: Check status
+      const statusRes = await executeGitCommand(this.context!.mcpServerId, 'git status --porcelain', projectPath, this.context!.executeTool);
+      const statusOutput = (statusRes.output || '');
       const hasChanges = statusOutput.trim().length > 0;
 
       if (!hasChanges) {
@@ -291,13 +259,7 @@ export class AutoCommitAgent {
       }
 
       // Step 4: Add all changes
-      await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git add .`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
+      await executeGitCommand(this.context!.mcpServerId, 'git add .', projectPath, this.context!.executeTool);
 
       console.log(`🔧 AutoCommitAgent: Git add completed`);
 
@@ -306,28 +268,14 @@ export class AutoCommitAgent {
       const commitMessage = `Auto-commit: Changes detected ${timestamp}`;
       
       // Commit without forcing identity (must be provided by env or git config)
-      const commitResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git commit -m "${commitMessage}"`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
-
-      const commitOutput = this.extractCommandOutput(commitResult);
-      const commitSuccess = !commitOutput.includes('Error:') && !commitOutput.includes('fatal:');
+      const commitRes = await executeGitCommand(this.context!.mcpServerId, `git commit -m "${commitMessage}"`, projectPath, this.context!.executeTool);
+      const commitOutput = commitRes.output || '';
+      const commitSuccess = commitRes.success && !commitOutput.includes('fatal:');
 
       if (commitSuccess) {
         // Get commit SHA
-        const shaResult = await this.context!.executeTool(this.context!.mcpServerId, 'BashCommand', {
-          action_json: {
-            command: `cd "${projectPath}" && git rev-parse HEAD`,
-            type: 'command'
-          },
-          thread_id: threadId
-        });
-
-        const commitSha = this.extractCommandOutput(shaResult).trim();
+        const shaRes = await executeGitCommand(this.context!.mcpServerId, 'git rev-parse HEAD', projectPath, this.context!.executeTool);
+        const commitSha = (shaRes.output || '').trim();
 
         console.log(`✅ AutoCommitAgent: Commit successful with SHA: ${commitSha}`);
         return {

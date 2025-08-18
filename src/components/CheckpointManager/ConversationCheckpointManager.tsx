@@ -322,7 +322,7 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
                   size="sm"
                   variant="outline"
                   onClick={() => handleRevert(commit)}
-                  disabled={isReverting || isLoading || isSwitchingBranch || commit.branchName === currentProjectBranch}
+                  disabled={isReverting || isLoading || (isSwitchingBranch[projectId] || false) || commit.branchName === currentProjectBranch}
                   className="ml-4 relative z-[100] pointer-events-auto hover:shadow-sm hover:-translate-y-[1px] transition-all cursor-pointer hover:bg-primary/10 hover:text-primary hover:border-primary focus-visible:ring-ring"
                   title={
                     commit.branchName === currentProjectBranch 
@@ -339,7 +339,7 @@ export const ConversationCheckpointManager: React.FC<ConversationCheckpointManag
                   )}
                   {commit.branchName === currentProjectBranch 
                     ? 'Current' 
-                    : (isReverting || isSwitchingBranch)
+                    : (isReverting || (isSwitchingBranch[projectId] || false))
                       ? (
                         <span className="inline-flex items-center gap-1">
                           <span className="inline-block w-3 h-3 border-2 border-blue-300 border-t-blue-700 rounded-full animate-spin" />

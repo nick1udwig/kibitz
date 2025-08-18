@@ -1,4 +1,5 @@
 import { RollbackResult, RollbackToCommitParams } from './types';
+import { executeGitCommand } from './git';
 
 export async function rollbackToCommit(params: RollbackToCommitParams): Promise<RollbackResult> {
   const { projectPath, serverId, executeTool, commitHash, options } = params;
@@ -6,23 +7,10 @@ export async function rollbackToCommit(params: RollbackToCommitParams): Promise<
     const stashChanges = options?.stashChanges !== false; // default true
     const createBackup = options?.createBackup !== false; // default true
 
-    // Initialize MCP thread to the project path
-    await executeTool(serverId, 'Initialize', {
-      type: 'first_call',
-      any_workspace_path: projectPath,
-      initial_files_to_read: [],
-      task_id_to_resume: '',
-      mode_name: 'wcgw',
-      thread_id: 'rollback-operation'
-    });
-
     // Stash any work if requested
     if (stashChanges) {
       try {
-        await executeTool(serverId, 'BashCommand', {
-          action_json: { command: `cd "${projectPath}" && git stash push -m "pre-rollback-${Date.now()}"`, type: 'command' },
-          thread_id: 'rollback-operation'
-        });
+        await executeGitCommand(serverId, `git stash push -m "pre-rollback-${Date.now()}"`, projectPath, executeTool);
       } catch {}
     }
 
@@ -31,23 +19,15 @@ export async function rollbackToCommit(params: RollbackToCommitParams): Promise<
     if (createBackup) {
       try {
         const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-        backupBranch = `backup-before-rollback-${ts}`;
-        await executeTool(serverId, 'BashCommand', {
-          action_json: { command: `cd "${projectPath}" && git branch ${backupBranch}`, type: 'command' },
-          thread_id: 'rollback-operation'
-        });
+        // Unified naming: backup/rollback/<iso-ts>
+        backupBranch = `backup/rollback/${ts}`;
+        await executeGitCommand(serverId, `git branch ${backupBranch}`, projectPath, executeTool);
       } catch {}
     }
 
-    const result = await executeTool(serverId, 'BashCommand', {
-      action_json: {
-        command: `cd "${projectPath}" && git reset --hard ${commitHash}`,
-        type: 'command'
-      },
-      thread_id: 'rollback-operation'
-    });
+    const result = await executeGitCommand(serverId, `git reset --hard ${commitHash}`, projectPath, executeTool);
 
-    const output = typeof result === 'string' ? result : '';
+    const output = typeof result.output === 'string' ? result.output : '';
     const ok = !!output && (output.includes('HEAD is now at') || !/fatal:|error:/i.test(output));
     return { success: ok, error: ok ? undefined : 'Rollback failed', backupBranch, message: ok ? 'Rollback completed' : undefined };
   } catch (error) {

@@ -154,14 +154,9 @@ export const checkGitAvailability = async (
 ): Promise<{ isGit: boolean; hasCommits: boolean }> => {
   try {
     // Check if git is available
-    const gitCheckResult = await executeTool(mcpServerId, 'BashCommand', {
-      action_json: {
-        command: 'git --version'
-      },
-      thread_id: `git-version-check-${Date.now()}`
-    });
-
-    const isGit = !gitCheckResult.includes('Error:') && !gitCheckResult.includes('not found');
+    const { executeGitCommand } = await import('./versionControl/git');
+    const gitCheckResult = await executeGitCommand(mcpServerId, 'git --version', '.', executeTool);
+    const isGit = gitCheckResult.success && !(gitCheckResult.output || '').includes('not found');
 
     if (!isGit) {
       return { isGit: false, hasCommits: false };
@@ -169,14 +164,8 @@ export const checkGitAvailability = async (
 
     // Check if there are any commits
     try {
-      const logResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: 'git log --oneline -1'
-        },
-        thread_id: `git-log-check-${Date.now()}`
-      });
-
-      const hasCommits = !logResult.includes('Error:') && logResult.trim().length > 0;
+      const logResult = await executeGitCommand(mcpServerId, 'git log --oneline -1', '.', executeTool);
+      const hasCommits = logResult.success && (logResult.output || '').trim().length > 0;
       return { isGit: true, hasCommits };
     } catch {
       return { isGit: true, hasCommits: false };

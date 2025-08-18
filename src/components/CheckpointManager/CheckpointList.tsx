@@ -19,6 +19,7 @@ import { Button } from '../ui/button';
 import { useStore } from '../../stores/rootStore';
 import { Project } from '../../components/LlmChat/context/types';
 import { ensureProjectDirectory } from '../../lib/projectPathService';
+import { executeGitCommand } from '../../lib/versionControl/git';
 
 interface CheckpointListProps {
   projectId: string;
@@ -95,33 +96,9 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
       
       console.log('🔍 loadAutoBranches: Loading branches for project:', projectPath);
       
-      // 🔧 FIXED: Initialize thread first (following working pattern from checkpointStore)
-      let threadId = "branch-check";
-      try {
-        const initResult = await executeTool(mcpServerId, 'Initialize', {
-          type: "first_call",
-          any_workspace_path: projectPath,
-          initial_files_to_read: [],
-          task_id_to_resume: "",
-          mode_name: "wcgw",
-          thread_id: "branch-check"
-        });
-        
-        // Extract the thread_id from the response
-        const match = initResult.match(/thread_id=([a-z0-9]+)/i);
-        threadId = match && match[1] ? match[1] : "branch-check";
-        console.log(`✅ loadAutoBranches: Using thread_id=${threadId}`);
-      } catch (initError) {
-        console.warn('⚠️ loadAutoBranches: Initialize failed, using default thread_id:', initError);
-      }
-      
-      // 🔧 IMPROVED: Get all branches with proper thread_id
-      const branchResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git branch -a`
-        },
-        thread_id: threadId
-      });
+      // Get branches via centralized wrapper
+      const branchRes = await executeGitCommand(mcpServerId, 'git branch -a', projectPath, executeTool);
+      const branchResult = branchRes.output || '';
 
       console.log('📋 loadAutoBranches: Raw branch result:', branchResult);
 
@@ -155,12 +132,13 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
 
             // Get commit details for this branch using the same thread_id
             try {
-              const commitInfoResult = await executeTool(mcpServerId, 'BashCommand', {
-                action_json: {
-                  command: `cd "${projectPath}" && git log -1 --format='%H|%ci|%s' "${cleanLine}" 2>/dev/null || echo "unknown|unknown|Auto-created branch"`
-                },
-                thread_id: threadId
-              });
+              const commitInfoRes = await executeGitCommand(
+                mcpServerId,
+                `git log -1 --format='%H|%ci|%s' "${cleanLine}" 2>/dev/null || echo "unknown|unknown|Auto-created branch"`,
+                projectPath,
+                executeTool
+              );
+              const commitInfoResult = commitInfoRes.output || '';
 
               const [commitHash, dateStr, commitMessage] = commitInfoResult.split('|');
               
@@ -321,13 +299,9 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
         console.warn('⚠️ handleQuickRevert: Initialize failed, using default thread_id:', initError);
       }
       
-      // 🔧 SIMPLIFIED: Direct git checkout with proper thread_id
-      const revertResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git checkout "${branchName}"`
-        },
-        thread_id: threadId
-      });
+      // Checkout via centralized wrapper
+      const revertRes = await executeGitCommand(mcpServerId, `git checkout "${branchName}"`, projectPath, executeTool);
+      const revertResult = revertRes.output || '';
 
       console.log('📋 handleQuickRevert: Revert result:', revertResult);
 
@@ -659,32 +633,13 @@ export const CheckpointList: React.FC<CheckpointListProps> = ({
                 const mcpServerId = activeMcpServers[0].id;
                 const projectPath = await ensureProjectDirectory(project, mcpServerId, executeTool);
                 
-                // 🔧 FIXED: Initialize thread first for test
-                let threadId = "test-check";
-                try {
-                  const initResult = await executeTool(mcpServerId, 'Initialize', {
-                    type: "first_call",
-                    any_workspace_path: projectPath,
-                    initial_files_to_read: [],
-                    task_id_to_resume: "",
-                    mode_name: "wcgw",
-                    thread_id: "test-check"
-                  });
-                  
-                  const match = initResult.match(/thread_id=([a-z0-9]+)/i);
-                  threadId = match && match[1] ? match[1] : "test-check";
-                  console.log(`✅ testGit: Using thread_id=${threadId}`);
-                } catch (initError) {
-                  console.warn('⚠️ testGit: Initialize failed, using default thread_id:', initError);
-                }
-                
-                const testResult = await executeTool(mcpServerId, 'BashCommand', {
-                  action_json: {
-                    command: `cd "${projectPath}" && echo "=== ALL BRANCHES ===" && git branch -a && echo "=== AUTO BRANCHES ===" && git branch -a | grep -E "(auto|checkpoint|backup)" || echo "No auto branches found"`
-                  },
-                  thread_id: threadId
-                });
-                console.log('🧪 Manual test result:', testResult);
+                const testRes = await executeGitCommand(
+                  mcpServerId,
+                  `git branch -a | sed -e '1,1s/^/=== ALL BRANCHES ===\\n/' -e '$a=== AUTO BRANCHES ===' -e '/auto\\|checkpoint\\|backup/!d' || echo "No auto branches found"`,
+                  projectPath,
+                  executeTool
+                );
+                console.log('🧪 Manual test result:', testRes.output || '');
               }}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-green-300 bg-green-500/10 border border-green-500/30 rounded-md hover:bg-green-500/20 hover:text-green-200 transition-all duration-200"
             >

@@ -6,8 +6,27 @@
  */
 
 import { BranchNamingStrategy } from './branchNaming';
-import { CommitMessageGenerator, FileChange } from './commitMessageGenerator';
+// If this module is not present, fall back to a simple generator inline
+// Lightweight fallback types/generator to avoid missing-module errors
+type FileChange = { path: string; type: 'added' | 'modified' | 'deleted' };
+class CommitMessageGenerator {
+  constructor(
+    private executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
+    private serverId: string
+  ) {}
+  async generateCommitMessage(changes: FileChange[], context: string): Promise<string> {
+    const added = changes.filter(c => c.type === 'added').length;
+    const modified = changes.filter(c => c.type === 'modified').length;
+    const deleted = changes.filter(c => c.type === 'deleted').length;
+    const parts: string[] = [];
+    if (added) parts.push(`add ${added}`);
+    if (modified) parts.push(`modify ${modified}`);
+    if (deleted) parts.push(`delete ${deleted}`);
+    return parts.length ? `${context}: ${parts.join(', ')} files` : `auto: prepare for ${context} run`;
+  }
+}
 import { BranchMetadataManager } from './branchMetadata';
+import { executeGitCommand } from './versionControl/git';
 
 export interface PreRunConfig {
   enabled: boolean;
@@ -152,7 +171,7 @@ export class PreRunBranchManager {
           filesChanged: changes.map(c => c.path),
           canRevert: true,
           isAutoCreated: true,
-          createdBy: `auto-${context}` as string
+          createdBy: (context === 'test' ? 'auto-test' : context === 'build' ? 'auto-build' : 'auto-experiment')
         });
       }
 
@@ -179,12 +198,13 @@ export class PreRunBranchManager {
    */
   private async checkGitRepository(): Promise<boolean> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git rev-parse --is-inside-work-tree` 
-        }
-      });
-      return result.trim() === 'true';
+      const res = await executeGitCommand(
+        this.serverId,
+        'git rev-parse --is-inside-work-tree',
+        this.projectPath,
+        this.executeTool
+      );
+      return res.success && res.output.trim() === 'true';
     } catch (error) {
       console.warn('Git repository check failed:', error);
       return false;
@@ -196,12 +216,13 @@ export class PreRunBranchManager {
    */
   private async getCurrentBranch(): Promise<string> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git branch --show-current` 
-        }
-      });
-      return result.trim() || 'main';
+      const res = await executeGitCommand(
+        this.serverId,
+        'git branch --show-current',
+        this.projectPath,
+        this.executeTool
+      );
+      return (res.success && res.output.trim()) ? res.output.trim() : 'main';
     } catch (error) {
       console.warn('Failed to get current branch:', error);
       return 'main';
@@ -213,14 +234,15 @@ export class PreRunBranchManager {
    */
   private async getCurrentChanges(): Promise<FileChange[]> {
     try {
-      const result = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git status --porcelain` 
-        }
-      });
+      const res = await executeGitCommand(
+        this.serverId,
+        'git status --porcelain',
+        this.projectPath,
+        this.executeTool
+      );
 
       const changes: FileChange[] = [];
-      const lines = result.split('\n').filter(line => line.trim());
+      const lines = (res.output || '').split('\n').filter(line => line.trim());
 
       for (const line of lines) {
         if (line.length < 3) continue;
@@ -249,22 +271,14 @@ export class PreRunBranchManager {
    */
   private async createBackupBranch(): Promise<string> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-    const backupBranch = `backup-before-auto-${timestamp}`;
+    const backupBranch = `backup/rollback/${timestamp}`;
     
     try {
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git checkout -b "${backupBranch}"` 
-        }
-      });
+      await executeGitCommand(this.serverId, `git checkout -b "${backupBranch}"`, this.projectPath, this.executeTool);
 
       // Return to original branch
       const currentBranch = await this.getCurrentBranch();
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git checkout "${currentBranch}"` 
-        }
-      });
+      await executeGitCommand(this.serverId, `git checkout "${currentBranch}"`, this.projectPath, this.executeTool);
 
       console.log(`📦 Created backup branch: ${backupBranch}`);
       return backupBranch;
@@ -280,12 +294,7 @@ export class PreRunBranchManager {
   private async stashCurrentWork(): Promise<void> {
     try {
       const stashMessage = `auto-stash-before-branch-${Date.now()}`;
-      
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: { 
-          command: `cd "${this.projectPath}" && git stash push -m "${stashMessage}"` 
-        }
-      });
+      await executeGitCommand(this.serverId, `git stash push -m "${stashMessage}"`, this.projectPath, this.executeTool);
       
       console.log(`📦 Stashed current work: ${stashMessage}`);
     } catch (error) {
@@ -299,11 +308,7 @@ export class PreRunBranchManager {
    */
   private async createBranch(branchName: string): Promise<void> {
     try {
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git checkout -b "${branchName}"`
-        }
-      });
+      await executeGitCommand(this.serverId, `git checkout -b "${branchName}"`, this.projectPath, this.executeTool);
     } catch (error) {
       throw new Error(`Failed to create branch ${branchName}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -315,27 +320,14 @@ export class PreRunBranchManager {
   private async commitCurrentState(message: string): Promise<string> {
     try {
       // Add all changes
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git add -A`
-        }
-      });
+      await executeGitCommand(this.serverId, 'git add -A', this.projectPath, this.executeTool);
 
       // Commit with message (allow empty commits for branch creation)
-      await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git commit -m "${message}" --allow-empty`
-        }
-      });
+      await executeGitCommand(this.serverId, `git commit -m "${message}" --allow-empty`, this.projectPath, this.executeTool);
 
       // Get commit hash
-      const hashResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git rev-parse HEAD`
-        }
-      });
-
-      return hashResult.trim();
+      const hashResult = await executeGitCommand(this.serverId, 'git rev-parse HEAD', this.projectPath, this.executeTool);
+      return (hashResult.output || '').trim();
     } catch (error) {
       throw new Error(`Failed to commit changes: ${error instanceof Error ? error.message : String(error)}`);
     }

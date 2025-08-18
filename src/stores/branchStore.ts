@@ -42,8 +42,8 @@ interface BranchState {
   currentBranch: Record<string, string>; // projectId -> current branch name
   pendingChanges: Record<string, ChangeDetectionResult>; // projectId -> pending changes
   isProcessing: boolean;
-  // Dedicated switching flag so UI doesn't get blocked by background refreshes
-  isSwitching: boolean;
+  // Dedicated switching flag per project so UI doesn't get blocked by background refreshes
+  isSwitching: Record<string, boolean>; // projectId -> switching state
   lastOperation: string | null;
   
   // Auto-refresh
@@ -90,7 +90,7 @@ export const useBranchStore = create<BranchState>((set, get) => ({
   currentBranch: {},
   pendingChanges: {},
   isProcessing: false,
-  isSwitching: false,
+  isSwitching: {},
   lastOperation: null,
   
   // Auto-refresh interval for current branch
@@ -304,7 +304,11 @@ export const useBranchStore = create<BranchState>((set, get) => ({
     }
     
     try {
-      set({ isProcessing: true, isSwitching: true, lastOperation: `Switching to branch: ${branchName}` });
+      set((state) => ({ 
+        isProcessing: true, 
+        isSwitching: { ...state.isSwitching, [projectId]: true }, 
+        lastOperation: `Switching to branch: ${branchName}` 
+      }));
       
       const mcpServerId = activeMcpServers[0].id;
       const projectPath = await ensureProjectDirectory(project, mcpServerId, rootStore.executeTool);
@@ -494,7 +498,11 @@ export const useBranchStore = create<BranchState>((set, get) => ({
         return false;
       }
     } finally {
-      set({ isProcessing: false, isSwitching: false, lastOperation: null });
+      set((state) => ({ 
+        isProcessing: false, 
+        isSwitching: { ...state.isSwitching, [projectId]: false }, 
+        lastOperation: null 
+      }));
     }
   },
   

@@ -12,6 +12,7 @@ import {
 import { useStore } from '@/stores/rootStore';
 import { rollbackToCommit as vcRollbackToCommit, prepareCommit, executeCommit } from '@/lib/versionControl';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { executeGitCommand } from '@/lib/versionControl/git';
 
 interface CommitRollbackControlsProps {
   className?: string;
@@ -136,13 +137,9 @@ export function CommitRollbackControls({ className = '' }: CommitRollbackControl
               const uiMin = projectData?.settings?.minFilesForAutoCommitPush ?? 0;
               if (uiMin && uiMin > 0) {
                 // Quick check: count changed files now; skip push if below threshold
-                const statusRes = await executeTool(mcpServerId, 'BashCommand', {
-                  action_json: { command: `cd "${projectPath}" && git status --porcelain`, type: 'command' },
-                  thread_id: 'git-operations'
-                });
-                const out = typeof statusRes === 'string' ? statusRes : '';
-                const beforeSep = out.includes('\n---\n') ? out.split('\n---\n')[0] : out;
-                const changed = beforeSep.trim() ? beforeSep.trim().split('\n').filter((l: string) => l.trim()).length : 0;
+                const statusRes = await executeGitCommand(mcpServerId, 'git status --porcelain', projectPath, executeTool);
+                const out = (statusRes.output || '').trim();
+                const changed = out ? out.split('\n').filter((l: string) => l.trim()).length : 0;
                 if (changed < uiMin) {
                   console.log(`ℹ️ UI minFilesForAutoCommitPush=${uiMin}. Skipping immediate sync (changed ${changed}).`);
                 } else {

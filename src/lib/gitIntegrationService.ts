@@ -74,24 +74,13 @@ export class GitService {
       }
 
       // Initialize Git repository
-      await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && (git init -b main || git init); git show-ref --verify --quiet refs/heads/master && git branch -m master main || true`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      await executeGitCommand(this.mcpServerId, '(git init -b main || git init); git show-ref --verify --quiet refs/heads/master && git branch -m master main || true', this.projectPath, this.executeTool);
 
       // Do not set identity here; rely on repo/global git config or env-provided values
       // Ensure HEAD references main without creating a commit
       try {
-        await this.executeTool(this.mcpServerId, 'BashCommand', {
-          action_json: {
-            command: `cd "${this.projectPath}" && git symbolic-ref HEAD refs/heads/main || true`,
-            type: 'command'
-          },
-          thread_id: 'git-operations'
-        });
+        await executeGitCommand(this.mcpServerId, 'git symbolic-ref HEAD refs/heads/main || true', this.projectPath, this.executeTool);
       } catch {}
 
       console.log(`✅ GitService: Git repository initialized at ${this.projectPath}`);
@@ -107,14 +96,9 @@ export class GitService {
    */
   async isGitRepository(): Promise<boolean> {
     try {
-      const result = await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git rev-parse --is-inside-work-tree`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
-      return result.trim() === 'true';
+      const { executeGitCommand } = await import('./versionControl/git');
+      const res = await executeGitCommand(this.mcpServerId, 'git rev-parse --is-inside-work-tree', this.projectPath, this.executeTool);
+      return res.success && (res.output || '').trim() === 'true';
     } catch {
       return false;
     }
@@ -135,46 +119,23 @@ export class GitService {
       }
 
       // Get current branch
-      const currentBranchResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git branch --show-current`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
-      const currentBranch = currentBranchResult.trim() || 'main';
+      const { executeGitCommand } = await import('./versionControl/git');
+      const currentBranchRes = await executeGitCommand(this.mcpServerId, 'git branch --show-current', this.projectPath, this.executeTool);
+      const currentBranch = (currentBranchRes.output || '').trim() || 'main';
 
       // Get all branches
-      const allBranchesResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git branch --format='%(refname:short)'`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
-      const allBranches = allBranchesResult.trim() ? allBranchesResult.trim().split('\n') : [];
+      const allBranchesRes = await executeGitCommand(this.mcpServerId, `git branch --format='%(refname:short)'`, this.projectPath, this.executeTool);
+      const allBranches = (allBranchesRes.output || '').trim() ? (allBranchesRes.output || '').trim().split('\n') : [];
 
       // Get last commit info
       let lastCommitHash: string | undefined;
       let lastCommitMessage: string | undefined;
       try {
-        const commitHashResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
-          action_json: {
-            command: `cd "${this.projectPath}" && git log -1 --format='%H'`,
-            type: 'command'
-          },
-          thread_id: 'git-operations'
-        });
-        lastCommitHash = commitHashResult.trim();
+        const commitHashRes = await executeGitCommand(this.mcpServerId, `git log -1 --format='%H'`, this.projectPath, this.executeTool);
+        lastCommitHash = (commitHashRes.output || '').trim();
 
-        const commitMessageResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
-          action_json: {
-            command: `cd "${this.projectPath}" && git log -1 --format='%s'`,
-            type: 'command'
-          },
-          thread_id: 'git-operations'
-        });
-        lastCommitMessage = commitMessageResult.trim();
+        const commitMessageRes = await executeGitCommand(this.mcpServerId, `git log -1 --format='%s'`, this.projectPath, this.executeTool);
+        lastCommitMessage = (commitMessageRes.output || '').trim();
       } catch {
         // No commits yet, which is fine
       }
@@ -214,15 +175,10 @@ export class GitService {
       }
 
       // Get status of all files
-      const statusResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git status --porcelain`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
+      const { executeGitCommand } = await import('./versionControl/git');
+      const statusRes = await executeGitCommand(this.mcpServerId, 'git status --porcelain', this.projectPath, this.executeTool);
 
-      const statusLines = statusResult.trim().split('\n').filter(line => line.trim());
+      const statusLines = (statusRes.output || '').trim().split('\n').filter(line => line.trim());
       const changedFiles: string[] = [];
       const addedFiles: string[] = [];
       const modifiedFiles: string[] = [];
@@ -299,13 +255,8 @@ export class GitService {
         console.log(`⚠️ GitService: Branch ${branchName} already exists`);
         if (options.force) {
           // Delete existing branch first
-          await this.executeTool(this.mcpServerId, 'BashCommand', {
-            action_json: {
-              command: `cd "${this.projectPath}" && git branch -D ${branchName}`,
-              type: 'command'
-            },
-            thread_id: 'git-operations'
-          });
+          const { executeGitCommand } = await import('./versionControl/git');
+          await executeGitCommand(this.mcpServerId, `git branch -D ${branchName}`, this.projectPath, this.executeTool);
         } else {
           return {
             success: false,
@@ -316,23 +267,11 @@ export class GitService {
 
       // Create new branch
       const baseBranch = options.baseBranch || branchInfo.currentBranch;
-      await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git checkout -b ${branchName} ${baseBranch}`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
+      await executeGitCommand(this.mcpServerId, `git checkout -b ${branchName} ${baseBranch}`, this.projectPath, this.executeTool);
 
       // Switch to branch if requested
       if (options.switchToBranch !== false) {
-        await this.executeTool(this.mcpServerId, 'BashCommand', {
-          action_json: {
-            command: `cd "${this.projectPath}" && git checkout ${branchName}`,
-            type: 'command'
-          },
-          thread_id: 'git-operations'
-        });
+        await executeGitCommand(this.mcpServerId, `git checkout ${branchName}`, this.projectPath, this.executeTool);
       }
 
       console.log(`✅ GitService: Successfully created branch ${branchName}`);
@@ -381,13 +320,7 @@ export class GitService {
         ? `cd "${this.projectPath}" && git add -A`
         : `cd "${this.projectPath}" && git add -u`;
 
-      await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: stageCommand,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
+      await executeGitCommand(this.mcpServerId, stageCommand.replace(/^cd .*? &&\s*/, ''), this.projectPath, this.executeTool);
 
       // Do not assume identity; only set if explicit author provided
       let authorConfig = '';
@@ -396,24 +329,12 @@ export class GitService {
       }
 
       // Commit changes
-      const commitCommand = `cd "${this.projectPath}" && ${authorConfig}git commit -m "${options.message}"`;
-      await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: commitCommand,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
+      const commitCommand = `${authorConfig}git commit -m "${options.message}"`;
+      await executeGitCommand(this.mcpServerId, commitCommand, this.projectPath, this.executeTool);
 
       // Get commit hash
-      const commitHashResult = await this.executeTool(this.mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${this.projectPath}" && git log -1 --format='%H'`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
-      const commitHash = commitHashResult.trim();
+      const commitHashRes = await executeGitCommand(this.mcpServerId, `git log -1 --format='%H'`, this.projectPath, this.executeTool);
+      const commitHash = (commitHashRes.output || '').trim();
 
       console.log(`✅ GitService: Successfully committed changes. Hash: ${commitHash}`);
       

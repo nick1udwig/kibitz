@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore } from '@/stores/rootStore';
 import { useBranchStore } from '@/stores/branchStore';
 import { getProjectPath } from '@/lib/projectPathService';
+import { executeGitCommand } from '@/lib/versionControl/git';
 
 interface ConversationMetadata {
   conversationId: string;
@@ -162,19 +163,12 @@ export function useConversationMetadata() {
       setIsLoading(true);
       setError(null);
 
-      // Use existing git service to revert
+      // Revert by checking out the target commit using centralized wrapper
       const serverId = 'localhost-mcp';
       const projectPath = getProjectPath(activeProject.id, activeProject.name);
-      const result = await executeTool(serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git checkout ${commitHash}`,
-          type: 'command'
-        },
-        thread_id: `revert_${Date.now()}`
-      });
-
-      if (result.includes('error') || result.includes('fatal')) {
-        throw new Error('Failed to revert commit: ' + result);
+      const result = await executeGitCommand(serverId, `git checkout ${commitHash}`, projectPath, executeTool);
+      if (!result.success || (result.output || '').toLowerCase().includes('fatal')) {
+        throw new Error('Failed to revert commit: ' + (result.output || result.error || 'unknown'));
       }
 
       // Update metadata to reflect revert

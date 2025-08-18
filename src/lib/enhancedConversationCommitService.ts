@@ -331,19 +331,16 @@ async function createCommitInfoWithoutLLM(
     );
 
     // Get commit metadata
-    const commitMetaResult = await request.executeTool(
+    const { executeGitCommand } = await import('./versionControl/git');
+    const commitMetaRes = await executeGitCommand(
       request.serverId,
-      'BashCommand',
-      {
-        action_json: {
-          command: `cd "${request.projectPath}" && git show --format="%H|%P|%an|%aI" --no-patch ${request.commitHash}`
-        },
-        thread_id: `commit-meta-${Date.now()}`
-      }
+      `git show --format="%H|%P|%an|%aI" --no-patch ${request.commitHash}`,
+      request.projectPath,
+      request.executeTool
     );
 
     // Parse output from executeTool wrapper
-    const metaOutput = typeof commitMetaResult === 'string' ? commitMetaResult : String(commitMetaResult);
+    const metaOutput = commitMetaRes.output || '';
     const parsed = metaOutput.includes('"content"')
       ? (() => {
           try { const j = JSON.parse(metaOutput); return j.content?.[0]?.text || ''; } catch { return metaOutput; }

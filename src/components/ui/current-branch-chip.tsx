@@ -33,7 +33,7 @@ export const CurrentBranchChip: React.FC<CurrentBranchChipProps> = ({ projectId,
         title={branchName}
       >
         <GitBranch className="w-3 h-3" />
-        {isSwitching ? (
+        {(effectiveProjectId && isSwitching[effectiveProjectId]) ? (
           <span className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-3 border-2 border-blue-300 border-t-blue-700 rounded-full animate-spin" />
             Switching…

@@ -5,7 +5,7 @@
  * based on file changes and provides safe revert capabilities.
  */
 
-import { executeGitCommand } from './gitService';
+import { executeGitCommand } from './versionControl/git';
 
 /**
  * Project.json management for branch switching

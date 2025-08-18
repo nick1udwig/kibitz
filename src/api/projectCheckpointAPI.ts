@@ -311,26 +311,13 @@ export class ProjectCheckpointAPI {
       const projectPath = await ensureProjectDirectory(this.project, this.serverId, this.executeTool);
       
       // Check git status
-      const gitStatusResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git status --porcelain`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
-      
-      const hasUncommittedChanges = !gitStatusResult.includes('Error:') && gitStatusResult.trim().length > 0;
+      const { executeGitCommand } = await import('../lib/versionControl/git');
+      const statusRes = await executeGitCommand(this.serverId, 'git status --porcelain', projectPath, this.executeTool);
+      const hasUncommittedChanges = statusRes.success && (statusRes.output || '').trim().length > 0;
       
       // Get branch info
-      const branchResult = await this.executeTool(this.serverId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git branch --show-current`,
-          type: 'command'
-        },
-        thread_id: 'git-operations'
-      });
-      
-      const currentBranch = branchResult.includes('Error:') ? 'unknown' : branchResult.trim();
+      const branchRes = await executeGitCommand(this.serverId, 'git branch --show-current', projectPath, this.executeTool);
+      const currentBranch = branchRes.success ? (branchRes.output || '').trim() : 'unknown';
       
       const health = {
         projectId: this.project.id,

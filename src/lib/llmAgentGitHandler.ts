@@ -8,6 +8,10 @@
  */
 
 import { getProjectPath } from './projectPathService';
+import { VersionControlManager } from './versionControl';
+import { executeGitCommand } from './versionControl/git';
+import GitThreadManager from './versionControl/GitThreadManager';
+import type { ProjectSettings } from '../components/LlmChat/context/types';
 
 export interface LlmAgentGitResult {
   success: boolean;
@@ -19,9 +23,7 @@ export interface LlmAgentGitResult {
 
 export class LlmAgentGitHandler {
   private static instance: LlmAgentGitHandler | null = null;
-  // Cache resolved thread ids per (server|path) so we always reuse the
-  // exact thread the server told us to use after Initialize.
-  private static threadIdCache: Map<string, string> = new Map();
+  // Thread handling is delegated to GitThreadManager; no local cache here.
 
   static getInstance(): LlmAgentGitHandler {
     if (!LlmAgentGitHandler.instance) {
@@ -57,13 +59,13 @@ export class LlmAgentGitHandler {
       const projectPath = getProjectPath(projectId, projectName);
       console.log(`📂 LlmAgentGitHandler: Project path: ${projectPath}`);
 
-      // Step 1: Initialize MCP thread
-      const threadId = await this.initializeMcpThread(projectPath, executeTool, mcpServerId);
+      // Step 1: Ensure MCP thread is initialized via centralized manager (one-time per project/server)
+      await GitThreadManager.getInstance().getThreadId(mcpServerId, projectPath, executeTool);
 
       // Step 2: Initialize git repository if needed
       let gitInitialized = false;
-      if (forceInit || await this.needsGitInit(projectPath, executeTool, mcpServerId, threadId)) {
-        gitInitialized = await this.initializeGit(projectPath, executeTool, mcpServerId, threadId);
+      if (forceInit || await this.needsGitInit(projectPath, executeTool, mcpServerId)) {
+        gitInitialized = await this.initializeGit(projectPath, executeTool, mcpServerId);
         if (!gitInitialized) {
           return {
             success: false,
@@ -82,7 +84,7 @@ export class LlmAgentGitHandler {
       let commitSha: string | undefined;
 
       if (autoCommit) {
-        const hasChanges = await this.checkForChanges(projectPath, executeTool, mcpServerId, threadId);
+        const hasChanges = await this.checkForChanges(projectPath, executeTool, mcpServerId);
         
         // Enforce UI-configured min files before auto commit/push
         if (hasChanges) {
@@ -96,11 +98,8 @@ export class LlmAgentGitHandler {
             const project = st.projects.find(p => p.id === projectId);
             activeConversationId = st.activeConversationId || null;
             // Count changed files now
-            const listRes = await executeTool(mcpServerId, 'BashCommand', {
-              action_json: { command: `cd "${projectPath}" && git status --porcelain`, type: 'command' },
-              thread_id: threadId
-            });
-            const output = this.extractCommandOutput(listRes).trim();
+            const statusRes = await executeGitCommand(mcpServerId, 'git status --porcelain', projectPath, executeTool);
+            const output = (statusRes.output || '').trim();
             changedCount = output ? output.split('\n').filter(l => l.trim()).length : 0;
             minFiles = (project?.settings?.minFilesForAutoCommitPush ?? 0) as number;
             if (minFiles > 0 && changedCount < minFiles) {
@@ -122,17 +121,11 @@ export class LlmAgentGitHandler {
             if (activeConversationId && (changedCount >= Math.max(2, minFiles))) {
               const convPrefix = `conv-${activeConversationId}-step-`;
               // Determine current branch
-              const curBrRes = await executeTool(mcpServerId, 'BashCommand', {
-                action_json: { command: `cd "${projectPath}" && git branch --show-current`, type: 'command' },
-                thread_id: threadId
-              });
-              const curBranch = this.extractCommandOutput(curBrRes).trim() || 'main';
+              const curBrRes = await executeGitCommand(mcpServerId, 'git branch --show-current', projectPath, executeTool);
+              const curBranch = (curBrRes.success && curBrRes.output.trim()) ? curBrRes.output.trim() : 'main';
               // Scan existing steps to find highest
-              const refsRes = await executeTool(mcpServerId, 'BashCommand', {
-                action_json: { command: `cd "${projectPath}" && git for-each-ref refs/heads --format="%(refname:short)"`, type: 'command' },
-                thread_id: threadId
-              });
-              const namesText = this.extractCommandOutput(refsRes);
+              const refsRes = await executeGitCommand(mcpServerId, 'git for-each-ref refs/heads --format="%(refname:short)"', projectPath, executeTool);
+              const namesText = refsRes.output || '';
               let highestStep = 0;
               if (namesText.trim()) {
                 namesText.split('\n').map(s => s.trim()).filter(Boolean)
@@ -143,21 +136,18 @@ export class LlmAgentGitHandler {
               const nextBranch = `${convPrefix}${highestStep + 1}`;
               if (curBranch !== nextBranch) {
                 // Try to create directly from base
-                let mkRes = await executeTool(mcpServerId, 'BashCommand', {
-                  action_json: { command: `cd "${projectPath}" && git checkout -b ${nextBranch} ${baseBranch}`, type: 'command' },
-                  thread_id: threadId
-                });
-                let mkOk = !this.extractCommandOutput(mkRes).includes('fatal:');
+                let mkRes = await executeGitCommand(mcpServerId, `git checkout -b ${nextBranch} ${baseBranch}`, projectPath, executeTool);
+                let mkOk = mkRes.success;
                 if (!mkOk) {
                   // Fallback: stash → checkout base → create → pop
-                  await executeTool(mcpServerId, 'BashCommand', { action_json: { command: `cd "${projectPath}" && git stash push -u -m "kibitz-autobranch" || true`, type: 'command' }, thread_id: threadId });
-                  const coRes = await executeTool(mcpServerId, 'BashCommand', { action_json: { command: `cd "${projectPath}" && git checkout ${baseBranch}`, type: 'command' }, thread_id: threadId });
-                  const coOk = !this.extractCommandOutput(coRes).includes('fatal:');
+                  await executeGitCommand(mcpServerId, 'git stash push -u -m "kibitz-autobranch" || true', projectPath, executeTool);
+                  const coRes = await executeGitCommand(mcpServerId, `git checkout ${baseBranch}`, projectPath, executeTool);
+                  const coOk = coRes.success;
                   if (coOk) {
-                    mkRes = await executeTool(mcpServerId, 'BashCommand', { action_json: { command: `cd "${projectPath}" && git checkout -b ${nextBranch}`, type: 'command' }, thread_id: threadId });
-                    mkOk = !this.extractCommandOutput(mkRes).includes('fatal:');
+                    mkRes = await executeGitCommand(mcpServerId, `git checkout -b ${nextBranch}`, projectPath, executeTool);
+                    mkOk = mkRes.success;
                   }
-                  await executeTool(mcpServerId, 'BashCommand', { action_json: { command: `cd "${projectPath}" && git stash pop || true`, type: 'command' }, thread_id: threadId });
+                  await executeGitCommand(mcpServerId, 'git stash pop || true', projectPath, executeTool);
                 }
                 if (mkOk) {
                   console.log(`🌿 LlmAgentGitHandler: Created step branch ${nextBranch}`);
@@ -171,7 +161,24 @@ export class LlmAgentGitHandler {
           }
 
           console.log(`🔄 LlmAgentGitHandler: Changes detected, creating commit...`);
-          const commitResult = await this.createCommit(projectPath, commitMessage, executeTool, mcpServerId, threadId);
+          // Resolve ProjectSettings for VersionControlManager
+          let projectSettings: ProjectSettings;
+          try {
+            const { useStore } = await import('../stores/rootStore');
+            const st = useStore.getState();
+            const project = st.projects.find(p => p.id === projectId);
+            projectSettings = project?.settings as ProjectSettings;
+          } catch {
+            projectSettings = {
+              model: 'default',
+              systemPrompt: '',
+              mcpServerIds: [],
+              elideToolResults: false,
+              messageWindowSize: 20,
+              enableGitHub: false
+            } as ProjectSettings;
+          }
+          const commitResult = await this.createCommit(projectPath, commitMessage, projectSettings, executeTool, mcpServerId);
           
           if (commitResult.success) {
             changesCommitted = true;
@@ -231,71 +238,16 @@ export class LlmAgentGitHandler {
   }
 
   /**
-   * Initialize MCP thread for git operations
-   */
-  private async initializeMcpThread(
-    projectPath: string,
-    executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
-    mcpServerId: string
-  ): Promise<string> {
-    const initKey = `${mcpServerId}|${projectPath}`;
-    const g: Record<string, unknown> = global as Record<string, unknown>;
-
-    // Prefer our own precise cache first
-    const cached = LlmAgentGitHandler.threadIdCache.get(initKey);
-    if (cached) {
-      return cached;
-    }
-
-    // Always run Initialize so we get the exact thread the server expects
-    // even if a broader global cache flag is present.
-    let resolvedThreadId = 'git-operations';
-    try {
-      console.log(`🔧 LlmAgentGitHandler: Initializing MCP thread for ${initKey}`);
-      const initResult = await executeTool(mcpServerId, 'Initialize', {
-        type: 'first_call',
-        any_workspace_path: projectPath,
-        initial_files_to_read: [],
-        task_id_to_resume: '',
-        mode_name: 'wcgw',
-        thread_id: resolvedThreadId
-      });
-      // Parse both "thread_id=xxxx" and "Use thread_id=xxxx" patterns
-      const m1 = initResult.match(/thread_id=([a-z0-9]+)/i);
-      if (m1 && m1[1]) {
-        resolvedThreadId = m1[1];
-      }
-    } catch (error) {
-      console.warn('⚠️ LlmAgentGitHandler: Initialize failed, using default thread_id', error);
-    } finally {
-      if (!(g as { __kibitzInitCache?: Set<string> }).__kibitzInitCache) {
-        (g as { __kibitzInitCache?: Set<string> }).__kibitzInitCache = new Set<string>();
-      }
-      (g as { __kibitzInitCache?: Set<string> }).__kibitzInitCache!.add(initKey);
-      LlmAgentGitHandler.threadIdCache.set(initKey, resolvedThreadId);
-    }
-    return resolvedThreadId;
-  }
-
-  /**
    * Check if git repository needs initialization
    */
   private async needsGitInit(
     projectPath: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
-    mcpServerId: string,
-    threadId: string
+    mcpServerId: string
   ): Promise<boolean> {
     try {
-      const result = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && test -d .git && echo "has_git" || echo "no_git"`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
-
-      const hasGit = this.extractCommandOutput(result).trim() === 'has_git';
+      const res = await executeGitCommand(mcpServerId, 'git rev-parse --is-inside-work-tree', projectPath, executeTool);
+      const hasGit = res.success && res.output.includes('true');
       console.log(`🔍 LlmAgentGitHandler: Git repository exists: ${hasGit}`);
       return !hasGit;
     } catch (error) {
@@ -310,22 +262,20 @@ export class LlmAgentGitHandler {
   private async initializeGit(
     projectPath: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
-    mcpServerId: string,
-    threadId: string
+    mcpServerId: string
   ): Promise<boolean> {
     try {
       console.log(`🔄 LlmAgentGitHandler: Initializing git repository...`);
       
       // Do not hardcode identity; just initialize repo. Identity must come from env or git config
-      const initResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && (git init -b main || git init); git show-ref --verify --quiet refs/heads/master && git branch -m master main || true`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
+      const initRes = await executeGitCommand(
+        mcpServerId,
+        '(git init -b main || git init); git show-ref --verify --quiet refs/heads/master && git branch -m master main || true',
+        projectPath,
+        executeTool
+      );
 
-      const output = this.extractCommandOutput(initResult);
+      const output = (initRes.output || '');
       const success = output.includes('Initialized empty Git repository') || 
                      output.includes('Reinitialized existing Git repository') ||
                      !output.includes('Error:');
@@ -334,13 +284,7 @@ export class LlmAgentGitHandler {
         console.log(`✅ LlmAgentGitHandler: Git repository initialized successfully`);
         // Ensure HEAD references main branch without creating commits
         try {
-          await executeTool(mcpServerId, 'BashCommand', {
-            action_json: {
-              command: `cd "${projectPath}" && git symbolic-ref HEAD refs/heads/main || true`,
-              type: 'command'
-            },
-            thread_id: threadId
-          });
+          await executeGitCommand(mcpServerId, 'git symbolic-ref HEAD refs/heads/main || true', projectPath, executeTool);
         } catch {}
       } else {
         console.error(`❌ LlmAgentGitHandler: Git initialization failed:`, output);
@@ -359,26 +303,16 @@ export class LlmAgentGitHandler {
   private async checkForChanges(
     projectPath: string,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
-    mcpServerId: string,
-    threadId: string
+    mcpServerId: string
   ): Promise<boolean> {
     try {
-      const statusResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git status --porcelain`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
-
-      const statusOutput = this.extractCommandOutput(statusResult).trim();
-      const hasChanges = statusOutput.length > 0;
-      
+      const res = await executeGitCommand(mcpServerId, 'git status --porcelain', projectPath, executeTool);
+      const txt = (res.output || '').trim();
+      const hasChanges = res.success && txt.length > 0;
       console.log(`🔍 LlmAgentGitHandler: Changes detected: ${hasChanges}`);
       if (hasChanges) {
-        console.log(`📄 LlmAgentGitHandler: Changed files:\n${statusOutput}`);
+        console.log(`📄 LlmAgentGitHandler: Changed files:\n${txt}`);
       }
-
       return hasChanges;
     } catch (error) {
       console.warn(`⚠️ LlmAgentGitHandler: Failed to check for changes:`, error);
@@ -392,95 +326,28 @@ export class LlmAgentGitHandler {
   private async createCommit(
     projectPath: string,
     commitMessage: string,
+    projectSettings: ProjectSettings,
     executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<string>,
-    mcpServerId: string,
-    threadId: string
+    mcpServerId: string
   ): Promise<{ success: boolean; commitSha?: string; error?: string }> {
     try {
-      // Add all changes
-      await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: `cd "${projectPath}" && git add .`,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
-
-      console.log(`🔄 LlmAgentGitHandler: Added all changes to staging`);
-
-      // Create commit with user configuration from environment if present (no defaults)
-      // Prefer in-memory keys vault; fallback to env
-      let nameEnv = (process.env.NEXT_PUBLIC_GIT_USER_NAME || process.env.GIT_USER_NAME || '').trim();
-      let emailEnv = (process.env.NEXT_PUBLIC_GIT_USER_EMAIL || process.env.GIT_USER_EMAIL || '').trim();
-      try {
-        const { useStore } = await import('../stores/rootStore');
-        const st = useStore.getState();
-        nameEnv = (st.apiKeys.githubUsername || nameEnv || '').trim();
-        emailEnv = (st.apiKeys.githubEmail || emailEnv || '').trim();
-      } catch {}
-      const escapedMsg = commitMessage.replace(/"/g, '\\"');
-      // If this is the first commit (no HEAD), override message to a clean default
-      let isFirstCommit = false;
-      try {
-        const headCheck = await executeTool(mcpServerId, 'BashCommand', {
-          action_json: { command: `cd "${projectPath}" && git rev-parse --verify HEAD`, type: 'command' },
-          thread_id: threadId
-        });
-        const headOut = this.extractCommandOutput(headCheck);
-        isFirstCommit = headOut.toLowerCase().includes('fatal') || headOut.trim() === '';
-      } catch { isFirstCommit = true; }
-
-      const finalMsg = isFirstCommit ? 'Initial commit' : escapedMsg;
-      const commitCmd = nameEnv && emailEnv
-        ? `cd "${projectPath}" && git -c user.name="${nameEnv.replace(/"/g, '\\"')}" -c user.email="${emailEnv.replace(/"/g, '\\"')}" commit -m "${finalMsg}"`
-        : `cd "${projectPath}" && git commit -m "${finalMsg}"`;
-
-      const commitResult = await executeTool(mcpServerId, 'BashCommand', {
-        action_json: {
-          command: commitCmd,
-          type: 'command'
-        },
-        thread_id: threadId
-      });
-
-      const commitOutput = this.extractCommandOutput(commitResult);
-      const commitSuccess = !commitOutput.includes('Error:') && 
-                           !commitOutput.includes('fatal:') &&
-                           !commitOutput.includes('nothing to commit');
-
-      if (commitSuccess) {
-        // Get commit SHA
-        const shaResult = await executeTool(mcpServerId, 'BashCommand', {
-          action_json: {
-            command: `cd "${projectPath}" && git rev-parse HEAD`,
-            type: 'command'
-          },
-          thread_id: threadId
-        });
-
-        const commitSha = this.extractCommandOutput(shaResult).trim();
+      // Use VersionControlManager for standardized commit
+      const vcm = new VersionControlManager(projectPath, mcpServerId, executeTool);
+      const executed = await vcm.executeCommit(commitMessage, projectSettings);
+      if (executed.success && executed.commitHash && executed.commitHash !== 'no_changes') {
+        const commitSha = executed.commitHash;
 
         console.log(`🚀 LLM-AGENT: Commit successful. Requesting server push orchestrator...`);
         // Delegate pushing to server orchestrator to avoid duplicate initiators
         try {
           // Resolve branch
-          const branchResult = await executeTool(mcpServerId, 'BashCommand', {
-            action_json: {
-              command: `cd "${projectPath}" && git branch --show-current`,
-              type: 'command'
-            },
-            thread_id: threadId
-          });
-          const branchOutput = this.extractCommandOutput(branchResult).trim();
-          const currentBranch = branchOutput || 'main';
+          const branchResult = await executeGitCommand(mcpServerId, 'git branch --show-current', projectPath, executeTool);
+          const currentBranch = (branchResult.success && branchResult.output.trim()) ? branchResult.output.trim() : 'main';
 
           // HEAD check
           try {
-            const headCheck = await executeTool(mcpServerId, 'BashCommand', {
-              action_json: { command: `cd "${projectPath}" && git rev-parse --verify HEAD`, type: 'command' },
-              thread_id: threadId
-            });
-            const headOk = this.extractCommandOutput(headCheck).toLowerCase().includes('fatal') === false;
+            const headCheck = await executeGitCommand(mcpServerId, 'git rev-parse --verify HEAD', projectPath, executeTool);
+            const headOk = headCheck.success && (headCheck.output || '').toLowerCase().includes('fatal') === false;
             if (!headOk || !currentBranch) {
               console.log('ℹ️ LLM-AGENT PUSH: No commits or branch missing; skipping orchestrator request.');
               return { success: true } as { success: boolean };
@@ -504,16 +371,9 @@ export class LlmAgentGitHandler {
           console.log(`❌ LLM-AGENT: Error requesting orchestrator:`, pushError);
         }
 
-        return {
-          success: true,
-          commitSha
-        };
-      } else {
-        return {
-          success: false,
-          error: `Commit failed: ${commitOutput}`
-        };
+        return { success: true, commitSha };
       }
+      return { success: false, error: executed.error || 'Commit failed' };
 
     } catch (error) {
       return {

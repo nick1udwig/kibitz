@@ -426,10 +426,10 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ projectId }) => {
                               size="sm" 
                               variant="outline"
                               onClick={() => handleSwitchBranch(branch.name)}
-                              disabled={isSwitching}
+                              disabled={isSwitching[projectId] || false}
                               className="cursor-pointer hover:bg-primary/10 hover:text-primary hover:border-primary focus-visible:ring-ring active:translate-y-[1px]"
                             >
-                              {isSwitching ? (
+                              {(isSwitching[projectId] || false) ? (
                                 <span className="inline-flex items-center gap-2">
                                   <span className="inline-block w-3 h-3 border-2 border-blue-300 border-t-blue-700 rounded-full animate-spin" />
                                   Switching…
