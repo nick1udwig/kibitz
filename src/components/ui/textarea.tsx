@@ -103,7 +103,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           }
         }}
         onChange={handleChange}
-        onInput={(e) => {
+        onInput={() => {
           // Also handle input events for immediate feedback during typing
           if (textareaRef.current) {
             adjustHeight(textareaRef.current);

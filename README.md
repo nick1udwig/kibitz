@@ -50,3 +50,4 @@ NEXT_PUBLIC_BASE_PATH=/kibitz:kibitz:nick.kino NEXT_PUBLIC_DEFAULT_WS_URI=/fwd-w
 ```
 
 and then copy the contents of `out/` into the package's `pkg/ui/` dir.
+

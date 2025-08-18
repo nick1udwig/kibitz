@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Anthropic } from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import type { Tool as AnthropicToolType, CacheControlEphemeral, TextBlockParam } from '@anthropic-ai/sdk/resources/messages/messages';
@@ -6,8 +6,12 @@ import { Message, MessageContent } from '../types';
 import { useStore } from '@/stores/rootStore';
 import { wakeLock } from '@/lib/wakeLock';
 import { GenericMessage, toAnthropicFormat, toOpenAIFormat, sanitizeFunctionName } from '../types/genericMessage';
+import { useAutoCommit, detectToolSuccess, detectFileChanges } from './useAutoCommit';
+import { useAutoCommitStore } from '../../../stores/autoCommitStore';
+import { getProjectPath } from '../../../lib/projectPathService';
+import { useDelayedJSONGeneration } from './useDelayedJSONGeneration';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+const DEFAULT_MODEL = 'claude-3-7-sonnet-20250219';
 
 export const useMessageSender = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -22,10 +26,59 @@ export const useMessageSender = () => {
     updateProjectSettings,
     renameConversation,
     servers,
-    executeTool
+    executeTool,
+    ensureActiveProjectDirectory
   } = useStore();
 
+  // Add auto-commit functionality
+  const { 
+    trackFileChange 
+  } = useAutoCommit();
+
+  // 🚀 NEW: Add delayed JSON generation hook
+  const { scheduleJSONGeneration } = useDelayedJSONGeneration();
+
   const activeProject = projects.find(p => p.id === activeProjectId);
+
+  // 🌿 NEW: Simple end-of-conversation branch creation
+  const [conversationFileCount, setConversationFileCount] = useState(0);
+  const [lastActivityTime, setLastActivityTime] = useState(Date.now());
+
+  // Track files created in this conversation (analytics only; branching handled elsewhere)
+  const trackConversationFile = useCallback(() => {
+    setConversationFileCount(prev => prev + 1);
+    setLastActivityTime(Date.now());
+    console.log(`🌿 Conversation file tracker: ${conversationFileCount + 1} files created in this conversation`);
+  }, [conversationFileCount]);
+
+  // Legacy simple branch creation is disabled to avoid conflicts with conv-step branches
+  const createConversationBranch = useCallback(async () => {
+    console.log('🌿 Legacy conversation/timestamp branch creation is disabled; using conv-<id>-step-<n> at turn end.');
+  }, []);
+
+  // Disabled legacy auto-trigger; conv-step branching happens at turn end
+  useEffect(() => { /* no-op */ }, []);
+
+  // 🌿 Expose manual branch creation for testing
+  const manualCreateBranch = useCallback(() => {
+    console.log(`🌿 Manual branch creation triggered with ${conversationFileCount} files`);
+    createConversationBranch();
+  }, [conversationFileCount, createConversationBranch]);
+
+  // 🌿 DEBUG: Log the current state for debugging  
+  useEffect(() => {
+    console.log(`🌿 Conversation state: ${conversationFileCount} files, last activity: ${new Date(lastActivityTime).toLocaleTimeString()}`);
+  }, [conversationFileCount, lastActivityTime]);
+
+  // 🌿 DEBUG: Expose manual branch creation to window for testing
+  useEffect(() => {
+    (window as { createConversationBranch?: () => void; conversationFileCount?: number }).createConversationBranch = manualCreateBranch;
+    (window as { createConversationBranch?: () => void; conversationFileCount?: number }).conversationFileCount = conversationFileCount;
+    return () => {
+      delete (window as { createConversationBranch?: () => void; conversationFileCount?: number }).createConversationBranch;
+      delete (window as { createConversationBranch?: () => void; conversationFileCount?: number }).conversationFileCount;
+    };
+  }, [manualCreateBranch, conversationFileCount]);
 
   const getUniqueTools = useCallback((should_cache: boolean) => {
     if (!activeProject?.settings.mcpServerIds?.length) {
@@ -182,18 +235,33 @@ export const useMessageSender = () => {
           } catch (error) {
             lastError = error;
             console.log(`got error ${JSON.stringify(error)}`);
+            // Determine if the error is transient and worth retrying
+            let shouldRetry = false;
+            let reason = 'transient error';
             if (typeof error === 'object' && error !== null) {
-              const errorObj = error as { error?: { type?: string }; status?: number };
+              const errorObj = error as { error?: { type?: string; message?: string }; status?: number; message?: string };
               const isOverloaded = errorObj.error?.type === 'overloaded_error' || errorObj.status === 429;
-
-              if (isOverloaded && attempt < maxAttempts - 1) {
-                const delay = calculateBackoffDelay(attempt);
-                console.log(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
-                setError(`Server overloaded. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
+              const isNetwork = /network error|Failed to fetch|NetworkError|ECONNRESET|ETIMEDOUT/i.test(
+                String(errorObj.message || errorObj.error?.message || '')
+              );
+              shouldRetry = isOverloaded || isNetwork;
+              reason = isOverloaded ? 'server overloaded' : (isNetwork ? 'network error' : reason);
+            } else if (error instanceof Error) {
+              const isNetwork = /network error|Failed to fetch|NetworkError|ECONNRESET|ETIMEDOUT/i.test(error.message);
+              if (isNetwork) {
+                shouldRetry = true;
+                reason = 'network error';
               }
             }
+
+            if (shouldRetry && attempt < maxAttempts - 1) {
+              const delay = calculateBackoffDelay(attempt);
+              console.log(`Retrying due to ${reason}. Waiting ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+              setError(`Recovering from ${reason}. Retrying in ${Math.round(delay/1000)}s (attempt ${attempt + 1}/${maxAttempts})`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+
             throw error;
           }
         }
@@ -382,6 +450,9 @@ Format: Only output the title, no quotes or explanation`
               }
 
               try {
+                // Ensure project directory is set up before tool execution
+                await ensureActiveProjectDirectory();
+                
                 const result = await executeTool(
                   serverWithTool.id,
                   unsanitizedTool.name as string,
@@ -401,6 +472,23 @@ Format: Only output the title, no quotes or explanation`
                 currentMessages.push(currentStreamMessage);
                 currentMessages.push(toolResultMessage);
                 updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+
+                // Track changes only; defer commit to end-of-turn
+                try {
+                  const toolSuccess = detectToolSuccess(unsanitizedTool.name as string, result);
+                  if (toolSuccess) {
+                    const changedFiles = detectFileChanges(unsanitizedTool.name as string, result);
+                    if (changedFiles.length > 0) {
+                      console.log(`📁 Tracking ${changedFiles.length} changed files for end-of-turn commit`);
+                      changedFiles.forEach(filePath => {
+                        trackFileChange(filePath);
+                        trackConversationFile();
+                      });
+                    }
+                  }
+                } catch (autoCommitError) {
+                  console.warn('Change tracking failed after tool execution:', autoCommitError);
+                }
 
               } catch (toolError) {
                 const errorMessage: Message = {
@@ -469,32 +557,54 @@ Format: Only output the title, no quotes or explanation`
             systemPrompt,
           );
 
-          const stream = await streamWithRetry({
+          // Build request once so we can reuse for fallback
+          const anthropicRequest = {
             model: activeProject.settings.model || DEFAULT_MODEL,
             max_tokens: 8192,
             messages: anthropicApiMessages.messages,
             ...(anthropicApiMessages.system && { system: anthropicApiMessages.system }),
-            ...(systemPromptContent && systemPromptContent.length > 0 && {
-              system: systemPromptContent
-            }),
-            ...(tools.length > 0 && {
-              tools: toolsCached
-            })
-          });
+            ...(systemPromptContent && systemPromptContent.length > 0 && { system: systemPromptContent }),
+            ...(tools.length > 0 && { tools: toolsCached })
+          } as Parameters<typeof anthropic.messages.create>[0];
 
-          stream.on('text', (text) => {
-            textContent.text += text;
-            const updatedMessages = [...currentMessages, currentStreamMessage];
-            updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
-          });
+          let finalResponse: Message;
+          try {
+            const stream = await streamWithRetry(anthropicRequest);
 
-          streamRef.current = stream;
+            // Attach handlers early to avoid unhandled rejections in SDK
+            stream.on('error', (err: unknown) => {
+              if (shouldCancelRef.current) return;
+              console.error('Anthropic stream error:', err);
+              const formatted = formatErrorMessage(err);
+              setError(formatted);
+            });
+            stream.on('abort', () => {
+              if (shouldCancelRef.current) return;
+              console.warn('Anthropic stream aborted');
+            });
 
-          if (shouldCancelRef.current) break;
+            stream.on('text', (text) => {
+              textContent.text += text;
+              const updatedMessages = [...currentMessages, currentStreamMessage];
+              updateConversationMessages(activeProject.id, activeConversationId, updatedMessages);
+            });
 
-          const finalResponse = await stream.finalMessage();
+            streamRef.current = stream;
 
-          const processedContent = finalResponse.content.map((content: MessageContent) => {
+            if (shouldCancelRef.current) break;
+
+            finalResponse = await stream.finalMessage() as unknown as Message;
+          } catch (streamErr) {
+            // Fallback: if streaming fails (e.g., network error), try non-streaming request
+            console.warn('Streaming failed, falling back to non-streaming request:', streamErr);
+            try {
+              finalResponse = await anthropic.messages.create(anthropicRequest) as unknown as Message;
+            } catch (nonStreamErr) {
+              throw nonStreamErr;
+            }
+          }
+
+          const processedContent = (Array.isArray(finalResponse.content) ? finalResponse.content : []).map((content: MessageContent) => {
             if (!content['type']) return content;
             if (content.type !== 'text') return content;
 
@@ -523,13 +633,15 @@ Format: Only output the title, no quotes or explanation`
               return !isWhitespace;
             });
 
-          const processedResponse = {
-            ...finalResponse,
-            content: processedContent
+          const processedResponse: Message = {
+            role: 'assistant',
+            content: processedContent,
+            timestamp: new Date()
           };
 
           currentMessages.push(processedResponse);
           updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+          setError(null);
 
           const currentConversation = activeProject?.conversations.find(c => c.id === activeConversationId);
           if (currentConversation && currentMessages.length === 2 && currentConversation.name === '(New Chat)') {
@@ -563,10 +675,13 @@ Format: Only output the title, no quotes or explanation`
             }
           }
 
-          const toolUseContent = finalResponse.content.find((c: MessageContent) => c.type === 'tool_use');
+          const toolUseContent = (Array.isArray(finalResponse.content) ? finalResponse.content : []).find((c: MessageContent) => c.type === 'tool_use');
           if (toolUseContent && toolUseContent.type === 'tool_use') {
             try {
               if (shouldCancelRef.current) break;
+
+              // Ensure project directory is set up before tool execution
+              await ensureActiveProjectDirectory();
 
               const serverWithTool = servers.find(s =>
                 s.tools?.some(t => t.name === toolUseContent.name)
@@ -596,6 +711,23 @@ Format: Only output the title, no quotes or explanation`
 
               currentMessages.push(toolResultMessage);
               updateConversationMessages(activeProject.id, activeConversationId, currentMessages);
+
+              // Track changes only; defer commit to end-of-turn
+              try {
+                const toolSuccess = detectToolSuccess(toolUseContent.name, result);
+                if (toolSuccess) {
+                  const changedFiles = detectFileChanges(toolUseContent.name, result);
+                  if (changedFiles.length > 0) {
+                    console.log(`📁 Tracking ${changedFiles.length} changed files for end-of-turn commit`);
+                    changedFiles.forEach(filePath => {
+                      trackFileChange(filePath);
+                      trackConversationFile();
+                    });
+                  }
+                }
+              } catch (autoCommitError) {
+                console.warn('Change tracking failed after tool execution:', autoCommitError);
+              }
 
               if (!shouldCancelRef.current) continue;
               break;
@@ -657,6 +789,46 @@ Format: Only output the title, no quotes or explanation`
       shouldCancelRef.current = false;
       setIsLoading(false);
       streamRef.current = null;
+      
+      // 🚀 End-of-turn: schedule JSON generation and perform one conversation-step commit
+      console.log('✅ Assistant finished responding, scheduling JSON generation for 1 minute...');
+      scheduleJSONGeneration();
+
+      try {
+        if (activeProject && activeConversationId) {
+          const projectPath = getProjectPath(activeProject.id, activeProject.name);
+          console.log('🌿 End-of-turn commit starting on conversation step branch...');
+          const success = await useAutoCommitStore.getState().executeAutoCommit({
+            projectId: activeProject.id,
+            projectPath,
+            conversationId: activeConversationId,
+            trigger: 'tool_execution',
+            toolName: 'turn_end',
+            summary: 'conversation turn end'
+          });
+          if (!success) {
+            try {
+              const cfgRes = await fetch(`/api/github-sync/config?projectId=${activeProject.id}`);
+              if (cfgRes.ok) {
+                const cfg = await cfgRes.json();
+                if (cfg.github?.enabled) {
+                  console.log('🚀 End-of-turn: No commit; pushing new step branch only (sync enabled)');
+                  await fetch('/api/github-sync/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ projectId: activeProject.id, immediate: true, force: false })
+                  });
+                }
+              }
+            } catch (pushErr) {
+              console.warn('⚠️ End-of-turn branch-only push failed:', pushErr);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ End-of-turn commit failed (continuing):', e);
+      }
+      
       await wakeLock.release();
     }
   };
@@ -670,6 +842,7 @@ Format: Only output the title, no quotes or explanation`
     error,
     handleSendMessage,
     cancelCurrentCall,
-    clearError
+    clearError,
+    manualCreateBranch // Expose the manual branch creation function
   };
 };
